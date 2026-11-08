@@ -1,0 +1,29 @@
+{
+  "name": "jailbirds",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "preview": "node scripts/serve.mjs",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "build": "node scripts/build.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:browser": "playwright test",
+    "icons": "node scripts/icons.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@sveltejs/vite-plugin-svelte": "7.2.0",
+    "@types/node": "22.19.19",
+    "svelte-check": "4.7.3",
+    "typescript": "6.0.3",
+    "vite": "8.1.5"
+  },
+  "dependencies": {
+    "svelte": "5.56.8"
+  }
+}
