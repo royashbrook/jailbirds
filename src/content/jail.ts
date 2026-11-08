@@ -25,7 +25,7 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     { id: "showers", look: "washroom", rect: { x: 500, y: 310, w: 200, h: 330 }, doors: [{ side: "w", at: 120, width: 70 }], label: "showers" },
     {
       id: "intake", look: "intake", rect: { x: 20, y: 560, w: 240, h: 200 },
-      doors: [{ side: "n", at: 90, width: 60 }, { side: "s", at: 90, width: 60 }], label: "intake",
+      doors: [{ side: "n", at: 90, width: 60 }, { side: "s", at: 90, width: 60 }], label: "intake", labelAt: { x: 218, y: 748 },
     },
     {
       id: "release", look: "release", rect: { x: 500, y: 680, w: 200, h: 120 },
@@ -108,6 +108,9 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
 }
 
 export const LEVELS: LevelDef[] = [jail(1, 1, true), jail(2, 2, false)];
+
+/** the little words that pop up in the world */
+export const WORDS = { full: "full!", noBed: "no beds!" };
 
 const NEEDS: Record<string, (noun: string) => string> = {
   food: (noun) => `hungry ${noun}! walk them to the canteen`,

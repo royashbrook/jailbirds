@@ -12,7 +12,9 @@ test("birds by default; peg people from settings, same game underneath, remember
   await page.goto("/");
   await expect.poll(async () => (await state(page)).agents.length, { timeout: 8000 }).toBe(4);
   expect(await page.evaluate(() => window.__jailbirds.skin())).toBe("birds");
-  await expect(page.locator("#crowd span")).toHaveText("birds");
+  await page.click("#about");
+  await expect(page.locator(".card")).toContainText("new birds come by bus");
+  await page.click("#close");
 
   await page.click("#nav-settings");
   await expect(page.locator(".sheet h2")).toHaveText("settings");
@@ -28,7 +30,9 @@ test("birds by default; peg people from settings, same game underneath, remember
   expect(await state(page)).toEqual(held);
 
   await page.click("#close");
-  await expect(page.locator("#crowd span")).toHaveText("inmates");
+  await page.click("#about");
+  await expect(page.locator(".card")).toContainText("new inmates come by bus");
+  await page.click("#close");
   await page.reload();
   expect(await page.evaluate(() => window.__jailbirds.skin())).toBe("pegs");
   expect((await state(page)).agents.length).toBe(held.agents.length);

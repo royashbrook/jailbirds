@@ -9,6 +9,7 @@ const ACTORS = {
   player: { body: "#3f5fa8", hat: "#22325a" },
   carrier: { body: "#f4f1ea", hat: "#ffffff" },
   cleaner: { body: "#3fa68f", hat: "#25695b" },
+  clerk: { body: "#d98a3d", hat: "#8a4f18" },
   escort: { body: "#6b778c", hat: "#323d50" },
 } as const;
 const STRIDE = 24;
@@ -31,7 +32,7 @@ function character(ctx: CanvasRenderingContext2D, p: Pose, pal: { looks: string[
   const bob = p.moving ? Math.abs(Math.cos(a)) * 1.6 * s : p.using ? Math.abs(Math.sin(p.t * 6)) * 1.2 : 0;
   const breathe = p.moving ? 0 : Math.sin(p.t * 2.2 + p.look) * 0.5;
   const bw = 15 * s, bh = 17 * s, hr = 6.5 * s;
-  const x = p.x, foot = p.y + 10 * s;
+  const x = p.x + (p.fighting ? Math.sin(p.t * 40) * 2 : 0), foot = p.y + 10 * s;
   const hip = foot - 7 * s - bob;
   const top = hip - bh + 4 * s - breathe;
 
@@ -45,7 +46,7 @@ function character(ctx: CanvasRenderingContext2D, p: Pose, pal: { looks: string[
 
   // the back arm, behind the body
   const shoulder = top + 5 * s;
-  const holding = p.carry > 0;
+  const holding = p.carry > 0 || p.fighting;
   const armAngle = (side: number) => (holding ? Math.PI * 0.95 * -f * 0.9 : swing * side * 0.6 * f + f * 0.08);
   limb(ctx, x - f * bw * 0.42, shoulder, 8 * s, 4.2 * s, armAngle(1), colour);
 
@@ -96,6 +97,7 @@ export const pegs: Skin = {
   ...scenery,
   id: "pegs",
   name: "peg people",
+  squabble: "hey!",
   noun: "inmates",
   palette: (dark) => (dark ? PEGS.dark : PEGS.light),
   character,

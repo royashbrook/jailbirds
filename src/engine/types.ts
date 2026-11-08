@@ -23,6 +23,8 @@ export interface RoomDef {
   /** a pad id: until it is bought the room is drawn locked and its doors are shut */
   locked?: string;
   label?: string;
+  /** where the skin prints the label; the bottom middle when not given */
+  labelAt?: Pt;
 }
 
 /** a place an agent sits, sleeps or stands to have a need met */

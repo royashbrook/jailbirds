@@ -44,6 +44,7 @@ export interface Pose {
   mood: Mood;
   /** the need it is having met right now, if any */
   using: string | null;
+  fighting: boolean;
 }
 
 export interface Skin {
@@ -51,6 +52,8 @@ export interface Skin {
   name: string;
   /** the word for the inmates in the hints */
   noun: string;
+  /** what two of them shout when they squabble */
+  squabble: string;
   palette(dark: boolean): Palette;
   character(ctx: CanvasRenderingContext2D, p: Pose, pal: Palette): void;
   hall(ctx: CanvasRenderingContext2D, size: { w: number; h: number }, roadY: number, pal: Palette): void;
@@ -67,5 +70,15 @@ export interface Skin {
   pad(ctx: CanvasRenderingContext2D, pad: PadDef, paid: number, ready: boolean, pal: Palette): void;
   bus(ctx: CanvasRenderingContext2D, x: number, y: number, full: boolean, pal: Palette): void;
   stop(ctx: CanvasRenderingContext2D, at: Pt, pal: Palette): void;
+  /** a need bubble; need "done" is the served-their-time bubble */
   bubble(ctx: CanvasRenderingContext2D, need: string, x: number, y: number, pal: Palette): void;
+  gate(ctx: CanvasRenderingContext2D, at: Pt, beep: boolean, pal: Palette): void;
+  pile(ctx: CanvasRenderingContext2D, at: Pt, coins: number): void;
+  skates(ctx: CanvasRenderingContext2D, at: Pt, t: number): void;
+  rainbow(ctx: CanvasRenderingContext2D, trail: Pt[]): void;
+  /** a word over someone's head: full!, no beds! */
+  shout(ctx: CanvasRenderingContext2D, word: string, x: number, y: number, warn: boolean): void;
+  burst(ctx: CanvasRenderingContext2D, word: string, x: number, y: number, t: number): void;
+  /** the off-screen arrow to trouble, in screen pixels, pointing along `angle` */
+  marker(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, t: number): void;
 }

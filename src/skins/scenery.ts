@@ -71,7 +71,7 @@ export function tray(ctx: Ctx, x: number, y: number) {
   circle(ctx, x + 3.5, y - 3.5, 2.8, "#7ccf7c");
 }
 
-export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character"> = {
+export const scenery: Omit<Skin, "id" | "name" | "noun" | "squabble" | "palette" | "character"> = {
   hall(ctx, size, roadY, pal) {
     ctx.fillStyle = pal.hall;
     ctx.fillRect(-2000, -2000, size.w + 4000, size.h + 4000);
@@ -92,9 +92,11 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
     ctx.fillStyle = open ? (pal.floors[room.look] ?? pal.hall) : pal.locked;
     ctx.fillRect(r.x, r.y, r.w, r.h);
     if (room.look === "cell" && open) {
-      // a bunk and a pillow
-      rounded(ctx, r.x + 8, r.y + 10, 22, 34, 5, pal.floors.bed ?? "#9fc3e8", OUTLINE, 1.5);
-      rounded(ctx, r.x + 11, r.y + 13, 16, 8, 3, "#ffffff");
+      // two beds, each with a pillow
+      for (const dy of [8, 60]) {
+        rounded(ctx, r.x + 6, r.y + dy, 24, 44, 5, pal.floors.bed ?? "#9fc3e8", OUTLINE, 1.5);
+        rounded(ctx, r.x + 9, r.y + dy + 3, 18, 9, 3, "#ffffff");
+      }
     }
     if (!open) {
       const cx = r.x + r.w / 2, cy = r.y + Math.min(r.h / 2, 60);
@@ -117,7 +119,8 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
     line(ctx, from.x, from.y + 2, to.x, to.y + 2);
   },
   roomLabel(ctx, room, pal) {
-    if (room.label) text(ctx, room.label, room.rect.x + room.rect.w / 2, room.rect.y + room.rect.h - 10, pal.label, 11);
+    const at = room.labelAt ?? { x: room.rect.x + room.rect.w / 2, y: room.rect.y + room.rect.h - 10 };
+    if (room.label) text(ctx, room.label, at.x, at.y, pal.label, 11);
   },
   prop(ctx, look, r, pal, stock) {
     if (look === "desk") {
@@ -133,12 +136,20 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
         ctx.lineWidth = 1;
         ctx.strokeRect(r.x + 20 + k * 7, r.y + 7 - k * 3, 12, 12);
       }
-      text(ctx, "shirts", r.x + r.w - 40, r.y + r.h / 2, OUTLINE, 11, 800);
+      text(ctx, "check in", r.x + r.w - 44, r.y + r.h / 2, OUTLINE, 10, 800);
     } else if (look === "stove") {
       rounded(ctx, r.x, r.y, r.w, r.h, 6, pal.metal, OUTLINE);
       circle(ctx, r.x + 20, r.y + r.h / 2, 10, "#4b525b", OUTLINE, 1.5);
       circle(ctx, r.x + 46, r.y + r.h / 2, 10, "#4b525b", OUTLINE, 1.5);
       for (let k = 0; k < 4; k++) tray(ctx, r.x + r.w - 22, r.y + r.h - 8 - k * 5);
+    } else if (look === "stamp") {
+      rounded(ctx, r.x, r.y, r.w, r.h, 6, pal.wood, OUTLINE);
+      // a big rubber stamp and an ink pad
+      rounded(ctx, r.x + 14, r.y + 6, 22, 12, 3, "#e5484d", OUTLINE, 1.2);
+      rounded(ctx, r.x + 52, r.y - 8, 10, 16, 3, "#6b4b3a", OUTLINE, 1.2);
+      circle(ctx, r.x + 57, r.y - 10, 6, "#6b4b3a", OUTLINE, 1.2);
+      rounded(ctx, r.x + 48, r.y + 8, 18, 8, 2, "#e5484d", OUTLINE, 1.2);
+      text(ctx, "free!", r.x + r.w - 26, r.y + r.h / 2, OUTLINE, 10, 800);
     } else if (look === "table") {
       rounded(ctx, r.x, r.y, r.w, r.h, 8, pal.wood, OUTLINE);
       for (let k = 0; k < stock; k++) tray(ctx, r.x + 25 + (k % 3) * 50, r.y + (k < 3 ? 10 : 24));
@@ -241,8 +252,14 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
       circle(ctx, x - 14, y - 4, 5, COIN, COIN_EDGE, 1.2);
       text(ctx, String(pad.cost - paid), x - 6, y - 3, pal.ink, 12, 800, "left");
     } else {
-      star(ctx, x - 14, y - 4, 6, "#ffd23f");
-      text(ctx, String(pad.stars ?? 0), x - 4, y - 3, pal.inkDim, 12, 800, "left");
+      // locked until a level: a padlock and the level number
+      ctx.strokeStyle = pal.inkDim;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x - 14, y - 7, 3.5, Math.PI, 0);
+      ctx.stroke();
+      rounded(ctx, x - 19, y - 7, 10, 8, 2, pal.inkDim);
+      text(ctx, `lv ${pad.rank ?? 0}`, x - 4, y - 3, pal.inkDim, 11, 800, "left");
     }
     if (pad.label) text(ctx, pad.label, x, y + 10, ready ? pal.ink : pal.inkDim, 8.5, 700);
   },
@@ -288,6 +305,13 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
       rounded(ctx, x - 6, y - 7, 9, 11, 2, "#ffffff", OUTLINE, 1.2);
       circle(ctx, x + 3, y - 1.5, 3.5, "#ffffff", OUTLINE, 1.2);
       circle(ctx, x + 3, y - 1.5, 1.2, OUTLINE);
+    } else if (need === "done") {
+      // a key: time to go
+      circle(ctx, x - 3, y - 2, 4, "#ffd23f", OUTLINE, 1.2);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2;
+      line(ctx, x, y - 2, x + 7, y - 2);
+      line(ctx, x + 5, y - 2, x + 5, y + 1);
     } else {
       // a drop of water
       ctx.beginPath();
@@ -301,6 +325,132 @@ export const scenery: Omit<Skin, "id" | "name" | "noun" | "palette" | "character
       ctx.stroke();
     }
     void pal;
+  },
+  gate(ctx, at, beep, pal) {
+    // a walk-through detector arch with a light on top
+    ctx.strokeStyle = pal.metal;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(at.x - 22, at.y + 8);
+    ctx.lineTo(at.x - 22, at.y - 12);
+    ctx.lineTo(at.x + 22, at.y - 12);
+    ctx.lineTo(at.x + 22, at.y + 8);
+    ctx.stroke();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    circle(ctx, at.x, at.y - 13, 4, beep ? "#ff5a5a" : "#7ccf7c", OUTLINE, 1.2);
+  },
+  pile(ctx, at, coins) {
+    // a little tower of coins that grows with what is waiting
+    const n = Math.min(12, Math.ceil(coins / 2));
+    for (let k = 0; k < n; k++) {
+      const x = at.x + (k % 2 ? 6 : -6), y = at.y + 4 - Math.floor(k / 2) * 4;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 7, 3.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = COIN;
+      ctx.fill();
+      ctx.strokeStyle = COIN_EDGE;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    if (coins) text(ctx, String(coins), at.x, at.y + 14, OUTLINE, 9, 800);
+  },
+  skates(ctx, at, t) {
+    const y = at.y - Math.abs(Math.sin(t * 3)) * 3;
+    ctx.beginPath();
+    ctx.ellipse(at.x, at.y + 7, 14, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fill();
+    // a pink skate: a boot, a sole and four wheels
+    ctx.beginPath();
+    ctx.moveTo(at.x - 10, y - 10);
+    ctx.lineTo(at.x - 2, y - 10);
+    ctx.lineTo(at.x - 1, y - 2);
+    ctx.lineTo(at.x + 11, y - 1);
+    ctx.lineTo(at.x + 11, y + 3);
+    ctx.lineTo(at.x - 10, y + 3);
+    ctx.closePath();
+    ctx.fillStyle = "#ff8fc8";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    for (const dx of [-7, -2, 3, 8]) circle(ctx, at.x + dx, y + 5, 2.4, "#7cc6ee", OUTLINE, 1);
+    // sparkle
+    const s = 2 + Math.abs(Math.sin(t * 5)) * 2;
+    ctx.strokeStyle = "#ffd23f";
+    ctx.lineWidth = 1.5;
+    line(ctx, at.x + 12, y - 14 - s, at.x + 12, y - 14 + s);
+    line(ctx, at.x + 12 - s, y - 14, at.x + 12 + s, y - 14);
+  },
+  rainbow(ctx, trail) {
+    const colours = ["#ff6b6b", "#ffb34d", "#ffe066", "#7ccf7c", "#5cb8ee", "#b79be6"];
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    colours.forEach((c, k) => {
+      ctx.beginPath();
+      trail.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y + 6 + (k - 2.5) * 2.2) : ctx.moveTo(p.x, p.y + 6 + (k - 2.5) * 2.2)));
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.75;
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    ctx.lineCap = "butt";
+  },
+  shout(ctx, word, x, y, warn) {
+    ctx.font = `900 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+    const w = ctx.measureText(word).width + 12;
+    rounded(ctx, x - w / 2, y - 9, w, 18, 9, warn ? "#ff5a5a" : "#ffd23f", OUTLINE, 1.5);
+    text(ctx, word, x, y + 0.5, warn ? "#ffffff" : OUTLINE, 12, 900);
+  },
+  burst(ctx, word, x, y, t) {
+    const s = 1 + Math.sin(t * 14) * 0.08;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.beginPath();
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8, r = k % 2 ? 16 : 26;
+      ctx.lineTo(Math.cos(a) * r * 1.3, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#ffe066";
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    text(ctx, word, 0, 1, "#e5484d", 11, 900);
+    ctx.restore();
+  },
+  marker(ctx, x, y, angle, t) {
+    const pulse = 1 + Math.abs(Math.sin(t * 6)) * 0.15;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(pulse, pulse);
+    ctx.save();
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(30, 0);
+    ctx.lineTo(18, -9);
+    ctx.lineTo(18, 9);
+    ctx.closePath();
+    ctx.fillStyle = "#ff5a5a";
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.lineTo(15, 11);
+    ctx.lineTo(-15, 11);
+    ctx.closePath();
+    ctx.fillStyle = "#ff5a5a";
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    text(ctx, "!", 0, 3, "#ffffff", 16, 900);
+    ctx.restore();
   },
 };
 

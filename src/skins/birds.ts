@@ -10,6 +10,7 @@ const ACTORS = {
   player: { body: "#5b7fcf", hat: "#2f3f6b" },
   carrier: { body: "#f4f1ea", hat: "#ffffff" },
   cleaner: { body: "#6cc5b0", hat: "#2f7f6f" },
+  clerk: { body: "#f2a65a", hat: "#a85f1f" },
   escort: { body: "#8a94a6", hat: "#3b4a5e" },
 } as const;
 const STRIDE = 26;
@@ -25,7 +26,7 @@ function character(ctx: CanvasRenderingContext2D, p: Pose, pal: { looks: string[
   const bob = p.moving ? Math.abs(Math.sin(a)) * r * 0.2 : p.using ? Math.abs(Math.sin(p.t * 7)) * r * 0.12 : 0;
   const breathe = p.moving ? 1 : 1 + Math.sin(p.t * 2.4 + p.look) * 0.03;
   const lean = p.moving ? f * 0.1 : 0;
-  const x = p.x, y = p.y - bob;
+  const x = p.x + (p.fighting ? Math.sin(p.t * 40) * 2 : 0), y = p.y - bob;
 
   // shadow stays on the ground
   ctx.beginPath();
@@ -113,7 +114,7 @@ function character(ctx: CanvasRenderingContext2D, p: Pose, pal: { looks: string[
 
   // the wing: flaps with the stride, or both up front holding the stack
   ctx.fillStyle = "rgba(0,0,0,0.14)";
-  if (p.carry > 0) {
+  if (p.carry > 0 || p.fighting) {
     for (const side of [-1, 1]) {
       ctx.beginPath();
       ctx.ellipse(side * r * 0.55, -r * 0.55, r * 0.22, r * 0.5, side * 0.5, 0, Math.PI * 2);
@@ -157,6 +158,7 @@ export const birds: Skin = {
   ...scenery,
   id: "birds",
   name: "birds",
+  squabble: "squawk!",
   noun: "birds",
   palette: (dark) => (dark ? BIRDS.dark : BIRDS.light),
   character,

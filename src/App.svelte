@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { capacity, create, DT, hint, MAX_STARS, population, restore, stars as rate, step } from "./engine/sim.ts";
+  import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
   import type { Stick, World } from "./engine/types.ts";
-  import { LEVELS, hintText } from "./content/jail.ts";
+  import { LEVELS, WORDS, hintText } from "./content/jail.ts";
   import { SKINS, skinById } from "./skins/index.ts";
   import type { Palette, Skin } from "./skins/types.ts";
   import { remember, render, type Past, type Thumb } from "./render.ts";
@@ -31,7 +31,23 @@
   // what the screen watches; the world mutates in place
   let coins = $state(world.coins);
   let crowd = $state("");
-  let rating = $state(0);
+  let rank = $state(world.rank);
+  let stars = $state(0);
+  let need = $state(1);
+  let lineNow = $state(0);
+  let lineMax = $state(world.lineMax);
+  let boosted = $state(0);
+  // short cheers that pop up and fade: a level up, a squabble settled, a boost
+  let cheer = $state("");
+  let cheerKey = $state(0);
+  let cheerTimer: ReturnType<typeof setTimeout>;
+  function shout(text: string) {
+    cheer = text;
+    cheerKey++;
+    clearTimeout(cheerTimer);
+    cheerTimer = setTimeout(() => (cheer = ""), 2400);
+  }
+  let seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(true);
@@ -48,14 +64,24 @@
   (window as unknown as { __jailbirds: unknown }).__jailbirds = {
     state: () => JSON.parse(JSON.stringify(world)) as World,
     skin: () => skin.id,
-    stars: () => rate(world, level()),
+    rank: () => world.rank,
   };
 
   function sync() {
     const l = level();
     coins = world.coins;
-    crowd = `${population(world)}/${capacity(world, l)}`;
-    rating = rate(world, l);
+    crowd = `${capacity(world, l) - freeBeds(world, l)}/${capacity(world, l)}`;
+    rank = world.rank;
+    stars = world.stars;
+    need = rankNeed(world, l);
+    lineNow = followers(world, player(world)).length;
+    lineMax = world.lineMax;
+    boosted = Math.ceil(world.boosted);
+    if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
+    else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +${l.rankReward * world.rank} coins`);
+    else if (world.settled > seen.settled) shout("all calm again! +coins");
+    else if (world.boosted > seen.boosted + 1) shout("speed boost!");
+    seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
     place = l.name;
     tip = hintText(hint(world, l), skin.noun);
   }
@@ -172,7 +198,7 @@
       sync();
     }
     const ctx = canvasEl?.getContext("2d");
-    if (ctx && pal) render(ctx, world, level(), skin, pal, dpr, cssW, cssH, past, sheet ? 1 : acc / DT, now, thumb);
+    if (ctx && pal) render(ctx, world, level(), skin, pal, WORDS, dpr, cssW, cssH, past, sheet ? 1 : acc / DT, now, thumb);
     raf = requestAnimationFrame(frame);
   }
   const visibility = () => {
@@ -208,7 +234,7 @@
     const ctx = el.getContext("2d")!;
     ctx.setTransform(d * 1.5, 0, 0, d * 1.5, 0, 0);
     const p = s.palette(dark?.matches ?? false);
-    const base = { moving: false, walk: 0, t: 1, carry: 0, mood: "ok" as const, using: null };
+    const base = { moving: false, walk: 0, t: 1, carry: 0, mood: "ok" as const, using: null, fighting: false };
     s.character(ctx, { ...base, kind: "player", x: 18, y: 26, face: 1, look: 0, uniform: false }, p);
     s.character(ctx, { ...base, kind: "agent", x: 46, y: 28, face: -1, look: 1, uniform: true }, p);
     s.character(ctx, { ...base, kind: "agent", x: 70, y: 28, face: -1, look: 2, uniform: false }, p);
@@ -257,8 +283,15 @@
     </div>
     <div class="stats">
       <div class="stat" id="coins" aria-label={`${coins} coins`}><svg class="coin-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg><b>{coins}</b></div>
-      <div class="stat" id="crowd"><span>{skin.noun}</span><b>{crowd}</b></div>
-      <div class="stat stars" id="stars" role="img" aria-label={`${rating} of ${MAX_STARS} stars`}>{#each Array(MAX_STARS) as _, i (i)}<svg class="star" class:lit={i < rating} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>{/each}</div>
+      <div class="stat" id="line" aria-label={`leading ${lineNow} of ${lineMax}`}><span>line</span><b class:full={lineNow >= lineMax}>{lineNow}/{lineMax}</b></div>
+      <div class="stat" id="crowd"><span>beds</span><b>{crowd}</b></div>
+      <div class="rank" id="rank" role="img" aria-label={`level ${rank}, ${stars} of ${need} stars to the next`}>
+        <svg class="badge" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>
+        <b>{rank}</b>
+        <span class="bar"><span class="fill" style:width={`${(100 * stars) / need}%`}></span></span>
+        <small>{stars}/{need}</small>
+      </div>
+      {#if boosted > 0}<div class="stat boost" id="boost"><span>zoom</span><b>{boosted}s</b></div>{/if}
     </div>
   </header>
   <div
@@ -273,6 +306,7 @@
     onlostpointercapture={up}
   >
     <canvas id="jail" bind:this={canvasEl}></canvas>
+    {#key cheerKey}{#if cheer}<div class="cheer" role="status">{cheer}</div>{/if}{/key}
   </div>
   <footer class="foot">
     <p class="tip" id="tip">{#if !saved}<span class="warn">this browser is not saving your jail</span>{:else}{tip}{/if}</p>
@@ -292,8 +326,10 @@
       {#if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
-        <p>pick up the {skin.noun} at the bus stop, take them to the intake desk for striped shirts, then walk them to a cell. hungry ones need trays from the kitchen on a canteen table. the washroom gets messy: walk over a mess to clean it. happy {skin.noun} drop coins.</p>
-        <p>stand on a price tag to unlock more. some tags want more stars first: stars come from what you have built and how happy everyone is. five stars opens the next jail.</p>
+        <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get striped shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
+        <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop coins, and so do the desks.</p>
+        <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
+        <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
         <button id="settings" onclick={() => (sheet = "settings")}>looks: {skin.name}</button>
         <p class="ethos">{ETHOS}</p>
         <p class="version">version {__APP_VERSION__}</p>
