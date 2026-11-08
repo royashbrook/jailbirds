@@ -291,7 +291,7 @@
         <span class="bar"><span class="fill" style:width={`${(100 * stars) / need}%`}></span></span>
         <small>{stars}/{need}</small>
       </div>
-      {#if boosted > 0}<div class="stat boost" id="boost"><span>zoom</span><b>{boosted}s</b></div>{/if}
+
     </div>
   </header>
   <div
@@ -306,6 +306,7 @@
     onlostpointercapture={up}
   >
     <canvas id="jail" bind:this={canvasEl}></canvas>
+    {#if boosted > 0}<div class="zoom" id="boost">zoom! {boosted}s</div>{/if}
     {#key cheerKey}{#if cheer}<div class="cheer" role="status">{cheer}</div>{/if}{/key}
   </div>
   <footer class="foot">

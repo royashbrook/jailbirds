@@ -167,6 +167,17 @@ a {
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
+.zoom {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #ff8fc8;
+  color: #3a2e2b;
+  font: 800 15px var(--font-display);
+  pointer-events: none;
+}
 .cheer {
   position: absolute;
   left: 50%;
