@@ -593,6 +593,22 @@ a {
     animation: none;
   }
 }
+/* a phone: smaller price tags, so they do not crowd the scene */
+@media (max-width: 500px) {
+  .tag {
+    margin-top: -36px;
+    padding: 1px 6px 2px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .tag b::before {
+    width: 9px;
+    height: 9px;
+  }
+  .tag span {
+    font-size: 8.5px;
+  }
+}
 /* the build, small, like the rest of the house, with the jail's name under it */
 .corner {
   text-align: right;

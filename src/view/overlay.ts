@@ -11,6 +11,9 @@ export type Thumb = { ox: number; oy: number; x: number; y: number; r: number } 
 type View = { screen(x: number, h: number, y: number, out: ScreenPoint): ScreenPoint; height: number };
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
+/** how far down a bubble's anchor must be so the whole bubble shows */
+const TOP = 40;
+
 interface Slot { el: HTMLElement; x: number; y: number; shown: boolean; key: string }
 
 export function createOverlay(root: HTMLElement) {
@@ -62,7 +65,8 @@ export function createOverlay(root: HTMLElement) {
       if (!pt.on) continue;
       const s = bubbles[b++];
       label(s, need, () => (s.el.dataset.need = need));
-      move(s, pt.x, pt.y);
+      // a bubble sits above its head; near the top edge it stays on screen
+      move(s, pt.x, Math.max(pt.y, TOP));
       show(s, true);
     }
     for (; b < bubbles.length; b++) show(bubbles[b], false);
