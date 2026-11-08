@@ -43,8 +43,11 @@ test("turning an ipad round refits the jail to the new shape", async ({ page }) 
   const tall = await page.locator("#jail").boundingBox();
   await page.setViewportSize({ width: 1366, height: 1024 });
   await expect.poll(async () => (await page.locator("#jail").boundingBox()).width).toBeGreaterThan(tall.width + 200);
-  const px = await page.evaluate(() => { const c = document.querySelector("#jail"); return c.width / c.getBoundingClientRect().width; });
-  expect(px).toBeCloseTo(await page.evaluate(() => Math.min(3, devicePixelRatio)), 1);
+  // the backing store catches up a frame or so after the css box: wait for both sides
+  await expect.poll(() => page.evaluate(() => {
+    const c = document.querySelector("#jail"), r = c.getBoundingClientRect(), d = Math.min(3, devicePixelRatio);
+    return [c.width / r.width, c.height / r.height].map((x) => Math.round((x - d) * 10));
+  })).toEqual([0, 0]);
 });
 
 // light unless the phone asks for dark
