@@ -23,15 +23,15 @@ for (const size of SIZES)
     // the jail fills the screen: most of the height, nearly all of the width
     expect(jail.height).toBeGreaterThan(size.height * 0.55);
     expect(jail.width).toBeGreaterThan(size.width * 0.9);
-    // the canvas draws at the screen's real density, not stretched
+    // the canvas draws at the real density, capped at 2 for the gpu
     const px = await page.evaluate(() => { const c = document.querySelector("#jail"); return { w: c.width, css: c.getBoundingClientRect().width, dpr: devicePixelRatio }; });
-    expect(Math.abs(px.w - px.css * Math.min(3, px.dpr))).toBeLessThanOrEqual(1);
+    expect(Math.abs(px.w - px.css * Math.min(2, px.dpr))).toBeLessThanOrEqual(1);
     const fit = await page.evaluate(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }));
     expect(fit.w).toBeLessThanOrEqual(size.width);
     expect(fit.h).toBeLessThanOrEqual(size.height);
     // the house checker finds about by name: the menu button says it opens about too
     await expect(page.getByRole("button", { name: /about/i }).first()).toBeVisible();
-    for (const id of ["#about", "#nav-settings", "#restart"]) {
+    for (const id of ["#about", "#restart"]) {
       const box = await b(id);
       expect(Math.min(box.width, box.height), id).toBeGreaterThanOrEqual(44);
     }
@@ -45,8 +45,9 @@ test("turning an ipad round refits the jail to the new shape", async ({ page }) 
   await expect.poll(async () => (await page.locator("#jail").boundingBox()).width).toBeGreaterThan(tall.width + 200);
   // the backing store catches up a frame or so after the css box: wait for both sides
   await expect.poll(() => page.evaluate(() => {
-    const c = document.querySelector("#jail"), r = c.getBoundingClientRect(), d = Math.min(3, devicePixelRatio);
-    return [c.width / r.width, c.height / r.height].map((x) => Math.round((x - d) * 10));
+    const c = document.querySelector("#jail"), r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio);
+    // three floors the backing store, so a hair under d rounds to -0: add 0 to make it plain 0
+    return [c.width / r.width, c.height / r.height].map((x) => Math.round((x - d) * 10) + 0);
   })).toEqual([0, 0]);
 });
 

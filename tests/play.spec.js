@@ -62,7 +62,7 @@ test("the bus, the desk, a line that fills up, and a reload that keeps it", asyn
   await walkTo(page, { x: 140, y: 584 });
   await expect.poll(async () => inmates(await state(page)).filter((b) => b.state === "ready").length, { timeout: 6000 }).toBe(3);
   expect(inmates(await state(page)).every((b) => b.tags.includes("uniform"))).toBe(true);
-  await expect(page.locator("#tip")).toHaveText("walk up to the checked-in birds to lead them");
+  await expect(page.locator("#tip")).toHaveText("walk up to the checked-in inmates to lead them");
   // walk up to them: two follow and the line is full
   await walkTo(page, { x: 228, y: 680 });
   await expect.poll(async () => line(await state(page)).length).toBe(2);
