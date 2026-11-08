@@ -428,6 +428,10 @@ a {
   overflow: hidden;
   pointer-events: none;
 }
+/* pooled signs that are not in use: hidden even when their own rule sets a display */
+.overlay > [hidden] {
+  display: none;
+}
 .overlay > div {
   position: absolute;
   left: 0;

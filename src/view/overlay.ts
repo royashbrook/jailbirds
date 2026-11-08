@@ -11,6 +11,8 @@ export type Thumb = { ox: number; oy: number; x: number; y: number; r: number } 
 type View = { screen(x: number, h: number, y: number, out: ScreenPoint): ScreenPoint; height: number };
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
+/** where a tag may go: above its pad, slid right or left past the warden, below, beside */
+const SPOTS = 6;
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
@@ -39,6 +41,10 @@ export function createOverlay(root: HTMLElement) {
   const pt: ScreenPoint = { x: 0, y: 0, on: false };
   const edge: ScreenPoint = { x: 0, y: 0, on: false };
   const torso: ScreenPoint = { x: 0, y: 0, on: false };
+  // per tag: four candidate spots (x, y each), the boxes placed so far, and who still needs a spot
+  const spots = new Float32Array(tags.length * SPOTS * 2);
+  const boxes = new Float32Array(tags.length * 4);
+  const order = new Int16Array(tags.length);
   let sizedFor = "";
 
   const show = (s: Slot, on: boolean) => {
@@ -78,17 +84,18 @@ export function createOverlay(root: HTMLElement) {
     }
     for (; b < bubbles.length; b++) show(bubbles[b], false);
 
-    // price tags: up off the pad's far edge, or down off its near edge when that
-    // spot would cover the warden, so the player always shows
+    // price tags: up off the pad's far edge. a tag that would cover the warden
+    // slides sideways past him, or goes below or beside the pad, taking the first spot that covers
+    // neither the warden nor a tag already placed, so the player always shows
     const me = w.agents[0];
     view.screen(me.x, 14, me.y, torso);
     const screenKey = `${cssW}x${cssH}`;
-    let n = 0;
+    let n = 0, placed = 0, waiting = 0;
     for (const p of l.pads) {
       if (n >= tags.length || !padVisible(w, p)) continue;
       view.screen(p.at.x, 2, p.at.y, pt);
       if (!pt.on) continue;
-      const s = tags[n++];
+      const k = n, s = tags[n++];
       const ready = w.rank >= (p.rank ?? 0);
       const price = ready ? String(p.cost - (w.paid[p.id] ?? 0)) : `lv ${p.rank}`;
       label(s, `${ready}:${price}:${p.label}`, () => {
@@ -103,19 +110,66 @@ export function createOverlay(root: HTMLElement) {
         s.w = s.el.offsetWidth;
         s.h = s.el.offsetHeight;
       }
-      const left = pt.x - s.w / 2;
+      // the candidate spots: above, above slid right or left of the warden, below, left, right
       view.screen(p.at.x, 2, p.at.y - PAD_HALF, edge);
-      const above = edge.y - s.h - GAP;
+      const c = k * SPOTS * 2, top = edge.y - s.h - GAP;
+      spots[c] = pt.x - s.w / 2;
+      spots[c + 1] = top;
+      spots[c + 2] = torso.x + CLEAR * 2;
+      spots[c + 3] = top;
+      spots[c + 4] = torso.x - CLEAR * 2 - s.w;
+      spots[c + 5] = top;
       view.screen(p.at.x, 2, p.at.y + PAD_HALF, edge);
-      const below = edge.y + GAP;
-      const covers = (top: number) =>
-        torso.x >= left - CLEAR && torso.x <= left + s.w + CLEAR && torso.y >= top - CLEAR && torso.y <= top + s.h + CLEAR;
-      const up = !covers(above), down = !covers(below);
-      move(s, left, up || !down ? above : below);
-      s.el.classList.toggle("faded", !up && !down);
+      spots[c + 6] = pt.x - s.w / 2;
+      spots[c + 7] = edge.y + GAP;
+      view.screen(p.at.x - PAD_HALF * 1.3, 2, p.at.y, edge);
+      spots[c + 8] = edge.x - s.w - GAP;
+      spots[c + 9] = pt.y - s.h / 2;
+      view.screen(p.at.x + PAD_HALF * 1.3, 2, p.at.y, edge);
+      spots[c + 10] = edge.x + GAP;
+      spots[c + 11] = pt.y - s.h / 2;
+      if (coversWarden(spots[c], spots[c + 1], s)) order[waiting++] = k;
+      else keep(k, 0);
+    }
+    // the ones in the warden's way pick from what is left
+    for (let i = 0; i < waiting; i++) {
+      const k = order[i], s = tags[k];
+      let pick = -1;
+      for (let j = 1; j < SPOTS && pick < 0; j++) {
+        const x = spots[k * SPOTS * 2 + j * 2], y = spots[k * SPOTS * 2 + j * 2 + 1];
+        if (!coversWarden(x, y, s) && !hitsPlaced(x, y, s)) pick = j;
+      }
+      if (pick < 0)
+        for (let j = 1; j < SPOTS && pick < 0; j++) if (!coversWarden(spots[k * SPOTS * 2 + j * 2], spots[k * SPOTS * 2 + j * 2 + 1], s)) pick = j;
+      keep(k, pick < 0 ? 0 : pick);
+      s.el.classList.toggle("faded", pick < 0);
     }
     sizedFor = screenKey;
     for (; n < tags.length; n++) show(tags[n], false);
+
+    function coversWarden(x: number, y: number, s: Slot) {
+      return torso.x >= x - CLEAR && torso.x <= x + s.w + CLEAR && torso.y >= y - CLEAR && torso.y <= y + s.h + CLEAR;
+    }
+    function hitsPlaced(x: number, y: number, s: Slot) {
+      for (let i = 0; i < placed; i++) {
+        const b = i * 4;
+        if (x < boxes[b] + boxes[b + 2] && x + s.w > boxes[b] && y < boxes[b + 1] + boxes[b + 3] && y + s.h > boxes[b + 1]) return true;
+      }
+      return false;
+    }
+    function keep(k: number, j: number) {
+      // a tag near the edge of the play area stays whole, inside it
+      const s = tags[k];
+      const x = Math.max(0, Math.min(cssW - s.w, spots[k * SPOTS * 2 + j * 2]));
+      const y = Math.max(0, Math.min(cssH - s.h, spots[k * SPOTS * 2 + j * 2 + 1]));
+      move(s, x, y);
+      if (j === 0) s.el.classList.remove("faded");
+      const b = placed++ * 4;
+      boxes[b] = x;
+      boxes[b + 1] = y;
+      boxes[b + 2] = s.w;
+      boxes[b + 3] = s.h;
+    }
 
     // a full line over the warden; no beds over the desk
     const isFull = followers(w, me).length >= w.lineMax;
