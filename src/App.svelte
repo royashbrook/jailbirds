@@ -93,6 +93,7 @@
     past.clear();
     thumb = null;
     keys.clear();
+    tapped.clear();
     save();
     sync();
   }
@@ -102,13 +103,17 @@
   let thumb: Thumb = null;
   let pointer: number | null = null;
   const keys = new Set<string>();
+  // a key pressed and let go between two frames still counts for the next one:
+  // on a slow device a quick tap must not vanish
+  const tapped = new Set<string>();
+  const held = (k: string) => keys.has(k) || tapped.has(k);
   function stick(): Stick {
     if (thumb) {
       const dx = (thumb.x - thumb.ox) / STICK, dy = (thumb.y - thumb.oy) / STICK;
       return { x: dx, y: dy };
     }
-    const x = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
-    const y = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+    const x = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+    const y = (held("down") ? 1 : 0) - (held("up") ? 1 : 0);
     return { x, y };
   }
   function local(e: PointerEvent) {
@@ -150,12 +155,16 @@
     if (!k || sheet) return;
     e.preventDefault();
     keys.add(k);
+    tapped.add(k);
   }
   function keyup(e: KeyboardEvent) {
     const k = KEYS[e.key];
     if (k) keys.delete(k);
   }
-  const blur = () => keys.clear();
+  const blur = () => {
+    keys.clear();
+    tapped.clear();
+  };
 
   // the 3d view fills its space; the renderer caps the pixel ratio at 2
   let view: ReturnType<typeof createView> | null = null;
@@ -182,11 +191,14 @@
     last = now;
     if (!sheet && !document.hidden) {
       acc += dt;
+      const stepsBefore = world.steps;
       while (acc >= DT) {
         remember(world, past);
         step(world, LEVELS, stick());
         acc -= DT;
       }
+      // a tap has had its frame of steps once any step ran
+      if (world.steps !== stepsBefore) tapped.clear();
       sinceSave += dt;
       if (sinceSave > 2) {
         sinceSave = 0;

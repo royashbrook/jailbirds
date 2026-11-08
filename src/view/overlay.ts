@@ -13,8 +13,12 @@ type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
+/** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
+const PAD_HALF = 20;
+const GAP = 3;
+const CLEAR = 4;
 
-interface Slot { el: HTMLElement; x: number; y: number; shown: boolean; key: string }
+interface Slot { el: HTMLElement; x: number; y: number; shown: boolean; key: string; w: number; h: number }
 
 export function createOverlay(root: HTMLElement) {
   const make = (cls: string, html = ""): Slot => {
@@ -23,7 +27,7 @@ export function createOverlay(root: HTMLElement) {
     el.innerHTML = html;
     el.hidden = true;
     root.append(el);
-    return { el, x: NaN, y: NaN, shown: false, key: "" };
+    return { el, x: NaN, y: NaN, shown: false, key: "", w: 0, h: 0 };
   };
   const bubbles = Array.from({ length: 64 }, () => make("bubble"));
   const tags = Array.from({ length: 40 }, () => make("tag", "<b></b><span></span>"));
@@ -33,6 +37,9 @@ export function createOverlay(root: HTMLElement) {
   const arrow = make("alert-arrow", "<i></i><b>!</b>");
   const stick = make("stick", "<i></i>");
   const pt: ScreenPoint = { x: 0, y: 0, on: false };
+  const edge: ScreenPoint = { x: 0, y: 0, on: false };
+  const torso: ScreenPoint = { x: 0, y: 0, on: false };
+  let sizedFor = "";
 
   const show = (s: Slot, on: boolean) => {
     if (s.shown !== on) {
@@ -71,7 +78,11 @@ export function createOverlay(root: HTMLElement) {
     }
     for (; b < bubbles.length; b++) show(bubbles[b], false);
 
-    // price tags
+    // price tags: up off the pad's far edge, or down off its near edge when that
+    // spot would cover the warden, so the player always shows
+    const me = w.agents[0];
+    view.screen(me.x, 14, me.y, torso);
+    const screenKey = `${cssW}x${cssH}`;
     let n = 0;
     for (const p of l.pads) {
       if (n >= tags.length || !padVisible(w, p)) continue;
@@ -84,14 +95,29 @@ export function createOverlay(root: HTMLElement) {
         s.el.classList.toggle("locked", !ready);
         s.el.firstElementChild!.textContent = price;
         s.el.lastElementChild!.textContent = p.label ?? "";
+        s.w = 0;
       });
-      move(s, pt.x, pt.y);
       show(s, true);
+      // measure once per text and per screen size (the css shrinks tags on small screens)
+      if (!s.w || sizedFor !== screenKey) {
+        s.w = s.el.offsetWidth;
+        s.h = s.el.offsetHeight;
+      }
+      const left = pt.x - s.w / 2;
+      view.screen(p.at.x, 2, p.at.y - PAD_HALF, edge);
+      const above = edge.y - s.h - GAP;
+      view.screen(p.at.x, 2, p.at.y + PAD_HALF, edge);
+      const below = edge.y + GAP;
+      const covers = (top: number) =>
+        torso.x >= left - CLEAR && torso.x <= left + s.w + CLEAR && torso.y >= top - CLEAR && torso.y <= top + s.h + CLEAR;
+      const up = !covers(above), down = !covers(below);
+      move(s, left, up || !down ? above : below);
+      s.el.classList.toggle("faded", !up && !down);
     }
+    sizedFor = screenKey;
     for (; n < tags.length; n++) show(tags[n], false);
 
     // a full line over the warden; no beds over the desk
-    const me = w.agents[0];
     const isFull = followers(w, me).length >= w.lineMax;
     if (isFull) {
       view.screen(me.x, view.height + 16, me.y, pt);

@@ -1,9 +1,11 @@
 // the jail in 3d. reads the world (never changes it), blends positions between
 // the last two fixed steps, and draws through the skin: the skin says what a
 // character is made of and how it moves, this file puts it on screen. a 3/4
-// camera looks down at about 55 degrees and follows the warden. everything that
-// comes in numbers (body parts, trays, coins) is one instanced mesh, and nothing
-// is allocated per frame once it is running.
+// camera looks down at 50 degrees and follows the warden. everything that comes
+// in numbers (body parts, trays, coins) is one instanced mesh. the per-character
+// work reuses one set of scratch matrices, colours and a pose; a few small
+// allocations remain per frame (station lookups, closures), and the still parts
+// of the jail are rebuilt only when something is bought.
 import {
   BoxGeometry, CanvasTexture, Color, CylinderGeometry, Group, HemisphereLight, DirectionalLight, InstancedMesh,
   Line, LineBasicMaterial, BufferGeometry, Float32BufferAttribute, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
@@ -23,8 +25,14 @@ export const remember = (w: World, into: Past): Past => {
     if (p) (p.x = a.x), (p.y = a.y), (p.walk = a.walk);
     else into.set(a.id, { x: a.x, y: a.y, walk: a.walk });
   }
+  forget(w, into);
   return into;
 };
+/** drop what is kept by id for anyone no longer in the world (released, or a new game) */
+export function forget(w: World, kept: Map<number, unknown>) {
+  if (kept.size <= w.agents.length) return;
+  for (const id of kept.keys()) if (!w.agents.some((a) => a.id === id)) kept.delete(id);
+}
 
 const MAX_CHARS = 64;
 const MAX_TRAYS = 160;
@@ -261,6 +269,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     const fx = mp ? mp.x + (me.x - mp.x) * alpha : me.x, fy = mp ? mp.y + (me.y - mp.y) * alpha : me.y;
     frame(l, { x: fx, y: fy }, dt);
 
+    forget(w, headings);
     for (const p of partList) p.used = 0;
     tn = fn = bn = cn = ln = pn = 0;
 

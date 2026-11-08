@@ -14,6 +14,10 @@ const STRIDE = 22;
 const TAU = Math.PI * 2;
 
 const hex = (s: string) => parseInt(s.slice(1), 16);
+// how the whole body sits, shared rather than made fresh every frame
+const STANDING = { lift: 0, pitch: 0 } as const;
+const SITTING = { lift: 1, pitch: 0 } as const;
+const LYING = { lift: 9, pitch: -Math.PI / 2 } as const;
 /** heads come in a few warm tones */
 const HEADS = ["#f1d3a8", "#e6bb8e", "#d49f74", "#f6dcc0", "#c58b5f", "#a8714a"].map(hex);
 const GREY = hex("#b9bec7");
@@ -98,7 +102,7 @@ export const model: Model = {
   } satisfies Record<Part, unknown>,
   perCharacter: { body: 1, head: 1, limb: 4, hat: 2 },
   pose,
-  root: (p) => (p.action === "sleep" ? { lift: 9, pitch: -Math.PI / 2 } : p.action === "sit" || p.action === "eat" ? { lift: 1, pitch: 0 } : { lift: 0, pitch: 0 }),
+  root: (p) => (p.action === "sleep" ? LYING : p.action === "sit" || p.action === "eat" ? SITTING : STANDING),
   carryAt: { forward: 9, up: 21, step: 2.6 },
   height: HIP + BODY_H + HEAD_R * 2 + 4,
 };

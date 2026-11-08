@@ -64,7 +64,7 @@ export interface Model {
   /** lay out one character's parts for this pose */
   pose(p: Pose, put: Put): void;
   /** the whole body: how high it lifts and how it tips (lying in a bunk) */
-  root(p: Pose): { lift: number; pitch: number };
+  root(p: Pose): { readonly lift: number; readonly pitch: number };
   /** where a carried stack sits, in front of the chest */
   carryAt: { forward: number; up: number; step: number };
   /** how tall a character stands, for bubbles over heads */

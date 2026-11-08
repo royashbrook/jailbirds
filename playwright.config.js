@@ -7,7 +7,8 @@ const phone = devices["iPhone 13"];
 export default defineConfig({
   testDir: "./tests",
   testMatch: "**/*.spec.js",
-  timeout: 60000,
+  // slow frames on purpose (tests/fixtures.js) make every test take longer in wall time
+  timeout: process.env.SLOW_FRAMES || process.env.THROTTLE ? 300000 : 60000,
   workers: 1,
   use: {
     baseURL: url,

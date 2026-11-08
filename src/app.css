@@ -466,8 +466,6 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: -46px 0 0 0;
-  translate: -50% 0;
   padding: 2px 8px 3px;
   border-radius: 10px;
   background: #ffffff;
@@ -492,6 +490,9 @@ a {
 .tag span {
   font-size: 10px;
   font-weight: 700;
+}
+.tag.faded {
+  opacity: 0.45;
 }
 .tag.locked {
   border-color: #9b95a3;
@@ -593,10 +594,10 @@ a {
     animation: none;
   }
 }
-/* a phone: smaller price tags, so they do not crowd the scene */
-@media (max-width: 500px) {
+/* a phone either way up (a short side under 500px): smaller price tags, so they
+   do not crowd the scene */
+@media (max-width: 500px), (max-height: 500px) {
   .tag {
-    margin-top: -36px;
     padding: 1px 6px 2px;
     border-radius: 8px;
     font-size: 12px;
