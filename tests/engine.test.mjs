@@ -153,6 +153,11 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   // whoever wanted a shower on the way joined too, up to the line's size
   const led = line(w).filter((b) => wants(L, b, true) === "wash");
   assert.ok(led.length > 0);
+  // the wrong room does nothing: through the canteen, nobody who wants a shower sits down
+  w.stock.table1 = 3;
+  go(w, station("table1").at);
+  wait(w, 0.5);
+  assert.ok(led.every((b) => b.state === "follow"), "a shower bubble is not a meal");
   go(w, { x: 600, y: 470 });
   wait(w, 0.5);
   assert.equal(led[0].station, "showers");
@@ -271,6 +276,9 @@ test("a squabble raises a high alert; standing there settles it and pays", () =>
   assert.equal(count(w, "fight"), 2);
   assert.equal(say(w), "uh oh, a squabble! run over and calm it down");
   const cash = w.coins + w.floor.length;
+  // it waits for the warden to come
+  wait(w, L.fights.settle + 1);
+  assert.ok(w.alert, "nobody there, still squabbling");
   go(w, w.alert);
   wait(w, L.fights.settle + 0.2);
   assert.equal(w.alert, null);
