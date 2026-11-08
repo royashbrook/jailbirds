@@ -1,84 +1,83 @@
-// what a skin is: everything that gets drawn. the engine hands over plain data
-// (rooms, props, a pose per character); the skin decides what it looks like.
-// swapping skins changes no sim code and no saved game.
-import type { AgentKind, Mood, PadDef, Pt, Rect, RoomDef } from "../engine/types.ts";
+// what a skin is: the look. the engine hands over plain data; the skin says what
+// colour everything is and how a character is built and moves. the 3d view draws
+// whatever the skin describes, so a new skin changes no sim code and no save.
+import type { BufferGeometry } from "three";
+import type { AgentKind, Mood } from "../engine/types.ts";
 
 export interface Palette {
+  background: string;
   hall: string;
-  hallLine: string;
   /** room floors by the room's look */
   floors: Record<string, string>;
   locked: string;
   wall: string;
-  bars: string;
   wood: string;
   metal: string;
   porcelain: string;
+  bed: string;
+  pillow: string;
   road: string;
   roadLine: string;
   spot: string;
   pad: string;
+  padLocked: string;
   padFill: string;
-  ink: string;
-  inkDim: string;
   label: string;
-  stick: string;
-  /** agent colours, one per look */
-  looks: string[];
+  coin: string;
+  tray: string;
+  food: string[];
+  poop: string;
+  puddle: string;
+  bus: string;
+  glass: string;
+  dark: string;
 }
 
-/** one character, ready to draw: where, which way, how far into its stride */
+/** what a character is doing, as the view works it out from the world */
+export type Action = "stand" | "walk" | "sit" | "eat" | "sleep" | "clean" | "fight" | "wash";
+
+/** one character, ready to draw. it is reused from frame to frame: never keep it */
 export interface Pose {
   kind: AgentKind;
-  x: number;
-  y: number;
-  face: 1 | -1;
-  moving: boolean;
+  action: Action;
   /** distance walked: the walk cycle turns on this, so feet never slide */
   walk: number;
-  /** seconds, for idle breathing and blinking */
+  /** seconds, for breathing and fidgets */
   t: number;
   look: number;
+  /** through intake: in uniform */
   uniform: boolean;
   carry: number;
   mood: Mood;
-  /** the need it is having met right now, if any */
-  using: string | null;
-  fighting: boolean;
+}
+
+export type Part = "body" | "head" | "limb" | "hat";
+/** place one part: position in the character's own space (feet at the origin,
+ * facing +z), rotation as pitch (x), yaw (y), roll (z), a scale and a colour */
+export type Put = (part: Part, x: number, y: number, z: number, pitch: number, yaw: number, roll: number, sx: number, sy: number, sz: number, colour: number) => void;
+
+export interface Model {
+  /** each part's shape, built once */
+  parts: Record<Part, () => BufferGeometry>;
+  /** how many of each part one character can use at most */
+  perCharacter: Record<Part, number>;
+  /** lay out one character's parts for this pose */
+  pose(p: Pose, put: Put): void;
+  /** the whole body: how high it lifts and how it tips (lying in a bunk) */
+  root(p: Pose): { readonly lift: number; readonly pitch: number };
+  /** where a carried stack sits, in front of the chest */
+  carryAt: { forward: number; up: number; step: number };
+  /** how tall a character stands, for bubbles over heads */
+  height: number;
 }
 
 export interface Skin {
   id: string;
   name: string;
-  /** the word for the inmates in the hints */
+  /** the word for the inmates in the hints and the about sheet */
   noun: string;
   /** what two of them shout when they squabble */
   squabble: string;
   palette(dark: boolean): Palette;
-  character(ctx: CanvasRenderingContext2D, p: Pose, pal: Palette): void;
-  hall(ctx: CanvasRenderingContext2D, size: { w: number; h: number }, roadY: number, pal: Palette): void;
-  room(ctx: CanvasRenderingContext2D, room: RoomDef, open: boolean, pal: Palette): void;
-  walls(ctx: CanvasRenderingContext2D, walls: Rect[], pal: Palette): void;
-  cellDoor(ctx: CanvasRenderingContext2D, from: Pt, to: Pt, pal: Palette): void;
-  roomLabel(ctx: CanvasRenderingContext2D, room: RoomDef, pal: Palette): void;
-  prop(ctx: CanvasRenderingContext2D, look: string, r: Rect, pal: Palette, stock: number): void;
-  seat(ctx: CanvasRenderingContext2D, look: string, at: Pt, open: boolean, pal: Palette): void;
-  spot(ctx: CanvasRenderingContext2D, at: Pt, pal: Palette): void;
-  item(ctx: CanvasRenderingContext2D, kind: string, x: number, y: number): void;
-  mess(ctx: CanvasRenderingContext2D, kind: string, x: number, y: number, left: number, t: number): void;
-  coin(ctx: CanvasRenderingContext2D, x: number, y: number): void;
-  pad(ctx: CanvasRenderingContext2D, pad: PadDef, paid: number, ready: boolean, pal: Palette): void;
-  bus(ctx: CanvasRenderingContext2D, x: number, y: number, full: boolean, pal: Palette): void;
-  stop(ctx: CanvasRenderingContext2D, at: Pt, pal: Palette): void;
-  /** a need bubble; need "done" is the served-their-time bubble */
-  bubble(ctx: CanvasRenderingContext2D, need: string, x: number, y: number, pal: Palette): void;
-  gate(ctx: CanvasRenderingContext2D, at: Pt, beep: boolean, pal: Palette): void;
-  pile(ctx: CanvasRenderingContext2D, at: Pt, coins: number): void;
-  skates(ctx: CanvasRenderingContext2D, at: Pt, t: number): void;
-  rainbow(ctx: CanvasRenderingContext2D, trail: Pt[]): void;
-  /** a word over someone's head: full!, no beds! */
-  shout(ctx: CanvasRenderingContext2D, word: string, x: number, y: number, warn: boolean): void;
-  burst(ctx: CanvasRenderingContext2D, word: string, x: number, y: number, t: number): void;
-  /** the off-screen arrow to trouble, in screen pixels, pointing along `angle` */
-  marker(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, t: number): void;
+  model: Model;
 }

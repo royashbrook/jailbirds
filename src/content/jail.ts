@@ -25,7 +25,7 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     { id: "showers", look: "washroom", rect: { x: 500, y: 310, w: 200, h: 330 }, doors: [{ side: "w", at: 120, width: 70 }], label: "showers" },
     {
       id: "intake", look: "intake", rect: { x: 20, y: 560, w: 240, h: 200 },
-      doors: [{ side: "n", at: 90, width: 60 }, { side: "s", at: 90, width: 60 }], label: "intake", labelAt: { x: 218, y: 748 },
+      doors: [{ side: "n", at: 90, width: 60 }, { side: "s", at: 90, width: 60 }], label: "intake", labelAt: { x: 218, y: 736 },
     },
     {
       id: "release", look: "release", rect: { x: 500, y: 680, w: 200, h: 120 },

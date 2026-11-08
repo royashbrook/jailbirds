@@ -1,104 +1,163 @@
-// peg people: a capsule body and a round head, no face, like wooden toy pegs.
-// arms and legs swing opposite as they walk; arms go up to hold a stack.
-import type { Pose, Skin } from "./types.ts";
-import { PEGS } from "./palettes.ts";
-import { OUTLINE, circle, rounded, scenery, stripes, tray } from "./scenery.ts";
+// peg people: a capsule body, a round head with no face, little stubby arms and
+// legs. grey until intake, orange after; the warden in blue with a cap, each kind
+// of helper its own colour and hat. every pose is worked out here from the
+// character's state and how far it has walked, so feet plant instead of sliding.
+import { CapsuleGeometry, CylinderGeometry, SphereGeometry } from "three";
+import type { Model, Palette, Part, Pose, Put, Skin } from "./types.ts";
 
-const HEAD = "#f1d3a8";
-const ACTORS = {
-  player: { body: "#3f5fa8", hat: "#22325a" },
-  carrier: { body: "#f4f1ea", hat: "#ffffff" },
-  cleaner: { body: "#3fa68f", hat: "#25695b" },
-  clerk: { body: "#d98a3d", hat: "#8a4f18" },
-  escort: { body: "#6b778c", hat: "#323d50" },
-} as const;
-const STRIDE = 24;
+const HIP = 6;
+const BODY_R = 5.2;
+const BODY_LEN = 6;
+const BODY_H = BODY_LEN + BODY_R * 2;
+const HEAD_R = 4.6;
+const STRIDE = 22;
+const TAU = Math.PI * 2;
 
-function limb(ctx: CanvasRenderingContext2D, x: number, y: number, len: number, w: number, angle: number, fill: string) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  rounded(ctx, -w / 2, -w / 2, w, len + w / 2, w / 2, fill, OUTLINE, 1.3);
-  ctx.restore();
-}
+const hex = (s: string) => parseInt(s.slice(1), 16);
+// how the whole body sits, shared rather than made fresh every frame
+const STANDING = { lift: 0, pitch: 0 } as const;
+const SITTING = { lift: 1, pitch: 0 } as const;
+const LYING = { lift: 9, pitch: -Math.PI / 2 } as const;
+/** heads come in a few warm tones */
+const HEADS = ["#f1d3a8", "#e6bb8e", "#d49f74", "#f6dcc0", "#c58b5f", "#a8714a"].map(hex);
+const GREY = hex("#b9bec7");
+const ORANGE = hex("#ff8a3d");
+const BEANIE = hex("#e8672a");
+const CROSS = hex("#e9877a");
+const DRESS: Record<string, { body: number; hat: number }> = {
+  player: { body: hex("#3f6fd8"), hat: hex("#22325a") },
+  escort: { body: hex("#6b778c"), hat: hex("#2f3a4d") },
+  carrier: { body: hex("#f4f1ea"), hat: hex("#ffffff") },
+  clerk: { body: hex("#e0a040"), hat: hex("#2f8f6a") },
+  cleaner: { body: hex("#2fb39a"), hat: hex("#1f6f60") },
+};
 
-function character(ctx: CanvasRenderingContext2D, p: Pose, pal: { looks: string[] }) {
-  const actor = p.kind === "agent" ? null : ACTORS[p.kind];
-  const s = p.kind === "player" ? 1.25 : actor ? 1.12 : 1;
-  const colour = actor?.body ?? pal.looks[p.look % pal.looks.length];
-  const f = p.face;
-  const a = (p.walk / STRIDE) * Math.PI * 2;
-  const swing = p.moving ? Math.sin(a) : 0;
-  const bob = p.moving ? Math.abs(Math.cos(a)) * 1.6 * s : p.using ? Math.abs(Math.sin(p.t * 6)) * 1.2 : 0;
-  const breathe = p.moving ? 0 : Math.sin(p.t * 2.2 + p.look) * 0.5;
-  const bw = 15 * s, bh = 17 * s, hr = 6.5 * s;
-  const x = p.x + (p.fighting ? Math.sin(p.t * 40) * 2 : 0), foot = p.y + 10 * s;
-  const hip = foot - 7 * s - bob;
-  const top = hip - bh + 4 * s - breathe;
+function pose(p: Pose, put: Put) {
+  const s = p.kind === "player" ? 1.15 : p.kind === "agent" ? 1 : 1.08;
+  const dress = DRESS[p.kind];
+  const body = dress?.body ?? (p.uniform ? ORANGE : GREY);
+  const head = p.mood === "cross" ? CROSS : HEADS[p.look % HEADS.length];
+  const a = (p.walk / STRIDE) * TAU;
+  const walking = p.action === "walk";
+  const swing = walking ? Math.sin(a) : 0;
+  const bob = walking ? Math.abs(Math.cos(a)) * 1.3 : 0;
+  const breathe = p.action === "sleep" ? Math.sin(p.t * 1.3) * 0.03 : walking ? 0 : Math.sin(p.t * 2.2) * 0.02;
+  const jitter = p.action === "fight" ? Math.sin(p.t * 38) * 1.2 : 0;
+  const sitting = p.action === "sit" || p.action === "eat";
+  const lean = walking ? 0.12 : p.action === "clean" ? 0.25 : 0;
+  const hip = (HIP + bob) * s;
 
-  ctx.beginPath();
-  ctx.ellipse(p.x, foot, bw * 0.55, 3.5 * s, 0, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.13)";
-  ctx.fill();
-
-  // legs from the hip, swinging opposite each other
-  for (const side of [-1, 1]) limb(ctx, x + side * 3.5 * s, hip, 6 * s, 4.5 * s, -swing * side * 0.55 * f, actor ? "#4a4f5c" : "#5d6475");
-
-  // the back arm, behind the body
-  const shoulder = top + 5 * s;
-  const holding = p.carry > 0 || p.fighting;
-  const armAngle = (side: number) => (holding ? Math.PI * 0.95 * -f * 0.9 : swing * side * 0.6 * f + f * 0.08);
-  limb(ctx, x - f * bw * 0.42, shoulder, 8 * s, 4.2 * s, armAngle(1), colour);
-
-  // body: a capsule, striped once through intake
-  ctx.save();
-  ctx.beginPath();
-  ctx.roundRect(x - bw / 2, top, bw, bh, bw / 2.2);
-  ctx.clip();
-  if (p.uniform) stripes(ctx, x - bw / 2, top, bw, bh, 2.3 * s);
-  else {
-    ctx.fillStyle = colour;
-    ctx.fillRect(x - bw / 2, top, bw, bh);
+  // legs from the hips: swinging opposite, out in front when sitting
+  for (const side of [-1, 1]) {
+    const pitch = sitting ? -1.45 : p.action === "sleep" ? 0 : -swing * 0.9 * side;
+    put("limb", side * 2.5 * s + jitter, hip, 0, pitch, 0, 0, s, s, s, dress ? 0x4a4f5c : 0x5d6475);
   }
-  ctx.restore();
-  rounded(ctx, x - bw / 2, top, bw, bh, bw / 2.2, "transparent", OUTLINE, 1.6);
+  // the body, leaning into the walk, breathing when still
+  const top = hip + BODY_H * s * (1 + breathe);
+  put("body", jitter, hip + (BODY_H * s * (1 + breathe)) / 2, 0, lean, 0, 0, s, s * (1 + breathe), s, body);
+  // the head, a little forward with the lean
+  const hy = top + HEAD_R * s * 0.8, hz = Math.sin(lean) * BODY_H * s * 0.9;
+  put("head", jitter, hy, hz, 0, 0, 0, s, s, s, head);
 
-  // head: round, no face. it turns a touch toward where it is going
-  const hx = x + f * 0.8 * s, hy = top - hr + 1.5 * s;
-  circle(ctx, hx, hy, hr, HEAD, OUTLINE, 1.6);
-  if (p.mood === "cross") circle(ctx, hx, hy, hr * 0.45, "rgba(230, 90, 90, 0.45)");
-
-  // the front arm
-  limb(ctx, x + f * bw * 0.42, shoulder, 8 * s, 4.2 * s, armAngle(-1), colour);
+  // arms from the shoulders
+  const shoulder = top - 4 * s, sz = Math.sin(lean) * BODY_H * s * 0.7;
+  for (const side of [-1, 1]) {
+    let pitch = swing * 0.75 * side, yaw = 0, roll = side * 0.18;
+    if (p.carry > 0) pitch = -1.35;
+    else if (p.action === "eat") pitch = side > 0 ? -1.6 - Math.abs(Math.sin(p.t * 5)) * 0.8 : -0.9;
+    else if (p.action === "clean") (pitch = -0.8), (yaw = Math.sin(p.t * 8) * 0.6);
+    else if (p.action === "fight") pitch = -2.5 + Math.sin(p.t * 20 + side) * 0.5;
+    else if (p.action === "wash") (pitch = -2.9), (roll = side * (0.5 + Math.sin(p.t * 9) * 0.3));
+    else if (p.action === "sleep") pitch = 0;
+    else if (!walking) pitch = Math.sin(p.t * 1.6 + side) * 0.05;
+    put("limb", side * (BODY_R + 1.2) * s + jitter, shoulder, sz, pitch, yaw, roll, s * 0.85, s * 0.85, s * 0.85, body);
+  }
 
   // hats
-  if (actor) {
-    if (p.kind === "carrier") {
-      circle(ctx, hx - hr * 0.4, hy - hr * 0.95, hr * 0.48, actor.hat, OUTLINE, 1.2);
-      circle(ctx, hx + hr * 0.4, hy - hr * 0.95, hr * 0.48, actor.hat, OUTLINE, 1.2);
-      circle(ctx, hx, hy - hr * 1.15, hr * 0.55, actor.hat, OUTLINE, 1.2);
-      rounded(ctx, hx - hr * 0.8, hy - hr * 0.85, hr * 1.6, hr * 0.42, 2, actor.hat, OUTLINE, 1.2);
-    } else if (p.kind === "cleaner") {
-      rounded(ctx, hx - hr, hy - hr * 0.55, hr * 2, hr * 0.42, 2, actor.hat);
-    } else {
-      ctx.beginPath();
-      ctx.roundRect(hx - hr * 0.95, hy - hr * 1.15, hr * 1.9, hr * 0.8, [hr * 0.6, hr * 0.6, 0, 0]);
-      ctx.fillStyle = actor.hat;
-      ctx.fill();
-      ctx.fillRect(hx - hr * 0.3 + f * hr * 0.4, hy - hr * 0.45, hr * 1.3, hr * 0.25);
-      if (p.kind === "player") circle(ctx, hx, hy - hr * 0.78, hr * 0.2, "#ffd23f");
-    }
+  const ht = hy + HEAD_R * s * 0.7;
+  if (p.kind === "player" || p.kind === "escort") {
+    put("hat", jitter, ht, hz, 0, 0, 0, 4.9 * s, 2.6 * s, 4.9 * s, dress.hat);
+    put("hat", jitter, ht - 1.1 * s, hz + 3.6 * s, 0, 0, 0, 3.2 * s, 0.6 * s, 2.6 * s, dress.hat);
+  } else if (p.kind === "carrier") {
+    put("hat", jitter, ht + 2.2 * s, hz, 0, 0, 0, 4.1 * s, 5 * s, 4.1 * s, dress.hat);
+    put("hat", jitter, ht + 5 * s, hz, 0, 0, 0, 5 * s, 2.4 * s, 5 * s, dress.hat);
+  } else if (p.kind === "clerk") {
+    put("hat", jitter, ht - 1.2 * s, hz, 0, 0, 0, 4.85 * s, 1.4 * s, 4.85 * s, dress.hat);
+    put("hat", jitter, ht - 1.6 * s, hz + 3.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.8 * s, dress.hat);
+  } else if (p.kind === "cleaner") {
+    put("hat", jitter, ht - 1.4 * s, hz, 0, 0, 0, 4.8 * s, 1.6 * s, 4.8 * s, dress.hat);
+  } else if (p.uniform) {
+    put("hat", jitter, ht - 0.6 * s, hz, 0, 0, 0, 4.7 * s, 2.2 * s, 4.7 * s, BEANIE);
   }
-
-  for (let k = 0; k < p.carry; k++) tray(ctx, x + f * 2, top - hr * 2 - 4 - k * 5);
 }
 
+export const model: Model = {
+  parts: {
+    body: () => new CapsuleGeometry(BODY_R, BODY_LEN, 6, 14),
+    head: () => new SphereGeometry(HEAD_R, 16, 12),
+    // a limb hangs from its top, so turning it swings it from the hip or shoulder
+    limb: () => new CapsuleGeometry(2, 3, 4, 8).translate(0, -3.5, 0),
+    // a unit cylinder, sized by each hat
+    hat: () => new CylinderGeometry(1, 1, 1, 16),
+  } satisfies Record<Part, unknown>,
+  perCharacter: { body: 1, head: 1, limb: 4, hat: 2 },
+  pose,
+  root: (p) => (p.action === "sleep" ? LYING : p.action === "sit" || p.action === "eat" ? SITTING : STANDING),
+  carryAt: { forward: 9, up: 21, step: 2.6 },
+  height: HIP + BODY_H + HEAD_R * 2 + 4,
+};
+
+const light: Palette = {
+  background: "#e6efe4",
+  hall: "#efe6d6",
+  floors: {
+    block: "#e4e0ee", cell: "#f0e3f5", canteen: "#ffe3c2", kitchen: "#dcedf4",
+    washroom: "#d2eef6", intake: "#f2e8cd", release: "#dcf1d6",
+  },
+  locked: "#b9b4ab",
+  wall: "#9aa6cf",
+  wood: "#d9a066",
+  metal: "#c5ced8",
+  porcelain: "#ffffff",
+  bed: "#8fb8ef",
+  pillow: "#ffffff",
+  road: "#a9adb7",
+  roadLine: "#ffffff",
+  spot: "#c3dbf2",
+  pad: "#2fa35f",
+  padLocked: "#9b95a3",
+  padFill: "#5fd08a",
+  label: "#7d6f5e",
+  coin: "#ffcf33",
+  tray: "#e8eef4",
+  food: ["#ff9f40", "#7ccf7c", "#ff6b6b"],
+  poop: "#8a5a3b",
+  puddle: "#6cc3f0",
+  bus: "#f2b84b",
+  glass: "#cfeeff",
+  dark: "#3a2e2b",
+};
+const dark: Palette = {
+  ...light,
+  background: "#1b1d24",
+  hall: "#3a3742",
+  floors: {
+    block: "#3d3a4a", cell: "#463f55", canteen: "#4d4136", kitchen: "#36434c",
+    washroom: "#324750", intake: "#47402f", release: "#33443a",
+  },
+  locked: "#25232b",
+  wall: "#7d88b0",
+  road: "#4a4d56",
+  roadLine: "#9a9da6",
+  label: "#c9bca9",
+  padLocked: "#7c7686",
+};
+
 export const pegs: Skin = {
-  ...scenery,
   id: "pegs",
   name: "peg people",
-  squabble: "hey!",
   noun: "inmates",
-  palette: (dark) => (dark ? PEGS.dark : PEGS.light),
-  character,
+  squabble: "hey!",
+  palette: (d) => (d ? dark : light),
+  model,
 };

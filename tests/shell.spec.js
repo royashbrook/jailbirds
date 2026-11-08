@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
+import { untilSim, waitFrames } from "./helpers.js";
 
 // the shell the house template guarantees: the ethos, the build on screen, an
 // update that waits for consent, and a jail that holds still while a sheet is open
@@ -54,11 +55,12 @@ test.describe("with no service worker in the way of the probe", () => {
 
 test("an open sheet holds the jail still", async ({ page }) => {
   await page.goto("/");
-  await expect.poll(() => state(page).then((s) => s.steps)).toBeGreaterThan(5);
+  await untilSim(page, (s) => s.steps > 5, 1, "the game to start");
   await page.click("#about");
   const before = (await state(page)).steps;
-  await page.waitForTimeout(500);
+  // frames keep coming while the sheet is open; the game does not move
+  await waitFrames(page, 5);
   expect((await state(page)).steps).toBe(before);
   await page.click("#close");
-  await expect.poll(() => state(page).then((s) => s.steps)).toBeGreaterThan(before);
+  await untilSim(page, (s) => s.steps > before, 1, "the game to move again");
 });

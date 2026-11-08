@@ -3,9 +3,9 @@
   import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
   import type { Stick, World } from "./engine/types.ts";
   import { LEVELS, WORDS, hintText } from "./content/jail.ts";
-  import { SKINS, skinById } from "./skins/index.ts";
-  import type { Palette, Skin } from "./skins/types.ts";
-  import { remember, render, type Past, type Thumb } from "./render.ts";
+  import { skinById } from "./skins/index.ts";
+  import { createView, remember, type Past } from "./view/view.ts";
+  import { createOverlay, type Thumb } from "./view/overlay.ts";
   import { readSlot, writeSlot } from "./lib/storage.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
@@ -19,14 +19,8 @@
   const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
   let world: World = restore(readSlot(SAVE), LEVELS) ?? create(LEVELS, 0, freshSeed());
   const level = () => LEVELS[world.level];
-  // the look: saved on its own, so a skin change never touches the game
-  const SKIN = "jailbirds:skin";
-  let skin = $state.raw<Skin>(skinById(readSlot(SKIN)));
-  function pickSkin(s: Skin) {
-    skin = s;
-    writeSlot(SKIN, s.id);
-    repaint();
-  }
+  // the look: one skin for now (peg people); the view draws whatever the skin describes
+  const skin = skinById(null);
 
   // what the screen watches; the world mutates in place
   let coins = $state(world.coins);
@@ -51,9 +45,11 @@
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(true);
-  let sheet = $state<"" | "about" | "settings" | "ios" | "restart">("");
+  let sheet = $state<"" | "about" | "ios" | "restart">("");
+  let noGl = $state(false);
 
   let canvasEl = $state<HTMLCanvasElement>();
+  let overlayEl = $state<HTMLDivElement>();
   let surfaceEl = $state<HTMLDivElement>();
   let dialog = $state<HTMLDialogElement>();
   $effect(() => {
@@ -65,6 +61,8 @@
     state: () => JSON.parse(JSON.stringify(world)) as World,
     skin: () => skin.id,
     rank: () => world.rank,
+    drawn: () => (view ? { webgl: true, frames, ...view.info() } : { webgl: false, frames }),
+    warden: () => (view ? view.where(world, { x: 0, y: 0, on: false }) : null),
   };
 
   function sync() {
@@ -92,9 +90,10 @@
 
   function restart() {
     world = create(LEVELS, 0, freshSeed());
-    past = null;
+    past.clear();
     thumb = null;
     keys.clear();
+    tapped.clear();
     save();
     sync();
   }
@@ -104,13 +103,17 @@
   let thumb: Thumb = null;
   let pointer: number | null = null;
   const keys = new Set<string>();
+  // a key pressed and let go between two frames still counts for the next one:
+  // on a slow device a quick tap must not vanish
+  const tapped = new Set<string>();
+  const held = (k: string) => keys.has(k) || tapped.has(k);
   function stick(): Stick {
     if (thumb) {
       const dx = (thumb.x - thumb.ox) / STICK, dy = (thumb.y - thumb.oy) / STICK;
       return { x: dx, y: dy };
     }
-    const x = (keys.has("right") ? 1 : 0) - (keys.has("left") ? 1 : 0);
-    const y = (keys.has("down") ? 1 : 0) - (keys.has("up") ? 1 : 0);
+    const x = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+    const y = (held("down") ? 1 : 0) - (held("up") ? 1 : 0);
     return { x, y };
   }
   function local(e: PointerEvent) {
@@ -152,30 +155,33 @@
     if (!k || sheet) return;
     e.preventDefault();
     keys.add(k);
+    tapped.add(k);
   }
   function keyup(e: KeyboardEvent) {
     const k = KEYS[e.key];
     if (k) keys.delete(k);
   }
-  const blur = () => keys.clear();
+  const blur = () => {
+    keys.clear();
+    tapped.clear();
+  };
 
-  // the canvas fills its space at the screen's real pixel density
-  let dpr = 1;
+  // the 3d view fills its space; the renderer caps the pixel ratio at 2
+  let view: ReturnType<typeof createView> | null = null;
+  let overlay: ReturnType<typeof createOverlay> | null = null;
   let cssW = 1;
   let cssH = 1;
   function fit() {
-    if (!canvasEl || !surfaceEl) return;
+    if (!surfaceEl) return;
     const box = surfaceEl.getBoundingClientRect();
-    dpr = Math.min(3, window.devicePixelRatio || 1);
     cssW = Math.max(1, box.width);
     cssH = Math.max(1, box.height);
-    canvasEl.width = Math.round(cssW * dpr);
-    canvasEl.height = Math.round(cssH * dpr);
+    view?.resize(cssW, cssH);
   }
 
   // real time in, fixed steps out. a hidden page or an open sheet holds the jail still.
-  let pal: Palette;
-  let past: Past | null = null;
+  const past: Past = new Map();
+  let frames = 0;
   let raf = 0;
   let last = 0;
   let acc = 0;
@@ -185,11 +191,14 @@
     last = now;
     if (!sheet && !document.hidden) {
       acc += dt;
+      const stepsBefore = world.steps;
       while (acc >= DT) {
-        past = remember(world);
+        remember(world, past);
         step(world, LEVELS, stick());
         acc -= DT;
       }
+      // a tap has had its frame of steps once any step ran
+      if (world.steps !== stepsBefore) tapped.clear();
       sinceSave += dt;
       if (sinceSave > 2) {
         sinceSave = 0;
@@ -197,8 +206,11 @@
       }
       sync();
     }
-    const ctx = canvasEl?.getContext("2d");
-    if (ctx && pal) render(ctx, world, level(), skin, pal, WORDS, dpr, cssW, cssH, past, sheet ? 1 : acc / DT, now, thumb);
+    if (view && overlay) {
+      view.render(world, level(), past, sheet ? 1 : acc / DT, now, dt);
+      overlay.update(world, level(), view, skin, WORDS, thumb, cssW, cssH);
+      frames++;
+    }
     raf = requestAnimationFrame(frame);
   }
   const visibility = () => {
@@ -226,24 +238,18 @@
     }
   }
 
-  /** a little line-up of a skin's characters for the picker */
-  function portrait(el: HTMLCanvasElement, s: Skin) {
-    const d = Math.min(3, window.devicePixelRatio || 1);
-    el.width = 132 * d;
-    el.height = 64 * d;
-    const ctx = el.getContext("2d")!;
-    ctx.setTransform(d * 1.5, 0, 0, d * 1.5, 0, 0);
-    const p = s.palette(dark?.matches ?? false);
-    const base = { moving: false, walk: 0, t: 1, carry: 0, mood: "ok" as const, using: null, fighting: false };
-    s.character(ctx, { ...base, kind: "player", x: 18, y: 26, face: 1, look: 0, uniform: false }, p);
-    s.character(ctx, { ...base, kind: "agent", x: 46, y: 28, face: -1, look: 1, uniform: true }, p);
-    s.character(ctx, { ...base, kind: "agent", x: 70, y: 28, face: -1, look: 2, uniform: false }, p);
-  }
-
   let observer: ResizeObserver | undefined;
   let dark: MediaQueryList | undefined;
-  const repaint = () => (pal = skin.palette(dark?.matches ?? false));
+  const repaint = () => view?.setDark(dark?.matches ?? false);
   onMount(() => {
+    // no webgl (an old browser, a locked-down device): the shell still works and says so
+    try {
+      if (canvasEl) view = createView(canvasEl, skin);
+      if (overlayEl) overlay = createOverlay(overlayEl);
+    } catch {
+      view = null;
+      noGl = true;
+    }
     install = installControl((v) => (installVisible = v), () => (sheet = "ios"));
     updates = updateControl(() => (updateReady = true));
     addEventListener("keydown", keydown);
@@ -265,6 +271,7 @@
     observer?.disconnect();
     dark?.removeEventListener("change", repaint);
     cancelAnimationFrame(raf);
+    view?.dispose();
     if (typeof removeEventListener === "function") {
       removeEventListener("keydown", keydown);
       removeEventListener("keyup", keyup);
@@ -306,6 +313,8 @@
     onlostpointercapture={up}
   >
     <canvas id="jail" bind:this={canvasEl}></canvas>
+    <div class="overlay" bind:this={overlayEl}></div>
+    {#if noGl}<p class="nogl" role="status">this browser cannot draw the jail in 3d</p>{/if}
     {#if boosted > 0}<div class="zoom" id="boost">zoom! {boosted}s</div>{/if}
     {#key cheerKey}{#if cheer}<div class="cheer" role="status">{cheer}</div>{/if}{/key}
   </div>
@@ -313,7 +322,6 @@
     <p class="tip" id="tip">{#if !saved}<span class="warn">this browser is not saving your jail</span>{:else}{tip}{/if}</p>
     <nav class="nav" aria-label="jailbirds">
       <button id="about" aria-label="menu and about" onclick={() => (sheet = "about")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>menu</button>
-      <button id="nav-settings" aria-label="settings" onclick={() => (sheet = "settings")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16M4 16h16" /><circle cx="9" cy="8" r="2.5" class="knob" /><circle cx="15" cy="16" r="2.5" class="knob" /></svg>settings</button>
       <button id="restart" aria-label="start over" onclick={() => (sheet = "restart")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" /><path d="M19.5 4v4h-4" /></svg>new jail</button>
     </nav>
   </footer>
@@ -327,11 +335,10 @@
       {#if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
-        <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get striped shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
+        <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop coins, and so do the desks.</p>
         <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
         <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
-        <button id="settings" onclick={() => (sheet = "settings")}>looks: {skin.name}</button>
         <p class="ethos">{ETHOS}</p>
         <p class="version">version {__APP_VERSION__}</p>
         <div class="row">
@@ -345,17 +352,6 @@
           <a href="https://royashbrook.com/agents" target="_blank" rel="noopener">ai</a>
           <span class="mark-tail"><span aria-hidden="true" class="mark-dot">·</span>
           <a href="https://github.com/sponsors/royashbrook" target="_blank" rel="noopener">sponsor me</a></span></p>
-      {:else if sheet === "settings"}
-        <h2>settings</h2>
-        <p class="hint">who lives in your jail? the game stays the same, only the look changes.</p>
-        <div class="skins">
-          {#each SKINS as s (s.id)}
-            <button id={`skin-${s.id}`} class="skin" class:now={s === skin} aria-pressed={s === skin} onclick={() => pickSkin(s)}>
-              <canvas use:portrait={s} aria-hidden="true"></canvas>
-              <span>{s.name}</span>
-            </button>
-          {/each}
-        </div>
       {:else if sheet === "restart"}
         <h2>start over?</h2>
         <p>your jail, your {skin.noun} and your coins all go away.</p>
