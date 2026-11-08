@@ -267,10 +267,10 @@ a {
 }
 .nav {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
-  max-width: 640px;
+  max-width: 480px;
   margin: 0 auto;
 }
 .nav svg .knob {
@@ -421,30 +421,177 @@ a {
 .warn {
   color: var(--warn);
 }
-/* the skin picker: a line-up of each look */
-.skins {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+/* over the 3d jail: plain html, placed by the view each frame */
+.overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
-.skin {
+.overlay > div {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+/* a need bubble: a white speech bubble with the thing they want */
+.bubble {
+  width: 34px;
+  height: 30px;
+  margin: -34px 0 0 -17px;
+  border-radius: 12px;
+  background: #ffffff no-repeat center / 22px 22px;
+  border: 2px solid #3a2e2b;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+}
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  bottom: -7px;
+  border: 5px solid transparent;
+  border-top-color: #3a2e2b;
+}
+.bubble[data-need="food"] {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M4%2011h16a8%208%200%200%201-16%200z%27%20fill%3D%27%23ff9f40%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M9%204v4M12%203v5M15%204v4%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20fill%3D%27none%27%2F%3E%3C%2Fsvg%3E");
+}
+.bubble[data-need="wash"] {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M12%203c4%205%206%208%206%2011a6%206%200%200%201-12%200c0-3%202-6%206-11z%27%20fill%3D%27%235cb8ee%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3C%2Fsvg%3E");
+}
+.bubble[data-need="done"] {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Ccircle%20cx%3D%278%27%20cy%3D%2712%27%20r%3D%274.5%27%20fill%3D%27%23ffd23f%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M12%2012h9M18%2012v3M21%2012v3%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");
+}
+/* a price tag stands up off its pad: the price, the thing, or a lock and a level */
+.tag {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  border: 3px solid transparent;
+  margin: -46px 0 0 0;
+  translate: -50% 0;
+  padding: 2px 8px 3px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 2px solid #2fa35f;
+  color: #3a2e2b;
+  font: 800 15px var(--font-display);
+  line-height: 1.05;
+  white-space: nowrap;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
 }
-.skin.now {
-  border-color: var(--accent);
+.tag b::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: var(--coin);
+  border: 1.5px solid var(--coin-edge);
+  vertical-align: -1px;
 }
-.skin canvas {
-  width: 132px;
-  max-width: 100%;
-  height: 64px;
+.tag span {
+  font-size: 10px;
+  font-weight: 700;
 }
-.hint {
+.tag.locked {
+  border-color: #9b95a3;
+  color: #6f6a75;
+}
+.tag.locked b::before {
+  border-radius: 2px 2px 3px 3px;
+  background: #9b95a3;
+  border-color: #6f6a75;
+}
+.shout {
+  margin: -14px 0 0 0;
+  translate: -50% 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #ffd23f;
+  border: 2px solid #3a2e2b;
+  color: #3a2e2b;
+  font: 900 14px var(--font-display);
+  white-space: nowrap;
+}
+.shout.warn {
+  background: #ff5a5a;
+  color: #ffffff;
+}
+.burst {
+  translate: -50% -50%;
+  padding: 10px 14px;
+  background: #ffe066;
+  color: #e5484d;
+  font: 900 16px var(--font-display);
+  clip-path: polygon(50% 0, 61% 30%, 95% 18%, 72% 45%, 100% 62%, 66% 66%, 75% 100%, 50% 76%, 25% 100%, 34% 66%, 0 62%, 28% 45%, 5% 18%, 39% 30%);
+  animation: wobble 0.25s ease-in-out infinite alternate;
+}
+@keyframes wobble {
+  to {
+    scale: 1.1;
+  }
+}
+.alert-arrow {
+  width: 0;
+  height: 0;
+}
+.alert-arrow i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border: 10px solid transparent;
+  border-left: 14px solid #ff5a5a;
+  transform-origin: 0 0;
+  transform: rotate(var(--turn, 90deg)) translate(20px, -10px);
+}
+.alert-arrow b {
+  position: absolute;
+  left: -16px;
+  top: -16px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ff5a5a;
+  border: 3px solid #ffffff;
+  color: #ffffff;
+  font: 900 18px var(--font-display);
+  animation: wobble 0.4s ease-in-out infinite alternate;
+}
+.stick {
+  width: 88px;
+  height: 88px;
+  margin: -44px 0 0 -44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  border: 2px solid rgba(58, 46, 43, 0.35);
+}
+.stick i {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(58, 46, 43, 0.45);
+  transform: var(--knob, none);
+}
+.nogl {
+  position: absolute;
+  inset: 40% 10% auto;
+  margin: 0;
+  text-align: center;
+  font-weight: 700;
   color: var(--ink-dim);
-  font-size: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .burst,
+  .alert-arrow b {
+    animation: none;
+  }
 }
 /* the build, small, like the rest of the house, with the jail's name under it */
 .corner {
