@@ -1,0 +1,53 @@
+name: Deploy jailbirds
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [jailbirds checks]
+    branches: [main]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: jailbirds-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # a late check for an old merge must never displace the newest release
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: RELEASE_BUILD=1 npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-test-results-deploy-${{ github.run_id }}
+          path: test-results/
+          retention-days: 14
+      - name: Refuse a superseded release
+        run: |
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Verify the live release receipt
+        # the artifact deployed above, not a rebuild, must be what the origin serves
+        run: node scripts/verify-live.mjs https://jailbirds.royashbrook.com "$(git rev-parse HEAD)"

@@ -1,0 +1,11 @@
+{
+  // jailbirds on its own origin, served as Cloudflare Workers static assets, the same
+  // pattern as the other house games. custom_domain provisions the DNS record and
+  // the cert, so the hostname is declared here rather than clicked into a dashboard.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jailbirds",
+  "account_id": "b13c1cf2483bdad430b91ae25126e984",
+  "compatibility_date": "2026-10-10",
+  "assets": { "directory": "./dist" },
+  "routes": [{ "pattern": "jailbirds.royashbrook.com", "custom_domain": true }]
+}
