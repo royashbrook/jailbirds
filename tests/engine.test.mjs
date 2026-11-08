@@ -1,15 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create, step, route, player, followers, stars, capacity, population, restore, hint, mood, DT, PLAYER_SPEED } from "../src/engine/sim.ts";
+import { readdir, readFile } from "node:fs/promises";
+import {
+  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT,
+} from "../src/engine/sim.ts";
 import { LEVELS, hintText } from "../src/content/jail.ts";
 
 const L = LEVELS[0];
 const station = (id) => L.stations.find((s) => s.id === id);
 const pad = (id) => L.pads.find((p) => p.id === id);
-const HALL = { x: 380, y: 700 };
+const desk = station("desk");
+const HALL = { x: 330, y: 540 };
 
 // drive the player like a thumb would: full stick along the way round the walls
-function go(w, to, cap = 60 * 30) {
+function go(w, to, cap = 60 * 40) {
   const p = player(w);
   const path = route(w, L, p, to);
   let still = 0;
@@ -20,8 +24,9 @@ function go(w, to, cap = 60 * 30) {
       path.shift();
       continue;
     }
-    const s = PLAYER_SPEED * DT, was = { x: p.x, y: p.y };
+    const s = w.speed * (w.boosted > 0 ? L.boost.mult : 1) * DT, was = { x: p.x, y: p.y };
     step(w, LEVELS, d < s ? { x: dx / s, y: dy / s } : { x: dx / d, y: dy / d });
+    if (w.level !== 0) return;
     still = Math.hypot(p.x - was.x, p.y - was.y) < 0.01 ? still + 1 : 0;
     if (still > 30) assert.fail(`stuck at ${p.x.toFixed(0)},${p.y.toFixed(0)} on the way to ${to.x},${to.y}`);
   }
@@ -39,89 +44,125 @@ const until = (w, done, seconds, what) => {
 };
 const inmates = (w) => w.agents.filter((a) => a.kind === "agent");
 const count = (w, state) => inmates(w).filter((a) => a.state === state).length;
+const say = (w) => hintText(hint(w, L), "birds");
+const line = (w) => followers(w, player(w));
 
-/** play the opening: three off the bus, shirted, housed, fed */
-function opening(seed = 7) {
+/** check in the first busload, lead them to cells 1 and 2 */
+function settle(seed = 7) {
   const w = create(LEVELS, 0, seed);
-  until(w, () => count(w, "wait") === 3, 10, "the bus");
-  go(w, station("bus").wait[1]);
-  const first = inmates(w).slice(0, 3);
-  go(w, station("desk").at);
-  wait(w, 1.2);
+  until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  go(w, desk.out[1]);
+  assert.equal(line(w).length, 2);
   go(w, station("c0").at);
   wait(w, 1);
+  go(w, desk.out[2]);
   go(w, station("c1").at);
   wait(w, 0.6);
-  until(w, () => first.every((b) => b.state === "home"), 10, "everyone to sit down");
+  const first = inmates(w).filter((a) => a.house);
+  assert.equal(first.length, 3);
+  // as if they had been looked after: full up, and anyone who tagged along goes back in
+  for (const b of first) for (const n of L.needs) b.needs[n.id] = 1;
+  go(w, station("c0").at);
+  go(w, station("c1").at);
+  go(w, HALL);
+  until(w, () => first.every((b) => b.state === "home"), 15, "everyone in bed");
+  return { w, first };
+}
+/** lead whoever waits at a cell door to the canteen and see them fed */
+function feed(w, cells) {
   go(w, station("stove").at);
   until(w, () => player(w).carry === w.carryMax, 3, "a full stack");
   go(w, station("table1").at);
   until(w, () => player(w).carry === 0, 3, "the trays to go down");
-  until(w, () => first.every((b) => b.needs.food > 0.9 && b.state === "home"), 30, "everyone to eat and go home");
-  return { w, first };
+  for (const c of cells) {
+    go(w, station(c).at);
+    wait(w, 0.3);
+    go(w, station("table1").at);
+    wait(w, 0.5);
+  }
 }
 
-test("the loop: bus, follow, intake, cells, food, coins, a price pad", () => {
+test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room, coins, a pad", () => {
   const w = create(LEVELS, 0, 7);
   assert.equal(capacity(w, L), 4);
-  until(w, () => count(w, "wait") === 3, 10, "the bus");
-  assert.equal(hintText(hint(w, L), "birds"), "walk to the birds at the bus stop");
+  until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
+  // they came off the bus through the gate on their own, and stand in line at the desk
+  const q = inmates(w);
+  assert.ok(q.every((a) => a.tags.length === 0 && a.y > desk.prop.y), "queued below the desk, not yet checked in");
+  assert.equal(say(w), "stand behind the intake desk to check them in");
+  wait(w, 3);
+  assert.equal(count(w, "ready"), 0, "nobody at the desk, nobody checked in");
 
-  go(w, station("bus").wait[1]);
-  const line = followers(w, player(w));
-  assert.equal(line.length, 3);
-  const first = inmates(w).slice(0, 3);
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  assert.ok(q.every((a) => a.tags.includes("uniform")));
+  assert.equal(w.piles.desk, 3 * desk.pay, "each check-in pays into the desk's pile");
+  assert.equal(say(w), "walk up to the checked-in birds to lead them");
 
-  // no shirt, no cell (round the intake, not through it past the desk)
-  go(w, HALL);
-  go(w, station("c1").at);
-  wait(w, 1);
-  assert.equal(followers(w, player(w)).length, 3, "no shirt, no cell");
-  assert.ok(first.every((b) => b.tags.length === 0));
-
-  // followers walk the leader's trail through the doors: none is ever inside a wall
-  go(w, station("desk").at);
-  wait(w, 1.2);
-  assert.ok(first.every((b) => b.tags.includes("uniform")));
-
+  // the line holds two at the start; the third waits
+  go(w, desk.out[1]);
+  assert.equal(line(w).length, 2);
+  assert.equal(w.lineMax, 2);
   go(w, station("c0").at);
   wait(w, 1);
+  assert.equal(line(w).length, 0, "two beds in a cell, two in");
+  go(w, desk.out[2]);
   go(w, station("c1").at);
   wait(w, 0.6);
-  assert.equal(followers(w, player(w)).length, 0);
-  until(w, () => first.every((b) => b.state === "home"), 10, "everyone to sit down");
-  assert.deepEqual(first.map((b) => b.house).sort(), ["c0", "c0", "c1"]);
-  // they walked in through the cell doors, so each ended inside its own cell
-  for (const b of first) {
+  go(w, HALL);
+  assert.ok(q.every((b) => ["c0", "c1"].includes(b.house)));
+  assert.ok(["c0", "c1"].every((c) => q.filter((b) => b.house === c).length <= 2), "two beds a cell");
+  for (const b of q.filter((b) => b.state === "home")) {
     const r = L.rooms.find((x) => x.id === b.house).rect;
     assert.ok(b.x > r.x && b.x < r.x + r.w && b.y > r.y && b.y < r.y + r.h, `${b.house} ${b.x},${b.y}`);
   }
 
-  // they come in hungry, and a hungry one drops no coins
-  assert.ok(first.every((b) => mood(L, b) === "needy"));
+  // content at first: coins by the door
+  until(w, () => w.floor.length > 0, 10, "a first coin");
+  // soon hungry: they wait at home with a bubble, and drop nothing more
+  until(w, () => q.every((b) => mood(L, b) === "needy"), 30, "everyone hungry");
+  const floor = w.floor.length;
   wait(w, 5);
-  assert.equal(w.floor.length, 0);
-  assert.equal(hintText(hint(w, L), "birds"), "hungry birds! grab trays in the kitchen");
+  assert.ok(q.every((b) => b.state === "home" || b.state === "follow"), "nobody walks to the canteen alone");
+  assert.equal(w.floor.length, floor);
+  assert.equal(say(w), "hungry birds! walk them to the canteen");
 
-  // trays from the kitchen to a table, and they go and eat
-  go(w, station("stove").at);
-  until(w, () => player(w).carry === w.carryMax, 3, "a full stack");
-  wait(w, 1);
-  assert.equal(player(w).carry, w.carryMax, "the stack stops at the cap");
-  go(w, station("table1").at);
-  until(w, () => player(w).carry === 0, 3, "the trays to go down");
-  assert.equal(w.stock.table1, 4);
-  until(w, () => first.every((b) => b.needs.food > 0.9 && b.state === "home"), 30, "everyone to eat and go home");
-  assert.equal(w.stock.table1, 1);
-  assert.equal(stars(w, L), 1, "everyone content is one star");
+  // trays out, then lead them in: they sit and eat and walk home by themselves
+  feed(w, ["c0", "c1"]);
+  // they were all under the threshold a moment ago: over half full means each one ate
+  until(w, () => q.every((b) => b.needs.food > 0.5), 30, "everyone to eat");
+  assert.equal(w.stock.table1, 0);
 
-  // content ones drop coins by their cells; walking over them banks them
-  until(w, () => w.floor.length >= 8, 30, "coins on the floor");
+  // fed and content: coins by the cells; walking over them banks them
+  // fed and content: coins by the cells and the desk's pile; walking over them banks them
+  go(w, desk.pileAt);
+  assert.equal(w.piles.desk, 0, "the pile walked over");
   go(w, station("c0").at);
   go(w, station("c1").at);
-  assert.ok(w.coins >= 8, `coins ${w.coins}`);
+  const banked = w.coins;
+  assert.ok(banked >= 3 * desk.pay + floor, `coins ${banked}`);
+  // a shower bubble: lead them to the showers, they wash and walk home
+  go(w, HALL);
+  until(w, () => q.some((b) => b.state === "home" && wants(L, b, true) === "wash" && b.rest > 2), 90, "someone wanting a shower");
+  const smelly = q.find((b) => wants(L, b, true) === "wash");
+  assert.equal(say(w), "smelly birds! walk them to the showers");
+  go(w, station(smelly.house).at);
+  wait(w, 0.3);
+  // whoever wanted a shower on the way joined too, up to the line's size
+  const led = line(w).filter((b) => wants(L, b, true) === "wash");
+  assert.ok(led.length > 0);
+  go(w, { x: 600, y: 470 });
+  wait(w, 0.5);
+  assert.equal(led[0].station, "showers");
+  until(w, () => led[0].needs.wash > 0.99, 10, "a shower");
+  // content again: coins
+  until(w, () => w.floor.length >= 1, 30, "new coins on the floor");
+  for (const c of new Set(w.floor.map((x) => x.house))) go(w, station(c).at);
+  assert.ok(w.coins > banked, "more coins banked");
 
-  // the third cell's price tag takes its cost over about a second, then the cell is open
+  // a price tag drinks its cost over about a second
   const had = w.coins, cell3 = pad("cell3");
   go(w, cell3.at);
   wait(w, 0.4);
@@ -130,67 +171,161 @@ test("the loop: bus, follow, intake, cells, food, coins, a price pad", () => {
   assert.ok(w.bought.includes("cell3"));
   assert.equal(w.coins, had - cell3.cost);
   assert.equal(capacity(w, L), 6);
-  assert.equal(w.points, 0.5);
 });
 
-test("a washroom makes a mess that blocks it until it is cleaned", () => {
-  const { w, first } = opening();
-  // the toilet need comes round; one goes, and leaves a mess on the only toilet
-  until(w, () => w.messes.some((m) => m.kind === "poop"), 90, "a trip to the toilet");
-  const mess = w.messes.find((m) => m.kind === "poop");
-  // while it is there, a bird who needs the toilet waits at home
-  until(w, () => first.some((b) => b.needs.toilet < L.threshold && b.state === "home"), 90, "a second bird to need the toilet");
+test("no bed: the desk stops checking in until a cell is bought", () => {
+  const { w } = settle();
+  // the second bus: one bed left for three
+  until(w, () => count(w, "queue") === 3, 20, "the next bus");
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 1, 5, "the last bed's check-in");
+  wait(w, 3);
+  assert.equal(count(w, "ready"), 1, "no more check-ins with every bed promised");
+  assert.equal(freeBeds(w, L), 0);
+  assert.ok(noBed(w, L));
+  assert.equal(say(w), "no free beds! unlock another cell");
+  w.coins = 50;
+  go(w, pad("cell3").at);
+  wait(w, 1.5);
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 3, 5, "check-ins again");
+});
+
+test("served their time: led to the release desk, a star, a pile, a level up with a reward", () => {
+  const { w, first } = settle();
+  for (const b of first) b.served = L.serve;
+  wait(w, 0.1);
+  assert.ok(first.every((b) => isDone(L, b)));
+  go(w, station("c0").at);
+  assert.equal(line(w).length, 2);
+  assert.equal(say(w), "lead them to the release desk to set them free");
+  w.coins = 0; // nothing for a price tag on the way to drink
+  go(w, station("stamp").at);
+  wait(w, 1.5);
+  assert.equal(w.released, 2);
+  // rank 1 needs two stars: the second one levels up and pays the reward
+  assert.equal(w.rank, 2);
+  assert.equal(w.stars, 0);
+  assert.ok(w.coins >= L.rankReward * 2, `the level-up reward, coins ${w.coins}`);
+  assert.equal(w.piles.stamp, 2 * station("stamp").pay);
+  // they walk out and are gone, and their beds are free
+  const gone = first.filter((b) => b.state === "leave");
+  assert.equal(gone.length, 2);
+  until(w, () => gone.every((b) => !w.agents.includes(b)), 20, "the released to leave");
+  assert.equal(freeBeds(w, L) >= 3, true);
+});
+
+test("level-locked pads wait for the rank; upgrades change speed and the line", () => {
+  const { w } = settle();
+  w.coins = 500;
+  go(w, pad("speed1").at);
   wait(w, 2);
-  assert.ok(first.every((b) => !(b.state === "go" && b.station === "toilets")), "the dirty toilet is off limits");
+  assert.ok(!w.bought.includes("speed1"), "rank 2 pad at rank 1");
+  assert.equal(w.paid.speed1 ?? 0, 0);
+  go(w, pad("line1").at);
+  wait(w, 1.5);
+  assert.equal(w.lineMax, 3);
+  w.rank = 2;
+  go(w, pad("speed1").at);
+  wait(w, 1.5);
+  assert.equal(w.speed, 112);
+  // and the next in the chain shows only now
+  assert.ok(L.pads.find((p) => p.id === "speed2").after === "speed1");
+});
+
+test("toilets in the cells make a mess that blocks the toilet until someone walks in and cleans it", () => {
+  const { w, first } = settle(11);
+  until(w, () => w.messes.some((m) => m.kind === "poop"), 240, "a messy toilet");
+  const mess = w.messes.find((m) => m.kind === "poop");
+  const cell = L.rooms.find((r) => r.id === station("toilets").seats[mess.seat].house).rect;
+  assert.ok(mess.x > cell.x && mess.x < cell.x + cell.w && mess.y > cell.y && mess.y < cell.y + cell.h, "the mess is in the cell");
+  // that toilet is off limits while the mess is there
+  const owner = first.find((b) => b.house === station("toilets").seats[mess.seat].house);
+  for (const n of L.needs) owner.needs[n.id] = 1;
+  owner.needs.toilet = 0.1;
+  wait(w, 2);
+  assert.notEqual(owner.state, "go");
   go(w, mess);
   wait(w, 0.5);
-  assert.ok(!w.messes.includes(mess), "walked over, cleaned up");
-  until(w, () => first.some((b) => b.station === "toilets"), 5, "the toilet in use again");
+  assert.ok(!w.messes.includes(mess), "walked in, cleaned up");
+  until(w, () => owner.station === "toilets", 3, "the toilet in use again");
 });
 
-test("ignored, they get cross, the stars fall, and a pad wants more stars", () => {
-  const { w, first } = opening();
+test("a squabble raises a high alert; standing there settles it and pays", () => {
+  const { w } = settle();
+  w.coins = 50;
+  go(w, pad("cell3").at);
+  wait(w, 1.5);
+  until(w, () => count(w, "queue") > 0, 20, "the next bus");
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 3, 5, "check-ins");
+  go(w, desk.out[2]);
+  go(w, station("c1").at);
+  wait(w, 0.6);
+  go(w, desk.out[0]);
+  go(w, station("c2").at);
+  until(w, () => count(w, "home") >= 4, 15, "four at home");
+  w.fightIn = 0;
+  wait(w, 0.1);
+  assert.ok(w.alert, "a high alert");
+  assert.equal(count(w, "fight"), 2);
+  assert.equal(say(w), "uh oh, a squabble! run over and calm it down");
+  const cash = w.coins + w.floor.length;
+  go(w, w.alert);
+  wait(w, L.fights.settle + 0.2);
+  assert.equal(w.alert, null);
+  assert.equal(w.settled, 1);
+  assert.equal(count(w, "fight"), 0);
+  assert.ok(w.coins + w.floor.length >= cash + L.fights.reward, "the reward, under foot or in the pocket");
+});
+
+test("a free speed boost turns up; walking over it makes the warden faster for a while", () => {
+  const w = create(LEVELS, 0, 3);
+  w.boost.t = 0;
+  wait(w, 0.1);
+  assert.ok(w.boost.here);
+  go(w, w.boost);
+  assert.ok(w.boosted > 0);
+  const p = player(w), x = p.x;
+  step(w, LEVELS, { x: 1, y: 0 });
+  assert.ok(Math.abs(p.x - x - w.speed * L.boost.mult * DT) < 0.01 || p.x < x + 1, "boosted step");
+  wait(w, L.boost.time + 0.5);
+  assert.equal(w.boosted, 0);
+});
+
+test("hired help does the chores: clerk checks in, guard leads, cook carries trays", () => {
+  const { w, first } = settle();
   w.coins = 500;
-  // table2 wants two stars; with one it takes nothing
-  go(w, pad("table2").at);
-  wait(w, 3);
-  assert.equal(w.paid.table2 ?? 0, 0);
-  assert.ok(!w.bought.includes("table2"));
-  // walk off and leave them be: food runs out, they turn cross, no stars
+  w.rank = 4;
+  go(w, pad("cell3").at);
+  wait(w, 1.5);
+  for (const id of ["cook", "guard", "clerk"]) {
+    go(w, pad(id).at);
+    wait(w, 1.5);
+  }
+  assert.deepEqual(w.agents.filter((a) => !["agent", "player"].includes(a.kind)).map((a) => a.kind).sort(), ["carrier", "clerk", "escort"]);
+  // hands off from here: watch one stretch of play with the player standing still
   go(w, HALL);
-  until(w, () => first.every((b) => mood(L, b) === "cross"), 200, "everyone cross");
-  assert.equal(stars(w, L), 0);
-  const coins = w.floor.length;
-  wait(w, 10);
-  assert.equal(w.floor.length, coins, "cross ones drop no coins");
+  const housed = inmates(w).filter((a) => a.house).length;
+  const saw = { housed: false, trays: false, led: false, released: false };
+  const stock = () => (w.stock.table1 ?? 0) + (w.stock.table2 ?? 0);
+  let trays = stock();
+  for (let i = 0; i < 60 * 240 && !Object.values(saw).every(Boolean); i++) {
+    step(w, LEVELS, { x: 0, y: 0 });
+    if (inmates(w).filter((a) => a.house).length >= housed + 2) saw.housed = true;
+    if (stock() > trays) saw.trays = true;
+    trays = stock();
+    if (inmates(w).some((b) => b.station === "table1" && b.state === "go")) saw.led = true;
+    if (w.released > 0) saw.released = true;
+  }
+  assert.deepEqual(saw, { housed: true, trays: true, led: true, released: true }, "clerk checks in, guard houses, cook carries, guard leads to eat and to release");
+  assert.ok(Math.hypot(player(w).x - HALL.x, player(w).y - HALL.y) < 2, "the player never moved");
 });
 
-test("hired help does the chores: a cook, a cleaner, a guard", () => {
-  const { w } = opening();
+test("level 6 and the next jail pad moves on to jail 2", () => {
+  const { w } = settle();
   w.coins = 500;
-  w.points = 3; // as if the rest of the jail were already bought
-  go(w, pad("cook").at);
-  wait(w, 1.5);
-  go(w, pad("cleaner").at);
-  wait(w, 1.5);
-  go(w, pad("guard").at);
-  wait(w, 1.5);
-  assert.deepEqual(w.agents.filter((a) => a.kind !== "agent" && a.kind !== "player").map((a) => a.kind).sort(), ["carrier", "cleaner", "escort"]);
-  // the player stands still from here
-  w.stock.table1 = 0;
-  until(w, () => w.stock.table1 > 0, 30, "the cook to put trays out");
-  w.messes.push({ id: 999, kind: "puddle", x: 600, y: 590, station: "showers", seat: 1, clean: 0 });
-  until(w, () => !w.messes.some((m) => m.id === 999), 30, "the cleaner to mop up");
-  // the guard brings the next busload in, shirted, to the empty cell
-  const before = inmates(w).filter((a) => a.state === "home" || a.state === "enter").length;
-  until(w, () => inmates(w).filter((a) => a.house && a.tags.includes("uniform")).length > before, 90, "the guard to house someone");
-});
-
-test("five stars and the next jail pad moves on to jail 2", () => {
-  const { w } = opening();
-  w.coins = 500;
-  w.points = 4.5;
-  until(w, () => stars(w, L) === 5, 5, "five stars");
+  w.rank = 6;
   go(w, pad("next").at);
   wait(w, 2);
   assert.equal(w.level, 1);
@@ -202,27 +337,26 @@ test("five stars and the next jail pad moves on to jail 2", () => {
 test("same seed, same stick, same game", () => {
   const play = () => {
     const w = create(LEVELS, 0, 42);
-    for (let i = 0; i < 60 * 30; i++) step(w, LEVELS, { x: Math.sin(i / 90), y: Math.cos(i / 70) });
+    for (let i = 0; i < 60 * 40; i++) step(w, LEVELS, { x: Math.sin(i / 90), y: Math.cos(i / 70) });
     return JSON.stringify(w);
   };
   assert.equal(play(), play());
 });
 
-test("a saved game comes back as it was; junk comes back as nothing", () => {
-  const { w } = opening();
+test("a saved game comes back as it was; junk and old saves come back as nothing", () => {
+  const { w } = settle();
   const back = restore(JSON.stringify(w), LEVELS);
   assert.equal(back.coins, w.coins);
   assert.equal(back.agents.length, w.agents.length);
-  assert.deepEqual(back.stock, w.stock);
+  assert.deepEqual(back.piles, w.piles);
   assert.equal(restore(null, LEVELS), null);
   assert.equal(restore("{not json", LEVELS), null);
-  assert.equal(restore(JSON.stringify({ ...w, v: 1 }), LEVELS), null);
+  assert.equal(restore(JSON.stringify({ ...w, v: 2 }), LEVELS), null);
   assert.equal(restore(JSON.stringify({ ...w, level: 9 }), LEVELS), null);
   assert.equal(restore(JSON.stringify({ ...w, agents: "x" }), LEVELS), null);
 });
 
 test("the engine knows nothing of jails or skins: content and drawing live outside it", async () => {
-  const { readdir, readFile } = await import("node:fs/promises");
   const dir = new URL("../src/engine/", import.meta.url);
   for (const f of await readdir(dir)) {
     const src = await readFile(new URL(f, dir), "utf8");
