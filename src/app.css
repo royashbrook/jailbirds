@@ -21,28 +21,6 @@
   --shadow: 0 3px 0 rgba(61, 50, 48, 0.16);
   --shadow-pressed: 0 1px 0 rgba(61, 50, 48, 0.16);
   --mark-heart: #e5484d;
-  /* the jail, read by the canvas (draw.ts theme()) */
-  --map-floor: #f3ead8;
-  --map-floor-line: #e7dbc2;
-  --map-wall: #8a7f8f;
-  --map-cell-floor: #ece4f2;
-  --map-locked: #ddd6cc;
-  --map-bars: #6c6475;
-  --map-bed: #9fc3e8;
-  --map-desk: #c99a6b;
-  --map-counter: #e3ebf2;
-  --map-stove: #5d6670;
-  --map-table: #dcb88c;
-  --map-road: #b9bcc4;
-  --map-road-line: #f6f6f6;
-  --map-spot: rgba(92, 159, 214, 0.22);
-  --map-pad: #3c9a5f;
-  --map-pad-fill: rgba(255, 255, 255, 0.75);
-  --map-ink: #3d3230;
-  --map-ink-dim: #8d8496;
-  --map-label: #8d7f6e;
-  --map-shadow: rgba(0, 0, 0, 0.12);
-  --map-stick: rgba(255, 255, 255, 0.45);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -59,26 +37,6 @@
     --warn: #ff7d90;
     --shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
     --shadow-pressed: 0 1px 0 rgba(0, 0, 0, 0.45);
-    --map-floor: #2b2833;
-    --map-floor-line: #34313d;
-    --map-wall: #9d93a6;
-    --map-cell-floor: #3a3546;
-    --map-locked: #24222b;
-    --map-bars: #b3aabc;
-    --map-bed: #5d7fa6;
-    --map-desk: #9a7552;
-    --map-counter: #4a5260;
-    --map-stove: #23272e;
-    --map-table: #a5855f;
-    --map-road: #3f424a;
-    --map-road-line: #8b8e96;
-    --map-spot: rgba(140, 194, 238, 0.2);
-    --map-pad: #6fd08f;
-    --map-pad-fill: rgba(0, 0, 0, 0.3);
-    --map-ink: #f3eee6;
-    --map-ink-dim: #9b94a6;
-    --map-label: #a99d8c;
-    --map-stick: rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -135,14 +93,15 @@ a {
 
 /* the house layout: the logo up top with the version in the corner, the coins
    under it, the jail, then the tip and the buttons along the bottom */
+/* the play area takes the whole screen on a phone or an ipad, either way up,
+   inside the safe areas */
 .play {
   height: 100%;
-  max-width: 520px;
-  margin: 0 auto;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 6px;
-  padding: max(8px, env(safe-area-inset-top)) 12px max(6px, env(safe-area-inset-bottom));
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
 }
 .hud {
   display: flex;
@@ -164,8 +123,25 @@ a {
 .stats {
   display: flex;
   justify-content: center;
-  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   font-size: 22px;
+}
+.star {
+  width: 20px;
+  height: 20px;
+  fill: var(--surface-sunk);
+  stroke: var(--ink-dim);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.star.lit {
+  fill: var(--coin);
+  stroke: var(--coin-edge);
+}
+.stars {
+  gap: 1px;
 }
 .stat {
   display: flex;
@@ -220,8 +196,14 @@ a {
 }
 .nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.nav svg .knob {
+  fill: var(--surface-raised);
 }
 .nav button {
   display: flex;
@@ -368,9 +350,72 @@ a {
 .warn {
   color: var(--warn);
 }
-/* the build, small, like the rest of the house */
+/* the skin picker: a line-up of each look */
+.skins {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.skin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 3px solid transparent;
+}
+.skin.now {
+  border-color: var(--accent);
+}
+.skin canvas {
+  width: 132px;
+  max-width: 100%;
+  height: 64px;
+}
+.hint {
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+/* the build, small, like the rest of the house, with the jail's name under it */
 .corner {
+  text-align: right;
   font: 600 12px var(--font-mono);
   color: var(--ink-dim);
   opacity: 0.8;
+}
+#place {
+  font: 700 13px var(--font-ui);
+}
+
+/* an ipad, either way up: the same layout, sized for a bigger screen */
+@media (min-width: 700px) and (min-height: 700px) {
+  .hud .logo .wordmark {
+    height: 52px;
+  }
+  .stats {
+    font-size: 28px;
+  }
+  .star {
+    width: 28px;
+    height: 28px;
+  }
+  .stat span {
+    font-size: 16px;
+  }
+  .corner {
+    font-size: 14px;
+  }
+  #place {
+    font-size: 17px;
+  }
+  .tip {
+    font-size: 18px;
+  }
+  .nav button {
+    min-height: 68px;
+    font-size: 16px;
+  }
+  .nav svg {
+    width: 28px;
+    height: 28px;
+  }
 }

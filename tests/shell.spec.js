@@ -17,9 +17,9 @@ test("the page and the about sheet carry the house ethos, word for word", async 
 
 test("the build is on screen, and in the about sheet", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".corner")).toHaveText(/^v\d+\.\d+\.\d+/);
+  await expect(page.locator("#version")).toHaveText(/^v\d+\.\d+\.\d+/);
   const served = await (await page.request.get("/version.json")).json();
-  await expect(page.locator(".corner")).toHaveText(`v${served.version}`);
+  await expect(page.locator("#version")).toHaveText(`v${served.version}`);
   await expect(page.locator("meta[name=build]")).toHaveAttribute("content", served.build);
   await page.click("#about");
   await expect(page.locator(".version")).toHaveText(`version ${served.version}`);

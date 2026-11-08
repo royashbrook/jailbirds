@@ -18,7 +18,7 @@ export function doorMid(room: RoomDef, d: Door): { mid: Pt; out: Pt } {
 }
 
 /** wall pieces of every room, with gaps for its doors. a door marked `actors: false`
- * (a cell door) is shut to the player and helpers and open to the agents who live there */
+ * (a door only residents use) is shut to the player and helpers and open to the agents who live there */
 export function walls(level: LevelDef, open: (room: RoomDef) => boolean, agents = false): Rect[] {
   const out: Rect[] = [];
   for (const room of level.rooms) {
@@ -64,24 +64,24 @@ export function collide(p: Pt, rad: number, ws: Rect[]) {
     }
 }
 
-const CELL = 8;
+const TILE = 8;
 const CLEAR = 11;
 export interface Nav { cols: number; rows: number; blocked: Uint8Array }
 export function nav(level: LevelDef, ws: Rect[]): Nav {
-  const cols = Math.ceil(level.size.w / CELL), rows = Math.ceil(level.size.h / CELL);
+  const cols = Math.ceil(level.size.w / TILE), rows = Math.ceil(level.size.h / TILE);
   const blocked = new Uint8Array(cols * rows);
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
-      const p = { x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 };
+      const p = { x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 };
       if (ws.some((w) => inside(p, w, CLEAR))) blocked[r * cols + c] = 1;
     }
   return { cols, rows, blocked };
 }
 const cellOf = (n: Nav, p: Pt) => {
-  const c = Math.min(n.cols - 1, Math.max(0, Math.floor(p.x / CELL))), r = Math.min(n.rows - 1, Math.max(0, Math.floor(p.y / CELL)));
+  const c = Math.min(n.cols - 1, Math.max(0, Math.floor(p.x / TILE))), r = Math.min(n.rows - 1, Math.max(0, Math.floor(p.y / TILE)));
   return r * n.cols + c;
 };
-/** the nearest open cell, for a point that sits on a wall's edge */
+/** the nearest open tile, for a point that sits on a wall's edge */
 function open(n: Nav, i: number) {
   if (!n.blocked[i]) return i;
   const seen = new Set([i]), queue = [i];
@@ -96,9 +96,9 @@ function open(n: Nav, i: number) {
   }
   return i;
 }
-/** true when a straight walk from a to b touches no blocked cell */
+/** true when a straight walk from a to b touches no blocked tile */
 export function clear(n: Nav, a: Pt, b: Pt) {
-  const steps = Math.ceil(dist(a, b) / (CELL / 2));
+  const steps = Math.ceil(dist(a, b) / (TILE / 2));
   for (let k = 1; k < steps; k++) {
     const t = k / steps;
     if (n.blocked[cellOf(n, { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })]) return false;
@@ -116,7 +116,7 @@ export function route(n: Nav, from: Pt, to: Pt): Pt[] {
     const c = i % n.cols, dx = Math.abs(c - gx), dy = Math.abs((i - c) / n.cols - gy);
     return Math.max(dx, dy) + 0.414 * Math.min(dx, dy);
   };
-  // a small binary heap of [f, cell]
+  // a small binary heap of [f, tile]
   const heap: [number, number][] = [];
   const push = (f: number, i: number) => {
     heap.push([f, i]);
@@ -158,7 +158,7 @@ export function route(n: Nav, from: Pt, to: Pt): Pt[] {
         if (cc < 0 || rr < 0 || cc >= n.cols || rr >= n.rows) continue;
         const j = rr * n.cols + cc;
         if (n.blocked[j] || done[j]) continue;
-        // no cutting a corner between two blocked cells
+        // no cutting a corner between two blocked tiles
         if (dr && dc && (n.blocked[r * n.cols + cc] || n.blocked[rr * n.cols + c])) continue;
         const cost = g[i] + (dr && dc ? 1.414 : 1);
         if (cost < g[j]) {
@@ -169,24 +169,24 @@ export function route(n: Nav, from: Pt, to: Pt): Pt[] {
       }
   }
   if (goal !== start && came[goal] < 0) return [to];
-  const cells: Pt[] = [];
+  const tiles: Pt[] = [];
   for (let i = goal; i !== start && i >= 0; i = came[i]) {
     const c = i % n.cols;
-    cells.unshift({ x: c * CELL + CELL / 2, y: ((i - c) / n.cols) * CELL + CELL / 2 });
+    tiles.unshift({ x: c * TILE + TILE / 2, y: ((i - c) / n.cols) * TILE + TILE / 2 });
   }
-  cells.push(to);
+  tiles.push(to);
   // pull the string: from each corner, jump to the farthest point still in sight
   const out: Pt[] = [];
   let at = from, k = 0;
-  while (k < cells.length) {
+  while (k < tiles.length) {
     let far = k;
-    for (let j = cells.length - 1; j > k; j--)
-      if (clear(n, at, cells[j])) {
+    for (let j = tiles.length - 1; j > k; j--)
+      if (clear(n, at, tiles[j])) {
         far = j;
         break;
       }
-    out.push(cells[far]);
-    at = cells[far];
+    out.push(tiles[far]);
+    at = tiles[far];
     k = far + 1;
   }
   return out;

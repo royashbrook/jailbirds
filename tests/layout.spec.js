@@ -1,27 +1,51 @@
 import { test, expect } from "@playwright/test";
 
-// the house layout: logo up top on the left, the version in the top right
-// corner, the jail, then the buttons along the bottom, like the other games
-for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }])
-  test(`${size.width}x${size.height}: logo and version up top, jail in the middle, buttons along the bottom`, async ({ page }) => {
+// the house layout on every screen we design for: phones and an ipad either way
+// up. logo up top on the left, version top right, the jail filling the middle,
+// the buttons along the bottom, nothing scrolls.
+const SIZES = [
+  { width: 320, height: 568 },
+  { width: 390, height: 844 },
+  { width: 1024, height: 1366 },
+  { width: 1366, height: 1024 },
+];
+for (const size of SIZES)
+  test(`${size.width}x${size.height}: logo and version up top, jail filling the middle, buttons along the bottom`, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto("/");
     const b = (s) => page.locator(s).boundingBox();
     const jail = await b("#jail"), logo = await b(".hud .logo"), ver = await b(".hud .corner"), nav = await b(".nav");
     expect(logo.y + logo.height).toBeLessThanOrEqual(jail.y);
     expect(logo.x).toBeLessThan(size.width * 0.2);
-    expect(ver.y + ver.height).toBeLessThanOrEqual(logo.y + logo.height);
+    expect(ver.y).toBeLessThan(logo.y + logo.height);
     expect(ver.x + ver.width).toBeGreaterThan(size.width * 0.85);
     expect(nav.y).toBeGreaterThanOrEqual(jail.y + jail.height);
-    // the play area is real room, not a sliver
-    expect(jail.height).toBeGreaterThan(size.height * 0.4);
-    // no scroll either way
+    // the jail fills the screen: most of the height, nearly all of the width
+    expect(jail.height).toBeGreaterThan(size.height * 0.55);
+    expect(jail.width).toBeGreaterThan(size.width * 0.9);
+    // the canvas draws at the screen's real density, not stretched
+    const px = await page.evaluate(() => { const c = document.querySelector("#jail"); return { w: c.width, css: c.getBoundingClientRect().width, dpr: devicePixelRatio }; });
+    expect(Math.abs(px.w - px.css * Math.min(3, px.dpr))).toBeLessThanOrEqual(1);
     const fit = await page.evaluate(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }));
     expect(fit.w).toBeLessThanOrEqual(size.width);
     expect(fit.h).toBeLessThanOrEqual(size.height);
     // the house checker finds about by name: the menu button says it opens about too
     await expect(page.getByRole("button", { name: /about/i }).first()).toBeVisible();
+    for (const id of ["#about", "#nav-settings", "#restart"]) {
+      const box = await b(id);
+      expect(Math.min(box.width, box.height), id).toBeGreaterThanOrEqual(44);
+    }
   });
+
+test("turning an ipad round refits the jail to the new shape", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.goto("/");
+  const tall = await page.locator("#jail").boundingBox();
+  await page.setViewportSize({ width: 1366, height: 1024 });
+  await expect.poll(async () => (await page.locator("#jail").boundingBox()).width).toBeGreaterThan(tall.width + 200);
+  const px = await page.evaluate(() => { const c = document.querySelector("#jail"); return c.width / c.getBoundingClientRect().width; });
+  expect(px).toBeCloseTo(await page.evaluate(() => Math.min(3, devicePixelRatio)), 1);
+});
 
 // light unless the phone asks for dark
 test("a phone with no colour setting gets light, a dark phone gets dark", async ({ page }) => {

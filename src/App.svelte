@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { capacity, create, DT, hint, restore, step, type Stick, type World } from "./lib/sim/sim.ts";
-  import { render, theme, view, type Theme, type Thumb } from "./lib/draw.ts";
+  import { capacity, create, DT, hint, MAX_STARS, population, restore, stars as rate, step } from "./engine/sim.ts";
+  import type { Stick, World } from "./engine/types.ts";
+  import { LEVELS, hintText } from "./content/jail.ts";
+  import { SKINS, skinById } from "./skins/index.ts";
+  import type { Palette, Skin } from "./skins/types.ts";
+  import { remember, render, type Past, type Thumb } from "./render.ts";
   import { readSlot, writeSlot } from "./lib/storage.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
@@ -13,14 +17,25 @@
   // the whole jail is one saved record: a blocked store just means "not saving"
   const SAVE = "jailbirds:save";
   const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
-  let world: World = restore(readSlot(SAVE)) ?? create(freshSeed());
+  let world: World = restore(readSlot(SAVE), LEVELS) ?? create(LEVELS, 0, freshSeed());
+  const level = () => LEVELS[world.level];
+  // the look: saved on its own, so a skin change never touches the game
+  const SKIN = "jailbirds:skin";
+  let skin = $state.raw<Skin>(skinById(readSlot(SKIN)));
+  function pickSkin(s: Skin) {
+    skin = s;
+    writeSlot(SKIN, s.id);
+    repaint();
+  }
 
   // what the screen watches; the world mutates in place
   let coins = $state(world.coins);
-  let birds = $state(`${world.birds.length}/${capacity(world)}`);
-  let tip = $state(hint(world));
+  let crowd = $state("");
+  let rating = $state(0);
+  let place = $state(level().name);
+  let tip = $state("");
   let saved = $state(true);
-  let sheet = $state<"" | "about" | "ios" | "restart">("");
+  let sheet = $state<"" | "about" | "settings" | "ios" | "restart">("");
 
   let canvasEl = $state<HTMLCanvasElement>();
   let surfaceEl = $state<HTMLDivElement>();
@@ -32,19 +47,26 @@
   // a read-only window onto the jail, for tests and the curious
   (window as unknown as { __jailbirds: unknown }).__jailbirds = {
     state: () => JSON.parse(JSON.stringify(world)) as World,
+    skin: () => skin.id,
+    stars: () => rate(world, level()),
   };
 
   function sync() {
+    const l = level();
     coins = world.coins;
-    birds = `${world.birds.length}/${capacity(world)}`;
-    tip = hint(world);
+    crowd = `${population(world)}/${capacity(world, l)}`;
+    rating = rate(world, l);
+    place = l.name;
+    tip = hintText(hint(world, l), skin.noun);
   }
+  sync();
   function save() {
     saved = writeSlot(SAVE, JSON.stringify(world));
   }
 
   function restart() {
-    world = create(freshSeed());
+    world = create(LEVELS, 0, freshSeed());
+    past = null;
     thumb = null;
     keys.clear();
     save();
@@ -113,16 +135,21 @@
 
   // the canvas fills its space at the screen's real pixel density
   let dpr = 1;
+  let cssW = 1;
+  let cssH = 1;
   function fit() {
     if (!canvasEl || !surfaceEl) return;
     const box = surfaceEl.getBoundingClientRect();
     dpr = Math.min(3, window.devicePixelRatio || 1);
-    canvasEl.width = Math.max(1, Math.round(box.width * dpr));
-    canvasEl.height = Math.max(1, Math.round(box.height * dpr));
+    cssW = Math.max(1, box.width);
+    cssH = Math.max(1, box.height);
+    canvasEl.width = Math.round(cssW * dpr);
+    canvasEl.height = Math.round(cssH * dpr);
   }
 
   // real time in, fixed steps out. a hidden page or an open sheet holds the jail still.
-  let look: Theme;
+  let pal: Palette;
+  let past: Past | null = null;
   let raf = 0;
   let last = 0;
   let acc = 0;
@@ -133,7 +160,8 @@
     if (!sheet && !document.hidden) {
       acc += dt;
       while (acc >= DT) {
-        step(world, stick());
+        past = remember(world);
+        step(world, LEVELS, stick());
         acc -= DT;
       }
       sinceSave += dt;
@@ -144,7 +172,7 @@
       sync();
     }
     const ctx = canvasEl?.getContext("2d");
-    if (ctx && look && canvasEl) render(ctx, world, look, view(world, canvasEl.width, canvasEl.height), now, thumb, dpr);
+    if (ctx && pal) render(ctx, world, level(), skin, pal, dpr, cssW, cssH, past, sheet ? 1 : acc / DT, now, thumb);
     raf = requestAnimationFrame(frame);
   }
   const visibility = () => {
@@ -172,9 +200,23 @@
     }
   }
 
+  /** a little line-up of a skin's characters for the picker */
+  function portrait(el: HTMLCanvasElement, s: Skin) {
+    const d = Math.min(3, window.devicePixelRatio || 1);
+    el.width = 132 * d;
+    el.height = 64 * d;
+    const ctx = el.getContext("2d")!;
+    ctx.setTransform(d * 1.5, 0, 0, d * 1.5, 0, 0);
+    const p = s.palette(dark?.matches ?? false);
+    const base = { moving: false, walk: 0, t: 1, carry: 0, mood: "ok" as const, using: null };
+    s.character(ctx, { ...base, kind: "player", x: 18, y: 26, face: 1, look: 0, uniform: false }, p);
+    s.character(ctx, { ...base, kind: "agent", x: 46, y: 28, face: -1, look: 1, uniform: true }, p);
+    s.character(ctx, { ...base, kind: "agent", x: 70, y: 28, face: -1, look: 2, uniform: false }, p);
+  }
+
   let observer: ResizeObserver | undefined;
   let dark: MediaQueryList | undefined;
-  const repaint = () => (look = theme());
+  const repaint = () => (pal = skin.palette(dark?.matches ?? false));
   onMount(() => {
     install = installControl((v) => (installVisible = v), () => (sheet = "ios"));
     updates = updateControl(() => (updateReady = true));
@@ -211,11 +253,12 @@
   <header class="hud">
     <div class="top">
       <span class="logo">{@html wordmark}</span>
-      <span class="corner">v{__APP_VERSION__}</span>
+      <span class="corner"><span id="version">v{__APP_VERSION__}</span><br /><span id="place">{place}</span></span>
     </div>
     <div class="stats">
       <div class="stat" id="coins" aria-label={`${coins} coins`}><svg class="coin-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg><b>{coins}</b></div>
-      <div class="stat" id="birds"><span>birds</span><b>{birds}</b></div>
+      <div class="stat" id="crowd"><span>{skin.noun}</span><b>{crowd}</b></div>
+      <div class="stat stars" id="stars" role="img" aria-label={`${rating} of ${MAX_STARS} stars`}>{#each Array(MAX_STARS) as _, i (i)}<svg class="star" class:lit={i < rating} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>{/each}</div>
     </div>
   </header>
   <div
@@ -235,6 +278,7 @@
     <p class="tip" id="tip">{#if !saved}<span class="warn">this browser is not saving your jail</span>{:else}{tip}{/if}</p>
     <nav class="nav" aria-label="jailbirds">
       <button id="about" aria-label="menu and about" onclick={() => (sheet = "about")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>menu</button>
+      <button id="nav-settings" aria-label="settings" onclick={() => (sheet = "settings")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16M4 16h16" /><circle cx="9" cy="8" r="2.5" class="knob" /><circle cx="15" cy="16" r="2.5" class="knob" /></svg>settings</button>
       <button id="restart" aria-label="start over" onclick={() => (sheet = "restart")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" /><path d="M19.5 4v4h-4" /></svg>new jail</button>
     </nav>
   </footer>
@@ -248,7 +292,9 @@
       {#if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
-        <p>pick up the birds at the bus stop, take them to the desk for striped shirts, then walk them to a cell. hungry birds need trays from the kitchen on the canteen table. happy birds drop coins. stand on a price tag to unlock more.</p>
+        <p>pick up the {skin.noun} at the bus stop, take them to the intake desk for striped shirts, then walk them to a cell. hungry ones need trays from the kitchen on a canteen table. the washroom gets messy: walk over a mess to clean it. happy {skin.noun} drop coins.</p>
+        <p>stand on a price tag to unlock more. some tags want more stars first: stars come from what you have built and how happy everyone is. five stars opens the next jail.</p>
+        <button id="settings" onclick={() => (sheet = "settings")}>looks: {skin.name}</button>
         <p class="ethos">{ETHOS}</p>
         <p class="version">version {__APP_VERSION__}</p>
         <div class="row">
@@ -262,9 +308,20 @@
           <a href="https://royashbrook.com/agents" target="_blank" rel="noopener">ai</a>
           <span class="mark-tail"><span aria-hidden="true" class="mark-dot">·</span>
           <a href="https://github.com/sponsors/royashbrook" target="_blank" rel="noopener">sponsor me</a></span></p>
+      {:else if sheet === "settings"}
+        <h2>settings</h2>
+        <p class="hint">who lives in your jail? the game stays the same, only the look changes.</p>
+        <div class="skins">
+          {#each SKINS as s (s.id)}
+            <button id={`skin-${s.id}`} class="skin" class:now={s === skin} aria-pressed={s === skin} onclick={() => pickSkin(s)}>
+              <canvas use:portrait={s} aria-hidden="true"></canvas>
+              <span>{s.name}</span>
+            </button>
+          {/each}
+        </div>
       {:else if sheet === "restart"}
         <h2>start over?</h2>
-        <p>your jail, your birds and your coins all go away.</p>
+        <p>your jail, your {skin.noun} and your coins all go away.</p>
         <button id="confirm-restart" class="big" onclick={() => { sheet = ""; restart(); }}>start over</button>
       {:else if sheet === "ios"}
         <h2>install jailbirds</h2>

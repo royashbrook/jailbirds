@@ -1,4 +1,4 @@
-// the idle engine: one fixed step over a level. no DOM, no clock, no Math.random,
+// the idle engine: one fixed step over a level. no DOM, no clock, no real dice,
 // so the same seed and the same stick play the same game and tests can drive it.
 import { roll } from "./rng.ts";
 import { collide, dist, inside, nav, near, route as navRoute, walls, type Nav } from "./geom.ts";
@@ -38,7 +38,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     stock: {},
     messes: [],
     floor: [],
-    bus: { state: "away", x: -100, t: 1 },
+    ride: { state: "away", x: -100, t: 1 },
     clock: {},
     carryMax: l.carry,
     points: 0,
@@ -150,7 +150,7 @@ function world(w: World, l: LevelDef, agents: boolean) {
   return got;
 }
 const wallsFor = (w: World, l: LevelDef) => world(w, l, false).walls;
-/** the way from here to there, round the walls: agents may use cell doors, actors may not */
+/** the way from here to there, round the walls: agents may use residents-only doors, actors may not */
 export function route(w: World, l: LevelDef, a: Agent, to: Pt) {
   return navRoute(world(w, l, a.kind === "agent").nav, a, to);
 }
@@ -305,26 +305,26 @@ function buy(w: World, levels: LevelDef[], pad: PadDef) {
 function spawn(w: World, l: LevelDef) {
   const st = stationsOf(l, "spawn")[0];
   if (!st) return;
-  const bus = w.bus, room = capacity(w, l) - population(w);
+  const ride = w.ride, room = capacity(w, l) - population(w);
   const speed = 180;
-  if (bus.state === "away") {
-    bus.t -= DT;
-    if (bus.t <= 0 && room > 0 && !w.agents.some((a) => a.state === "wait")) {
-      bus.state = "in";
-      bus.x = -100;
+  if (ride.state === "away") {
+    ride.t -= DT;
+    if (ride.t <= 0 && room > 0 && !w.agents.some((a) => a.state === "wait")) {
+      ride.state = "in";
+      ride.x = -100;
     }
-  } else if (bus.state === "in") {
-    bus.x = Math.min(st.stopX, bus.x + speed * DT);
-    if (bus.x === st.stopX) {
+  } else if (ride.state === "in") {
+    ride.x = Math.min(st.stopX, ride.x + speed * DT);
+    if (ride.x === st.stopX) {
       const n = Math.min(st.load, room, st.wait.length);
       for (let i = 0; i < n; i++) w.agents.push(agent(w.nextId++, "agent", st.wait[i], Math.floor(rand(w) * l.looks), l));
-      bus.state = "out";
+      ride.state = "out";
     }
   } else {
-    bus.x += speed * DT;
-    if (bus.x > l.size.w + 100) {
-      bus.state = "away";
-      bus.t = st.gap;
+    ride.x += speed * DT;
+    if (ride.x > l.size.w + 100) {
+      ride.state = "away";
+      ride.t = st.gap;
     }
   }
 }

@@ -1,5 +1,5 @@
 // mulberry32, one step at a time: the state is a plain number that lives in the
-// world, so a saved jail carries its own dice and a seed replays the same jail.
+// world, so a saved game carries its own dice and a seed replays the same game.
 export function roll(state: number): [value: number, next: number] {
   const a = (state + 0x6d2b79f5) >>> 0;
   let t = a;

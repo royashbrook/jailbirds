@@ -1,12 +1,12 @@
-// the idle engine's vocabulary. nothing in here knows it is a jail: a level is
+// the idle engine's vocabulary. nothing in here knows what the game is about: a level is
 // data (rooms, stations, needs, price pads), a world is the live state, and a
-// skin draws both. jail words live in src/content, drawing lives in src/skins.
+// skin draws both. the theme lives in src/content, drawing lives in src/skins.
 
 export type Pt = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Side = "n" | "s" | "e" | "w";
 
-/** a gap in a room's wall. `actors: false` keeps the player and helpers out (a cell door) */
+/** a gap in a room's wall. `actors: false` keeps the player and helpers out (a door only residents use) */
 export interface Door {
   side: Side;
   /** where the gap starts along that side, from the room's left or top edge */
@@ -149,7 +149,7 @@ export interface World {
   stock: Record<string, number>;
   messes: Mess[];
   floor: Coin[];
-  bus: { state: "away" | "in" | "out"; x: number; t: number };
+  ride: { state: "away" | "in" | "out"; x: number; t: number };
   /** cadence timers, keyed by actor and station */
   clock: Record<string, number>;
   carryMax: number;

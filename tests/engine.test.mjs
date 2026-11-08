@@ -220,3 +220,14 @@ test("a saved game comes back as it was; junk comes back as nothing", () => {
   assert.equal(restore(JSON.stringify({ ...w, level: 9 }), LEVELS), null);
   assert.equal(restore(JSON.stringify({ ...w, agents: "x" }), LEVELS), null);
 });
+
+test("the engine knows nothing of jails or skins: content and drawing live outside it", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const dir = new URL("../src/engine/", import.meta.url);
+  for (const f of await readdir(dir)) {
+    const src = await readFile(new URL(f, dir), "utf8");
+    assert.doesNotMatch(src, /from "\.\.\/(content|skins|render)/, `${f} imports content or drawing`);
+    assert.doesNotMatch(src, /canvas|document|window|localStorage|Math\.random/, `${f} touches the page or real randomness`);
+    assert.doesNotMatch(src, /jail|bird|toilet|tray|\bcells?\b|kitchen|canteen|uniform|warden|inmate|poop|puddle|\bbus\b/i, `${f} uses a jail word`);
+  }
+});
