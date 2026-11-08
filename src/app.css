@@ -1,0 +1,376 @@
+/* shell theme tokens: the only place a shell colour literal lives. dark mode
+   repaints by redefining the same names; structure never changes. the birds
+   keep their colours in both. */
+:root {
+  --surface: #fff8ec;
+  --surface-raised: #ffffff;
+  --surface-sunk: #f6ead2;
+  --ink: #3d3230;
+  --ink-dim: #6f6a75;
+  --ink-on-accent: #3d3230;
+  --accent: #f2b84b;
+  --accent-dim: #d99a2b;
+  --line: #ead9b9;
+  --warn: #d6455d;
+  --coin: #ffd23f;
+  --coin-edge: #c9960f;
+  --font-ui: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 16px;
+  --shadow: 0 3px 0 rgba(61, 50, 48, 0.16);
+  --shadow-pressed: 0 1px 0 rgba(61, 50, 48, 0.16);
+  --mark-heart: #e5484d;
+  /* the jail, read by the canvas (draw.ts theme()) */
+  --map-floor: #f3ead8;
+  --map-floor-line: #e7dbc2;
+  --map-wall: #8a7f8f;
+  --map-cell-floor: #ece4f2;
+  --map-locked: #ddd6cc;
+  --map-bars: #6c6475;
+  --map-bed: #9fc3e8;
+  --map-desk: #c99a6b;
+  --map-counter: #e3ebf2;
+  --map-stove: #5d6670;
+  --map-table: #dcb88c;
+  --map-road: #b9bcc4;
+  --map-road-line: #f6f6f6;
+  --map-spot: rgba(92, 159, 214, 0.22);
+  --map-pad: #3c9a5f;
+  --map-pad-fill: rgba(255, 255, 255, 0.75);
+  --map-ink: #3d3230;
+  --map-ink-dim: #8d8496;
+  --map-label: #8d7f6e;
+  --map-shadow: rgba(0, 0, 0, 0.12);
+  --map-stick: rgba(255, 255, 255, 0.45);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1b1a22;
+    --surface-raised: #2a2833;
+    --surface-sunk: #23212b;
+    --ink: #f3eee6;
+    --ink-dim: #b0a9b8;
+    --ink-on-accent: #1b1a22;
+    --accent: #f2c066;
+    --accent-dim: #d9a447;
+    --line: #3d3a48;
+    --warn: #ff7d90;
+    --shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+    --shadow-pressed: 0 1px 0 rgba(0, 0, 0, 0.45);
+    --map-floor: #2b2833;
+    --map-floor-line: #34313d;
+    --map-wall: #9d93a6;
+    --map-cell-floor: #3a3546;
+    --map-locked: #24222b;
+    --map-bars: #b3aabc;
+    --map-bed: #5d7fa6;
+    --map-desk: #9a7552;
+    --map-counter: #4a5260;
+    --map-stove: #23272e;
+    --map-table: #a5855f;
+    --map-road: #3f424a;
+    --map-road-line: #8b8e96;
+    --map-spot: rgba(140, 194, 238, 0.2);
+    --map-pad: #6fd08f;
+    --map-pad-fill: rgba(0, 0, 0, 0.3);
+    --map-ink: #f3eee6;
+    --map-ink-dim: #9b94a6;
+    --map-label: #a99d8c;
+    --map-stick: rgba(255, 255, 255, 0.15);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+#app {
+  height: 100dvh;
+  overflow: hidden;
+}
+button {
+  font: 700 16px var(--font-ui);
+  min-height: 48px;
+  min-width: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button:active {
+  box-shadow: var(--shadow-pressed);
+  transform: translateY(2px);
+}
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+button.big {
+  background: var(--accent);
+  color: var(--ink-on-accent);
+  font-size: 20px;
+  min-height: 60px;
+}
+a {
+  color: var(--accent-dim);
+}
+
+/* the house layout: the logo up top with the version in the corner, the coins
+   under it, the jail, then the tip and the buttons along the bottom */
+.play {
+  height: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: max(8px, env(safe-area-inset-top)) 12px max(6px, env(safe-area-inset-bottom));
+}
+.hud {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hud .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.hud .logo {
+  display: flex;
+}
+.hud .logo .wordmark {
+  height: 36px;
+  width: auto;
+}
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  font-size: 22px;
+}
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stat b {
+  font-variant-numeric: tabular-nums;
+}
+.stat span {
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+.coin-mark {
+  width: 22px;
+  height: 22px;
+}
+.coin-mark circle {
+  fill: var(--coin);
+  stroke: var(--coin-edge);
+  stroke-width: 2;
+}
+
+/* one thumb: the whole area under the hud takes the gesture */
+.surface {
+  position: relative;
+  min-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#jail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tip {
+  margin: 0;
+  min-height: 1.3em;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+.nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 58px;
+  padding: 6px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.nav svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* sheets, update */
+.sheet {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: transparent;
+  color: var(--ink);
+}
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+.licences {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.card {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.card h2 {
+  margin: 0;
+  font: 800 26px var(--font-display);
+}
+.card .title {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+.card .title .wordmark {
+  display: block;
+  width: min(240px, 80%);
+  height: auto;
+}
+.card p {
+  margin: 0;
+  line-height: 1.4;
+}
+.ethos {
+  color: var(--ink-dim);
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.version {
+  color: var(--ink-dim);
+  font: 13px var(--font-mono);
+}
+.row {
+  display: flex;
+  gap: 10px;
+}
+.row > button {
+  flex: 1;
+}
+/* the house colophon: made with <heart> by roy + ai · sponsor me, centred.
+   every row stays centred when it wraps */
+.maker {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0 0.3em;
+  text-align: center;
+  font: 13px var(--font-mono);
+  color: var(--ink-dim);
+}
+.maker a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--ink-dim);
+}
+.mark-heart {
+  width: 0.85em;
+  height: 0.85em;
+  fill: var(--mark-heart);
+}
+.mark-dot {
+  opacity: 0.45;
+}
+.mark-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0 0.3em;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.update {
+  position: fixed;
+  left: 50%;
+  top: max(8px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: var(--ink-on-accent);
+  z-index: 7;
+}
+.warn {
+  color: var(--warn);
+}
+/* the build, small, like the rest of the house */
+.corner {
+  font: 600 12px var(--font-mono);
+  color: var(--ink-dim);
+  opacity: 0.8;
+}

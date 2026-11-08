@@ -127,6 +127,6 @@ test("a saved jail comes back as it was; junk comes back as nothing", () => {
   assert.equal(back.birds.length, w.birds.length);
   assert.equal(restore(null), null);
   assert.equal(restore("{not json"), null);
-  assert.equal(restore(JSON.stringify({ v: 2 })), null);
+  assert.equal(restore(JSON.stringify({ ...w, v: 2 })), null);
   assert.equal(restore(JSON.stringify({ ...w, birds: "x" })), null);
 });
