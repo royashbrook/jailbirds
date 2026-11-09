@@ -267,7 +267,7 @@ a {
 }
 .nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
   max-width: 480px;
@@ -349,6 +349,69 @@ a {
 .card p {
   margin: 0;
   line-height: 1.4;
+}
+/* the camera controls leave the jail visible. on a short screen they sit
+   beside the preview, not across the player in the middle. */
+.sheet.camera-sheet {
+  place-items: end center;
+  padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.camera-sheet::backdrop {
+  background: transparent;
+}
+.camera-card {
+  padding: 14px;
+  gap: 6px;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+}
+.camera-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.camera-heading h2 {
+  font-size: 22px;
+}
+.camera-heading span {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+.camera-control {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.camera-control input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--accent-dim);
+  touch-action: none;
+}
+.camera-control output {
+  text-align: right;
+  font: 12px var(--font-mono);
+  color: var(--ink-dim);
+}
+.camera-card .big {
+  min-height: 44px;
+  font-size: 17px;
+}
+.camera-note {
+  font-size: 13px;
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .sheet.camera-sheet {
+    place-items: center end;
+  }
+  .camera-card {
+    width: min(300px, 40vw);
+  }
 }
 .ethos {
   color: var(--ink-dim);

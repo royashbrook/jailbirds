@@ -6,7 +6,8 @@
   import { skinById } from "./skins/index.ts";
   import { createView, remember, type Past } from "./view/view.ts";
   import { createOverlay, type Thumb } from "./view/overlay.ts";
-  import { readSlot, writeSlot } from "./lib/storage.ts";
+  import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraSettings, cameraStick, type CameraSettings } from "./view/camera.ts";
+  import { readJson, readSlot, writeJson, writeSlot } from "./lib/storage.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
   // the drawn name: a striped bird and the word, no font file to load
@@ -21,6 +22,23 @@
   const level = () => LEVELS[world.level];
   // the look: one skin for now (peg people); the view draws whatever the skin describes
   const skin = skinById(null);
+  const CAMERA = "jailbirds:camera";
+  let camera = $state.raw(cameraSettings(readJson(CAMERA, DEFAULT_CAMERA)));
+  let cameraSaved = $state(true);
+  function saveCamera() {
+    cameraSaved = writeJson(CAMERA, camera);
+  }
+  function adjustCamera(key: keyof CameraSettings, value: number) {
+    camera = cameraSettings({ ...camera, [key]: value });
+  }
+  function resetCamera() {
+    camera = { ...DEFAULT_CAMERA };
+    saveCamera();
+  }
+  function closeSheet() {
+    if (sheet === "camera") saveCamera();
+    sheet = "";
+  }
 
   // what the screen watches; the world mutates in place
   let coins = $state(world.coins);
@@ -45,7 +63,7 @@
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(true);
-  let sheet = $state<"" | "about" | "ios" | "restart">("");
+  let sheet = $state<"" | "about" | "camera" | "ios" | "restart">("");
   let noGl = $state(false);
 
   let canvasEl = $state<HTMLCanvasElement>();
@@ -61,6 +79,7 @@
     state: () => JSON.parse(JSON.stringify(world)) as World,
     skin: () => skin.id,
     rank: () => world.rank,
+    camera: () => ({ ...camera }),
     drawn: () => (view ? { webgl: true, frames, ...view.info() } : { webgl: false, frames }),
     warden: () => (view ? view.where(world, { x: 0, y: 0, on: false }) : null),
   };
@@ -110,11 +129,11 @@
   function stick(): Stick {
     if (thumb) {
       const dx = (thumb.x - thumb.ox) / STICK, dy = (thumb.y - thumb.oy) / STICK;
-      return { x: dx, y: dy };
+      return cameraStick({ x: dx, y: dy }, camera.turn);
     }
     const x = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
     const y = (held("down") ? 1 : 0) - (held("up") ? 1 : 0);
-    return { x, y };
+    return cameraStick({ x, y }, camera.turn);
   }
   function local(e: PointerEvent) {
     const box = canvasEl!.getBoundingClientRect();
@@ -165,6 +184,14 @@
     keys.clear();
     tapped.clear();
   };
+  $effect(() => {
+    if (sheet) {
+      keys.clear();
+      tapped.clear();
+      thumb = null;
+      pointer = null;
+    }
+  });
 
   // the 3d view fills its space; the renderer caps the pixel ratio at 2
   let view: ReturnType<typeof createView> | null = null;
@@ -207,7 +234,7 @@
       sync();
     }
     if (view && overlay) {
-      view.render(world, level(), past, sheet ? 1 : acc / DT, now, dt);
+      view.render(world, level(), past, sheet ? 1 : acc / DT, now, dt, camera);
       overlay.update(world, level(), view, skin, WORDS, thumb, cssW, cssH);
       frames++;
     }
@@ -322,6 +349,7 @@
     <p class="tip" id="tip">{#if !saved}<span class="warn">this browser is not saving your jail</span>{:else}{tip}{/if}</p>
     <nav class="nav" aria-label="jailbirds">
       <button id="about" aria-label="menu and about" onclick={() => (sheet = "about")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>menu</button>
+      <button id="camera" aria-label="adjust camera" disabled={noGl} onclick={() => (sheet = "camera")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l1-2h6l1 2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" /><circle cx="12" cy="12" r="4" /></svg>view</button>
       <button id="restart" aria-label="start over" onclick={() => (sheet = "restart")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" /><path d="M19.5 4v4h-4" /></svg>new jail</button>
     </nav>
   </footer>
@@ -330,9 +358,23 @@
 {#if updateReady}<button class="update" onclick={applyUpdate}>new version, tap to load</button>{/if}
 
 {#if sheet}
-  <dialog bind:this={dialog} class="sheet" onclose={() => (sheet = "")}>
-    <div class="card">
-      {#if sheet === "about"}
+  <dialog bind:this={dialog} class="sheet" class:camera-sheet={sheet === "camera"} onclose={closeSheet}>
+    <div class="card" class:camera-card={sheet === "camera"}>
+      {#if sheet === "camera"}
+        <div class="camera-heading"><h2>your view</h2><span>paused</span></div>
+        {#each CAMERA_CONTROLS as control (control.key)}
+          <label class="camera-control" for={`camera-${control.key}`}>
+            <span>{control.label}</span>
+            <input id={`camera-${control.key}`} type="range" min={control.min} max={control.max} step={control.step} value={camera[control.key]} oninput={(e) => adjustCamera(control.key, e.currentTarget.valueAsNumber)} onchange={saveCamera} />
+            <output for={`camera-${control.key}`}>{control.key === "zoom" ? `${Math.round(camera.zoom * 100)}%` : `${camera[control.key]}°`}</output>
+          </label>
+        {/each}
+        {#if !cameraSaved}<p class="warn camera-note" role="status">this browser is not saving your view</p>{/if}
+        <div class="row camera-actions">
+          <button id="reset-camera" onclick={resetCamera}>reset view</button>
+          <button id="close" class="big" onclick={closeSheet}>done</button>
+        </div>
+      {:else if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
         <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
@@ -360,7 +402,7 @@
         <h2>install jailbirds</h2>
         <p>in safari, tap the <b>share</b> button, then <b>add to home screen</b>.</p>
       {/if}
-      <button id="close" class="big" onclick={() => (sheet = "")}>{sheet === "restart" ? "keep playing" : "back"}</button>
+      {#if sheet !== "camera"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
     </div>
   </dialog>
 {/if}

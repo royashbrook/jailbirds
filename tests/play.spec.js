@@ -17,7 +17,8 @@ test("arrow keys walk the warden, and a drag anywhere walks the warden too", asy
   await untilSim(page, (s) => s.agents[0].x > start.x + 20, 3, "the warden to walk right");
   await page.keyboard.up("ArrowRight");
   const right = await me(page);
-  expect(Math.abs(right.y - start.y)).toBeLessThan(2);
+  const turn = await page.evaluate(() => window.__jailbirds.camera().turn);
+  expect(Math.abs(right.y - start.y + (right.x - start.x) * Math.tan(turn * Math.PI / 180))).toBeLessThan(2);
   expect(right.face).toBe(1);
   expect(right.walk).toBeGreaterThan(20);
 

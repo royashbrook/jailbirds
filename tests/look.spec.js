@@ -22,7 +22,7 @@ test("the default characters are peg people, drawn in 3d", async ({ page }) => {
   await expect(page.locator(".card")).toContainText("orange shirts");
 });
 
-test("an ipad sees the whole block: price tags stand over their pads", async ({ page }) => {
+test("an ipad shows price tags over visible pads and labels level locks", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 1366 });
   await page.goto("/");
   await waitFrames(page, 3);
