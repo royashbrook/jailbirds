@@ -1,9 +1,9 @@
 import type { Stick } from "../engine/types.ts";
 
 export const CAMERA_CONTROLS = [
-  { key: "zoom", label: "zoom", min: 0.75, max: 1.75, step: 0.05 },
-  { key: "turn", label: "turn", min: -40, max: 40, step: 1 },
-  { key: "tilt", label: "tilt", min: 40, max: 70, step: 1 },
+  { key: "zoom", label: "zoom", min: 0.5, max: 3, step: 0.05 },
+  { key: "turn", label: "turn", min: -180, max: 180, step: 1 },
+  { key: "tilt", label: "tilt", min: 15, max: 85, step: 1 },
 ] as const;
 
 export type CameraSettings = Record<(typeof CAMERA_CONTROLS)[number]["key"], number>;
