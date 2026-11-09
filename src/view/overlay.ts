@@ -40,8 +40,7 @@ export function createOverlay(root: HTMLElement) {
   const stick = make("stick", "<i></i>");
   const pt: ScreenPoint = { x: 0, y: 0, on: false };
   const edge: ScreenPoint = { x: 0, y: 0, on: false };
-  const torso: ScreenPoint = { x: 0, y: 0, on: false };
-  // per tag: four candidate spots (x, y each), the boxes placed so far, and who still needs a spot
+  // per tag: candidate spots (x, y each), placed boxes, and who still needs a spot
   const spots = new Float32Array(tags.length * SPOTS * 2);
   const boxes = new Float32Array(tags.length * 4);
   const order = new Int16Array(tags.length);
@@ -86,9 +85,18 @@ export function createOverlay(root: HTMLElement) {
 
     // price tags: up off the pad's far edge. a tag that would cover the warden
     // slides sideways past him, or goes below or beside the pad, taking the first spot that covers
-    // neither the warden nor a tag already placed, so the player always shows
+    // neither the warden nor a tag already placed.
     const me = w.agents[0];
-    view.screen(me.x, 14, me.y, torso);
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    // A torso point is not enough at a low angle or close zoom: protect the
+    // standing model envelope, including the head and cap, from every direction.
+    for (let x = -1; x <= 1; x += 2)
+      for (let z = -1; z <= 1; z += 2)
+        for (let h = 0; h <= 1; h++) {
+          view.screen(me.x + x * view.height / 3, h * (view.height + 2), me.y + z * view.height / 3, pt);
+          left = Math.min(left, pt.x); right = Math.max(right, pt.x);
+          top = Math.min(top, pt.y); bottom = Math.max(bottom, pt.y);
+        }
     const screenKey = `${cssW}x${cssH}`;
     let n = 0, placed = 0, waiting = 0;
     for (const p of l.pads) {
@@ -115,9 +123,9 @@ export function createOverlay(root: HTMLElement) {
       const c = k * SPOTS * 2, top = edge.y - s.h - GAP;
       spots[c] = pt.x - s.w / 2;
       spots[c + 1] = top;
-      spots[c + 2] = torso.x + CLEAR * 2;
+      spots[c + 2] = right + CLEAR * 2;
       spots[c + 3] = top;
-      spots[c + 4] = torso.x - CLEAR * 2 - s.w;
+      spots[c + 4] = left - CLEAR * 2 - s.w;
       spots[c + 5] = top;
       view.screen(p.at.x, 2, p.at.y + PAD_HALF, edge);
       spots[c + 6] = pt.x - s.w / 2;
@@ -128,27 +136,34 @@ export function createOverlay(root: HTMLElement) {
       view.screen(p.at.x + PAD_HALF * 1.3, 2, p.at.y, edge);
       spots[c + 10] = edge.x + GAP;
       spots[c + 11] = pt.y - s.h / 2;
-      if (coversWarden(spots[c], spots[c + 1], s)) order[waiting++] = k;
+      // Judge the actual clamped, rounded position. Moving it inside the screen
+      // after testing could put it back over the character or another label.
+      for (let j = 0; j < SPOTS; j++) {
+        const i = c + j * 2;
+        spots[i] = Math.round(Math.max(0, Math.min(cssW - s.w, spots[i])));
+        spots[i + 1] = Math.round(Math.max(0, Math.min(cssH - s.h, spots[i + 1])));
+      }
+      if (coversWarden(spots[c], spots[c + 1], s) || hitsPlaced(spots[c], spots[c + 1], s)) order[waiting++] = k;
       else keep(k, 0);
     }
     // the ones in the warden's way pick from what is left
     for (let i = 0; i < waiting; i++) {
       const k = order[i], s = tags[k];
       let pick = -1;
-      for (let j = 1; j < SPOTS && pick < 0; j++) {
+      for (let j = 0; j < SPOTS && pick < 0; j++) {
         const x = spots[k * SPOTS * 2 + j * 2], y = spots[k * SPOTS * 2 + j * 2 + 1];
         if (!coversWarden(x, y, s) && !hitsPlaced(x, y, s)) pick = j;
       }
-      if (pick < 0)
-        for (let j = 1; j < SPOTS && pick < 0; j++) if (!coversWarden(spots[k * SPOTS * 2 + j * 2], spots[k * SPOTS * 2 + j * 2 + 1], s)) pick = j;
-      keep(k, pick < 0 ? 0 : pick);
-      s.el.classList.toggle("faded", pick < 0);
+      // At an extreme angle there may be no legible slot. The pad remains;
+      // its label returns when the camera moves and there is room for it.
+      if (pick < 0) show(s, false);
+      else keep(k, pick);
     }
     sizedFor = screenKey;
     for (; n < tags.length; n++) show(tags[n], false);
 
     function coversWarden(x: number, y: number, s: Slot) {
-      return torso.x >= x - CLEAR && torso.x <= x + s.w + CLEAR && torso.y >= y - CLEAR && torso.y <= y + s.h + CLEAR;
+      return left < x + s.w + CLEAR && right > x - CLEAR && top < y + s.h + CLEAR && bottom > y - CLEAR;
     }
     function hitsPlaced(x: number, y: number, s: Slot) {
       for (let i = 0; i < placed; i++) {
@@ -158,12 +173,10 @@ export function createOverlay(root: HTMLElement) {
       return false;
     }
     function keep(k: number, j: number) {
-      // a tag near the edge of the play area stays whole, inside it
       const s = tags[k];
-      const x = Math.max(0, Math.min(cssW - s.w, spots[k * SPOTS * 2 + j * 2]));
-      const y = Math.max(0, Math.min(cssH - s.h, spots[k * SPOTS * 2 + j * 2 + 1]));
+      const x = spots[k * SPOTS * 2 + j * 2];
+      const y = spots[k * SPOTS * 2 + j * 2 + 1];
       move(s, x, y);
-      if (j === 0) s.el.classList.remove("faded");
       const b = placed++ * 4;
       boxes[b] = x;
       boxes[b + 1] = y;
