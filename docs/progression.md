@@ -17,6 +17,9 @@ prerequisite purchase pads; needs; walking helpers; construction paid in coins;
 and scene rebuilding after purchases. use those before adding another system.
 the current carrier and clerk choose the first source/check-in station, so
 multiple departments need explicit targeting before they can be called automated.
+also, only the player currently collects room/desk coins and settles squabbles.
+the existing hires automate chores, not the whole economy. those missing jobs
+must be addressed before claiming a hands-off jail.
 
 ## reference, not a shopping list
 
@@ -35,6 +38,10 @@ makes another job worth doing. automated income funds the next visible target.
 - a compact next-goal card: what can be built now, the cost and what it changes.
   distinguish a rank requirement from a coin shortage. after buying everything
   currently available, show the next real milestone rather than a vacant map.
+- an earned cash-office or collection-route upgrade that banks room and station
+  earnings, and guard patrol training that settles squabbles. routine collection
+  and incident response must work without the player walking every circuit.
+  buying the next improvement remains the player's deliberate choice.
 - three visible improvement stages for cells, kitchen/canteen and showers.
   better beds and room fittings improve comfort/income; kitchen equipment and
   serving capacity improve meal throughput; shower fittings improve capacity or
@@ -52,6 +59,9 @@ immediately has a visible new goal. each tier changes both the rendered room and
 the measured simulation outcome. automate a complete intake-to-release loop,
 then buy another useful improvement with its income without manual busywork.
 record purchase cadence from actual play; tune costs against that evidence.
+split this into small reviews: goals and missing automation first, then room
+tiers and staff equipment with their art. do not call the first slice a complete
+progression overhaul while the remaining purchases are still unimplemented.
 
 ## release 2: snap in a real new wing
 
