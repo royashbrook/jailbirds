@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraSettings, cameraStick } from "../src/view/camera.ts";
 
 test("camera preferences are finite and bounded without changing their defaults", () => {
+  assert.deepEqual(DEFAULT_CAMERA, { zoom: 1, turn: 15, tilt: 50 });
+  assert.deepEqual(CAMERA_CONTROLS.map(c => [c.key, c.min, c.max]), [
+    ["zoom", 0.5, 3], ["turn", -180, 180], ["tilt", 15, 85],
+  ]);
   assert.deepEqual(cameraSettings({}), DEFAULT_CAMERA);
   for (const c of CAMERA_CONTROLS) {
     assert.equal(cameraSettings({ [c.key]: -1000 })[c.key], c.min);
@@ -23,7 +27,7 @@ test("a turned camera maps screen right and down onto the ground", () => {
   assert(Math.abs(right.y + 0.5) < 1e-12);
   assert(Math.abs(down.x - 0.5) < 1e-12);
   assert(Math.abs(down.y - Math.sqrt(3) / 2) < 1e-12);
-  for (const turn of [-40, -15, 0, 15, 40])
+  for (const turn of [-180, -90, -40, -15, 0, 15, 40, 90, 180])
     for (const input of [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0.4, y: 0.6 }]) {
       const world = cameraStick(input, turn);
       assert(Math.abs(Math.hypot(world.x, world.y) - Math.hypot(input.x, input.y)) < 1e-12);

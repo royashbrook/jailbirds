@@ -558,9 +558,6 @@ a {
   font-size: 10px;
   font-weight: 700;
 }
-.tag.faded {
-  opacity: 0.45;
-}
 .tag.locked {
   border-color: #9b95a3;
   color: #6f6a75;

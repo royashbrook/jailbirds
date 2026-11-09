@@ -40,7 +40,13 @@ export function updateControl(ready: () => void) {
     });
     identify();
   }
-  async function check(): Promise<UpdateCheck> {
+  let checking: Promise<UpdateCheck> | null = null;
+  function check(): Promise<UpdateCheck> {
+    if (disposed || document.hidden) return Promise.resolve("unreachable");
+    // Focus, pageshow and visibility often arrive together on a phone.
+    return checking ??= probe().finally(() => { checking = null; });
+  }
+  async function probe(): Promise<UpdateCheck> {
     identify();
     // A plain controller cancels on older Safari too, which lacks AbortSignal.any
     // and AbortSignal.timeout: a timer keeps the eight-second deadline and the
@@ -147,6 +153,11 @@ export function updateControl(ready: () => void) {
     });
     if (!disposed) location.reload();
   }
+  const visible = () => { if (!document.hidden) void check(); };
+  document.addEventListener("visibilitychange", visible, { signal: lifetime.signal });
+  for (const event of ["pageshow", "focus", "online"])
+    window.addEventListener(event, visible, { signal: lifetime.signal });
+  void check();
   const interval = window.setInterval(check, 60000);
   return {
     check,

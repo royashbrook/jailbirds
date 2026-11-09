@@ -36,7 +36,7 @@ test("live camera preview pauses the jail, persists separately and resets", asyn
   expect(await eye(page)).not.toEqual(turned);
   expect(await state(page)).toEqual(paused);
   expect(await page.evaluate(() => localStorage.getItem("jailbirds:save"))).toBe(saved);
-  const desired = { zoom: 1.75, turn: -40, tilt: 70 };
+  const desired = { zoom: 3, turn: -180, tilt: 85 };
   expect(await settings(page)).toEqual(desired);
   await page.click("#close");
   await page.reload();
@@ -57,7 +57,7 @@ test("invalid saved camera values recover without touching progress", async ({ p
   await page.addInitScript(() => localStorage.setItem("jailbirds:camera", '{"zoom":"1000","turn":999,"tilt":null}'));
   await page.goto("/");
   await waitFrames(page, 3);
-  expect(await settings(page)).toEqual({ zoom: 1, turn: 40, tilt: 50 });
+  expect(await settings(page)).toEqual({ zoom: 1, turn: 180, tilt: 50 });
   expect(await page.locator(".nogl").count()).toBe(0);
 });
 
@@ -91,12 +91,21 @@ test("touch adjusts the camera slider without walking the warden", async ({ page
   expect(await state(page)).toEqual(paused);
 });
 
-for (const turnKey of ["Home", "End"])
-  test(`screen-right movement follows the camera at ${turnKey}`, async ({ page }) => {
+for (const turn of [-180, -90, 0, 90, 180])
+  test(`screen-right movement follows the rendered camera at ${turn} degrees`, async ({ page }) => {
     await page.goto("/");
     await open(page);
-    await page.locator("#camera-turn").press(turnKey);
-    const turn = (await settings(page)).turn * Math.PI / 180;
+    await page.locator("#camera-turn").evaluate((e, value) => {
+      e.value = String(value);
+      e.dispatchEvent(new Event('input', { bubbles: true }));
+    }, turn);
+    await waitFrames(page, 2);
+    const right = await page.evaluate(() => {
+      const { eye, target } = window.__jailbirds.drawn();
+      const x = eye[2] - target[2], y = target[0] - eye[0];
+      const length = Math.hypot(x, y);
+      return { x: x / length, y: y / length };
+    });
     await page.click("#close");
     const start = (await state(page)).agents[0];
     await page.keyboard.down("ArrowRight");
@@ -104,8 +113,8 @@ for (const turnKey of ["Home", "End"])
     await page.keyboard.up("ArrowRight");
     const end = (await waitSim(page, 0.1)).agents[0];
     const dx = end.x - start.x, dy = end.y - start.y;
-    expect(dx * Math.cos(turn) - dy * Math.sin(turn)).toBeGreaterThan(10);
-    expect(Math.abs(dx * Math.sin(turn) + dy * Math.cos(turn))).toBeLessThan(2);
+    expect(dx * right.x + dy * right.y).toBeGreaterThan(10);
+    expect(Math.abs(dx * -right.y + dy * right.x)).toBeLessThan(2);
   });
 
 for (const viewport of [

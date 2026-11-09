@@ -376,6 +376,7 @@
         </div>
       {:else if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
+        {#if updateReady}<button class="big" onclick={applyUpdate}>load new version</button>{/if}
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
         <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop coins, and so do the desks.</p>
