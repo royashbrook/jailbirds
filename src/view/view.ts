@@ -1,7 +1,7 @@
 // the jail in 3d. reads the world (never changes it), blends positions between
 // the last two fixed steps, and draws through the skin: the skin says what a
 // character is made of and how it moves, this file puts it on screen. a 3/4
-// camera looks down at 50 degrees and follows the warden. everything that comes
+// camera orbits the warden with a saved zoom, turn and tilt. everything that comes
 // in numbers (body parts, trays, coins) is one instanced mesh. the per-character
 // work reuses one set of scratch matrices, colours and a pose; a few small
 // allocations remain per frame (station lookups, closures), and the still parts
@@ -16,6 +16,7 @@ import { isDone, isOpen, mood, padVisible } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
 import { buildScene, type Built } from "./scene.ts";
+import type { CameraSettings } from "./camera.ts";
 
 /** where everyone stood one step ago, by id */
 export type Past = Map<number, { x: number; y: number; walk: number }>;
@@ -39,7 +40,6 @@ const MAX_TRAYS = 160;
 const MAX_COINS = 320;
 const MAX_FLY = 48;
 const MAX_MESS = 40;
-const PITCH = (50 * Math.PI) / 180;
 const FOV = 34;
 const PIXEL_CAP = 2;
 
@@ -202,26 +202,23 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
 
   /** how much floor to show: about 400 world units across a phone's short side,
    * more on an ipad, so a bigger screen is a bigger view, not just bigger people */
-  function frame(l: LevelDef, focus: { x: number; y: number }, dt: number) {
-    const zoom = Math.min(1.6, Math.max(0.8, Math.min(cssW, cssH) / 400));
+  function frame(focus: { x: number; y: number }, dt: number, settings: CameraSettings) {
+    const pitch = settings.tilt * Math.PI / 180, turn = settings.turn * Math.PI / 180;
+    const zoom = Math.min(1.6, Math.max(0.8, Math.min(cssW, cssH) / 400)) * settings.zoom;
     const viewH = cssH / zoom, viewW = cssW / zoom;
     // far enough back that both the width and the depth of that much floor fit
     const half = Math.tan((FOV * Math.PI) / 360);
-    const dist = Math.max((viewH * Math.sin(PITCH) * 0.82) / (2 * half), (viewW * 0.92) / (2 * half * camera.aspect));
-    // keep the jail filling the frame: clamp where the camera looks so the frustum's
-    // far and near edges, where they meet the floor, stay near the map's edges
-    const h = Math.sin(PITCH) * dist, back = Math.cos(PITCH) * dist, f = (FOV * Math.PI) / 360;
-    const far = back - h / Math.tan(PITCH - f), near = back - h / Math.tan(PITCH + f);
-    const halfW = dist * half * camera.aspect, margin = 30;
-    const span = (lo: number, hi: number, c: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, c)));
-    const tx = span(halfW - margin, l.size.w - halfW + margin, focus.x);
-    const tz = span(-margin - far, l.size.h + margin - near, focus.y);
+    const dist = Math.max((viewH * Math.sin(pitch) * 0.82) / (2 * half), (viewW * 0.92) / (2 * half * camera.aspect));
+    // orbit the player rather than clamping to map axes: a turned view must
+    // not leave the warden offscreen when walking along an edge.
+    const tx = focus.x, tz = focus.y;
     if (!camReady) target.set(tx, 0, tz), (camReady = true);
     // ease toward the warden: quick, never a snap
     const k = 1 - Math.exp(-dt * 7);
     target.x += (tx - target.x) * k;
     target.z += (tz - target.z) * k;
-    camera.position.set(target.x, Math.sin(PITCH) * dist, target.z + Math.cos(PITCH) * dist);
+    const back = Math.cos(pitch) * dist;
+    camera.position.set(target.x + Math.sin(turn) * back, Math.sin(pitch) * dist, target.z + Math.cos(turn) * back);
     look.set(target.x, 0, target.z);
     camera.lookAt(look);
   }
@@ -249,7 +246,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     return "stand";
   }
 
-  function render(w: World, l: LevelDef, past: Past | null, alpha: number, now: number, dt: number) {
+  function render(w: World, l: LevelDef, past: Past | null, alpha: number, now: number, dt: number, settings: CameraSettings) {
     const t = now / 1000;
     // rebuild the still parts only when the level, what is bought, or the palette changes
     if (l.id !== builtLevel || w.bought.length !== builtBought || pal !== builtPal) {
@@ -267,7 +264,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     // where each character stands this frame, blended between steps
     const me = w.agents[0], mp = past?.get(me.id);
     const fx = mp ? mp.x + (me.x - mp.x) * alpha : me.x, fy = mp ? mp.y + (me.y - mp.y) * alpha : me.y;
-    frame(l, { x: fx, y: fy }, dt);
+    frame({ x: fx, y: fy }, dt, settings);
 
     forget(w, headings);
     for (const p of partList) p.used = 0;
@@ -435,7 +432,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     /** the warden on screen, for tests and screenshots */
     where: (w: World, out: ScreenPoint) => screen(w.agents[0].x, 14, w.agents[0].y, out),
     height: skin.model.height,
-    info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
+    info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray() }),
     dispose() {
       built?.dispose();
       renderer.dispose();

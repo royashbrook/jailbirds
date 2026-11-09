@@ -36,6 +36,8 @@ export async function waitFrames(page, n) {
 export async function walkTo(page, to, near = 4) {
   const box = await page.locator("#jail").boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const turn = await page.evaluate(() => window.__jailbirds.camera().turn);
+  const angle = turn * Math.PI / 180, c = Math.cos(angle), sn = Math.sin(angle);
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   try {
@@ -49,7 +51,8 @@ export async function walkTo(page, to, near = 4) {
       // a frame is at most a quarter second: cover at most half the gap in one
       const push = Math.min(1, d / (s.speed * 0.25 * 2));
       const r = Math.max(4, push * 44);
-      await page.mouse.move(cx + (dx / d) * r, cy + (dy / d) * r);
+      // the target is in world space; the thumb gesture is in screen space
+      await page.mouse.move(cx + ((dx * c - dy * sn) / d) * r, cy + ((dx * sn + dy * c) / d) * r);
       await page.waitForTimeout(30);
     }
   } finally {
