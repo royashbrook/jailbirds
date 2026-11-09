@@ -23,11 +23,17 @@ must be addressed before claiming a hands-off jail.
 
 ## reference, not a shopping list
 
-[Prison Empire Tycoon's developer listing](https://play.google.com/store/apps/details?hl=en_US&id=com.codigames.idle.prison.empire.manager.tycoon)
-describes room improvements, recreation, healthcare, laundry, visits, utilities
-and specialized staff. the useful design is that growing population creates a
-new service problem, and investing in that service visibly changes the prison.
-we do not copy its art, currencies, paid boosters or waiting gates.
+the primary reference is [Supercent's Prison Life](https://play.google.com/store/apps/details?id=io.supercent.prison),
+the walk-around arcade-idle game this project follows. its developer describes
+room upgrades, staff, kitchens, gyms, mines, visiting rooms and away earnings.
+keep that hands-on loop as the spine, with the map and distinct prisons as a
+real progression target rather than another price multiplier.
+
+[Prison Empire Tycoon](https://play.google.com/store/apps/details?hl=en_US&id=com.codigames.idle.prison.empire.manager.tycoon)
+is a secondary reference for service chains and environment details, not a
+reason to turn this into a different management game. laundry, library and
+utilities are optional later ideas, not assumed Prison Life mechanics.
+we copy no art, layout, currencies, paid boosters or waiting gates.
 
 our direction: build a friendly little working diorama. start by doing a job,
 hire someone to own it, improve their tools, then add a new room or wing that
@@ -38,8 +44,9 @@ makes another job worth doing. automated income funds the next visible target.
 - a compact next-goal card: what can be built now, the cost and what it changes.
   distinguish a rank requirement from a coin shortage. after buying everything
   currently available, show the next real milestone rather than a vacant map.
-- an earned cash-office or collection-route upgrade that banks room and station
-  earnings, and guard patrol training that settles squabbles. routine collection
+- a hired cash collector that banks room and station earnings, and guard patrol
+  training that settles squabbles. walking through cash stays satisfying before
+  choosing to buy that automation. routine collection
   and incident response must work without the player walking every circuit.
   buying the next improvement remains the player's deliberate choice.
 - three visible improvement stages for cells, kitchen/canteen and showers.
@@ -63,7 +70,14 @@ split this into small reviews: goals and missing automation first, then room
 tiers and staff equipment with their art. do not call the first slice a complete
 progression overhaul while the remaining purchases are still unimplemented.
 
-## release 2: snap in a real new wing
+## release 2: a new prison on the map, with room to grow
+
+- bring the site map and a genuinely different second prison forward. use clear
+  star/achievement requirements, a new look and different room opportunities.
+  preserve the current second jail as an existing site until migration is proven.
+- retain each site's cash, workers and purchases and make switching sites explicit.
+  decide and show any return-earnings calculation before introducing it. do not
+  imply that a closed site is simulated continuously when it is not.
 
 - authored expansion slots with a preview footprint and a labelled construction
   pad. buy a cell wing, dining extension or service annex in coins, then watch
@@ -77,15 +91,18 @@ progression overhaul while the remaining purchases are still unimplemented.
 - art in this slice: connecting corridors, fences, landscaping, utility fixtures,
   doors and a short build-in animation. readable silhouettes at distant zoom.
 
-acceptance: buy two different extensions, observe different usable capacity,
-save/reload, and walk the new corridors. meals, cleanup, escort and release keep
-working with multiple departments. no stranded resident or unreachable station.
+acceptance: visit and resume both sites, buy two different extensions, observe
+different usable capacity, save/reload, and walk the new corridors. meals,
+cleanup, escort and release keep working with multiple departments. no stranded
+resident, unreachable station or lost balance after switching sites.
 
 ## release 3: more things happening inside
 
-- recreation yard and library for activities, with benches, books and equipment.
-- laundry and maintenance as visible service jobs, with stocked items and staff.
-- a small clinic that adds a comprehensible care loop, not random punishment.
+- phone room, recreation yard and work/mine area as distinct activities, followed
+  by an infirmary and visiting room. give each a recognizable purpose and action.
+- a work area that visibly produces something, with staff and an earned income
+  target, not a decorative room that only increases a multiplier.
+- an infirmary that adds a comprehensible care loop, not random punishment.
 - an earned improvement should reduce a bottleneck. introduce one service at a
   time and keep existing residents viable while that service is being unlocked.
 - integrate activity animations and material/detail improvements with each room.
@@ -94,13 +111,13 @@ acceptance: each new service has a distinct visible job, a staff assignment and 
 measurable benefit. a fully automated jail can cover every required service.
 no need starts depleting on an old save before its facility is reachable.
 
-## release 4: a reason to run another jail
+## release 4: deeper variety after the core rooms
 
-- a genuinely different second layout with space for the expansion system.
-  preserve the current second jail as an existing site until migration is proven.
-- add workshops and visits as new activities and longer-term funding targets.
-- a site selector and a clear next-site requirement. retain built sites and their
-  progress rather than quietly resetting the player's work when they travel.
+- add more themed sites and longer-term workshop/visitor improvements.
+- consider VIP residents, earned capacity boosts and bounded away earnings as
+  separate reviewed features. preserve the no-ads/no-paid-gates contract.
+- consider library, laundry or utilities only when they add a good new job.
+  those are proposals, not a prerequisite for recognizing the original loop.
 - distinct environment identity per site: courtyard layout, materials, surrounding
   landscape, furniture and working activity. not the same floor at twice the cost.
 
