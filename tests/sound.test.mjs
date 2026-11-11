@@ -144,7 +144,7 @@ test("a cue is heard at once, on the cue bus, and no tune plays with music off",
   close(r.heard("sfx")[1].at, 1.02);
   assert.equal(r.heard("music").length, 0);
   assert.equal(r.timers.size, 0);
-  assert.deepEqual(s.report(), { music: false, sfx: true, state: "running", tune: false, steps: 0, cues: { tap: 1 } });
+  assert.deepEqual(s.report(), { music: false, sfx: true, state: "running", tune: false, steps: 0, pace: 1, cues: { tap: 1 } });
 });
 
 test("the tune is written a little ahead of the clock, in order, and keeps time", (t) => {
@@ -175,12 +175,14 @@ test("the tune goes faster when asked, from the next step on", (t) => {
   r.pass(2);
   const before = r.heard("music").length;
   s.pace(2);
+  assert.equal(s.report().pace, 2);
   r.pass(2);
   const at = r.heard("music").map((n) => n.at);
   close(at[2] - at[1], 0.25);
   close(at.at(-1) - at.at(-2), 0.125);
   assert.ok(at.length - before >= 15, "about twice as many steps in the same time");
   s.pace(0);
+  assert.equal(s.report().pace, 1);
   r.pass(1);
   close(r.heard("music").at(-1).at - r.heard("music").at(-2).at, 0.25);
 });
@@ -209,7 +211,7 @@ test("music off fades and stops the tune but leaves the audio running, and on ag
   const next = r.heard("music")[written];
   assert.equal(next.f, 100 + (written % 4));
   close(next.at, 3.6 + 0.08);
-  assert.deepEqual(bus.gain.events.at(-1).slice(0, 2), ["target", 0.45]);
+  assert.deepEqual(bus.gain.events.at(-1).slice(0, 2), ["target", 0.3]);
   close(bus.gain.events.at(-1)[2], 3.6);
   assert.equal(r.made, 1);
 });

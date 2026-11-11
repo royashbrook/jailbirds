@@ -21,9 +21,10 @@ export interface Score<K extends string = string> {
   notes(step: number): Blip[];
 }
 
-/** how loud everything is, the tune under the cues, before the limiter */
-const MASTER = 0.5;
-const MUSIC = 0.45;
+/** how loud everything is, the tune under the cues, before the limiter. set from a measured render:
+ * a coin peaks near -13 dbfs, the tune near -11, a fanfare near -4, the worst pile-up near -3.5 */
+const MASTER = 1;
+const MUSIC = 0.3;
 /** how far ahead of the clock the tune is written, and how often that is checked */
 const AHEAD = 0.3;
 const EVERY = 25;
@@ -260,6 +261,6 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
       hidden = v;
       turn();
     },
-    report: () => ({ music, sfx, state: ctx ? ctx.state : "none", tune: timer !== undefined, steps: played, cues: { ...heard } }),
+    report: () => ({ music, sfx, state: ctx ? ctx.state : "none", tune: timer !== undefined, steps: played, pace: speed, cues: { ...heard } }),
   };
 }
