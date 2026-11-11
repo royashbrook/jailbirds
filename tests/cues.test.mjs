@@ -413,6 +413,16 @@ test("what came in: nothing for a new level or a fresh start, and a slow frame a
   next.bought.push("cell3");
   assert.deepEqual(gains(before, next), { coins: 0, stars: 0, bought: [] }, "a new level");
   assert.deepEqual(gains(before, w), { coins: 0, stars: 0, bought: [] }, "the same instant");
+  const same = create(LEVELS, 0, 5);
+  same.steps = before.steps;
+  same.coins = before.coins + 9;
+  same.released = before.released + 1;
+  same.bought.push("cell3");
+  assert.deepEqual(gains(before, same), { coins: 0, stars: 0, bought: [] }, "a world that has not moved on");
+  const later = create(LEVELS, 0, 5);
+  later.steps = before.steps + 1;
+  later.coins = 0;
+  assert.deepEqual(gains({ ...before, coins: 50, released: 3 }, later), { coins: 0, stars: 0, bought: [] }, "fewer than before is none, never less than none");
 
   const story = (every) => {
     const s = settle(7, every);

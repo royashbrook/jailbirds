@@ -101,6 +101,11 @@ test("more coins inside 300ms count up on the +n already floating; after that a 
   assert.deepEqual(p.pops(), ["+4"]);
   p.draw(2216);
   assert.deepEqual(p.pops(), []);
+  // and long after, with nothing up: two that came in before a frame are still one
+  p.overlay.gain("coin", 2);
+  p.overlay.gain("coin", 3);
+  p.draw(2300);
+  assert.deepEqual(p.pops(), ["+5"]);
 });
 
 test("a star gets its own +n, marked as a star, and coins do not count up on it", () => {
