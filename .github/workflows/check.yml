@@ -5,6 +5,13 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # a good run is about 9 minutes. a stuck one stops here, not at the 6 hour default
+    timeout-minutes: 30
+    # the browsers and all they need come in the image, so no run waits on a package mirror.
+    # the tag is the playwright version in package.json: tests/ci.test.mjs holds the two together
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --user 1001
     steps:
       - uses: actions/checkout@v7
         with:
@@ -18,7 +25,6 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:browser
       - uses: actions/upload-artifact@v7
         if: failure()
