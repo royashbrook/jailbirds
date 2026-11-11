@@ -7,7 +7,8 @@ import { queued, state, untilSim, walkTo } from "./helpers.js";
 // a "+7" is up for under a second, so the page itself writes down each one as it
 // shows and as it goes, and the test reads that, never racing the clock.
 // what is looked at is the part that moves: the label inside a "+7", and for a ring the
-// spot it opens from (the ring itself is drawn round that spot). a count that jumps is
+// spot it opens from. the ring itself is drawn by that spot, as a thing with no box to ask
+// after, so how it is hung on the spot is read from its style. a count that jumps is
 // put in anew with its jump on it, so each jump is counted as it is put in.
 function watch() {
   const log = (window.__pops = []), jumps = (window.__jumps = { coins: 0, stars: 0 });
@@ -28,6 +29,7 @@ function watch() {
         display: getComputedStyle(part).display, motion: getComputedStyle(part, ring ? "::before" : null).animationName,
         quiet: el.getAttribute("aria-hidden"),
         mark: ring ? "" : getComputedStyle(part, "::after").backgroundImage === "none" ? "coin" : "star",
+        hung: ring ? ["left", "top", "translate"].map((key) => getComputedStyle(part, "::before")[key]) : [],
         warden: window.__jailbirds.warden(),
       });
     }
@@ -37,7 +39,7 @@ const log = (page) => page.evaluate(() => window.__pops);
 const tally = (page) => page.evaluate(() => window.__jailbirds.pops());
 const jumps = (page) => page.evaluate(() => window.__jumps);
 const motion = (locator) => locator.evaluate((el) => getComputedStyle(el).animationName);
-const PILE = { x: 50, y: 700 }, LOOSE = { x: 180, y: 700 }, STAMP = { x: 600, y: 704 }, CELL3 = { x: 235, y: 184 };
+const PILE = { x: 50, y: 700 }, LOOSE = { x: 180, y: 700 }, STAMP = { x: 600, y: 704 }, CELL3 = { x: 235, y: 184 }, LINE1 = { x: 320, y: 590 };
 
 /** the jail as it stands, saved with a few things changed, and opened again */
 async function reopen(page, world, change) {
@@ -140,9 +142,11 @@ test("the star that levels her up shows with the coins it pays, the star a line 
 test("a pad bought opens a ring on the pad, and paying for it floats nothing", async ({ page }) => {
   await page.goto("/");
   const world = await started(page);
-  // the warden stands on the edge of the pad, to one side of its middle, with coins to spare
-  await reopen(page, world, { coins: 50, warden: { x: CELL3.x + 18, y: CELL3.y } });
-  const bought = await untilSim(page, (s) => s.bought.includes("cell3"), 5, "the cell to be bought");
+  // the warden stands on the edge of a pad, to one side of its middle, with coins to spare.
+  // it is not the first pad of the level, and the first is a long way off
+  await reopen(page, world, { coins: 50, warden: { x: LINE1.x + 18, y: LINE1.y } });
+  const bought = await untilSim(page, (s) => s.bought.includes("line1"), 5, "the longer line to be bought");
+  expect(bought.bought).toEqual(["line1"]);
   await expect.poll(() => tally(page)).toEqual({ coins: 0, stars: 0, rings: 1 });
   await expect(page.locator("#coins b")).toHaveText(String(bought.coins));
   expect(bought.coins).toBeLessThan(50);
@@ -152,6 +156,8 @@ test("a pad bought opens a ring on the pad, and paying for it floats nothing", a
   await expect.poll(() => log(page).then((l) => l.length)).toBe(2);
   const [up, down] = await log(page);
   expect(up).toMatchObject({ what: "ring", shown: true, display: "block", motion: "ring", quiet: "true" });
+  // its middle is on the spot: it starts at the spot and is pulled back by half of itself
+  expect(up.hung).toEqual(["0px", "0px", "-50% -50%"]);
   // on the pad beside him: near the warden, and not on him
   expect(Math.abs(up.x - up.warden.x)).toBeGreaterThan(4);
   expect(Math.hypot(up.x - up.warden.x, up.y - up.warden.y)).toBeLessThan(60);
@@ -203,8 +209,8 @@ test("the squabble burst wobbles where it is, and does not slide about the scree
       same = slot.style.transform === was ? same + 1 : 0;
       was = slot.style.transform;
       if (same < 20) return void requestAnimationFrame(look);
-      const box = slot.firstElementChild.getBoundingClientRect();
-      out.push({ x: box.x + box.width / 2, y: box.y + box.height / 2, w: box.width, put: was });
+      const box = slot.firstElementChild.getBoundingClientRect(), spot = slot.getBoundingClientRect();
+      out.push({ x: box.x + box.width / 2, y: box.y + box.height / 2, w: box.width, put: was, spotX: spot.x, spotY: spot.y });
       out.length < 40 ? requestAnimationFrame(look) : done(out);
     };
     requestAnimationFrame(look);
@@ -214,6 +220,8 @@ test("the squabble burst wobbles where it is, and does not slide about the scree
   expect(spread("w")).toBeGreaterThan(2);
   expect(spread("x")).toBeLessThan(1);
   expect(spread("y")).toBeLessThan(1);
+  // and its middle is on the spot the view put it
+  expect(Math.max(...seen.map((s) => Math.hypot(s.x - s.spotX, s.y - s.spotY)))).toBeLessThan(1);
 
   // and with less motion it holds still
   await page.emulateMedia({ reducedMotion: "reduce" });
