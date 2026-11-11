@@ -1,6 +1,7 @@
 // the words and signs over the 3d jail, as plain html laid over the canvas:
 // need bubbles, price tags, "full!", "no beds!", the squabble burst, the arrow
-// to trouble at the screen's edge, and the thumb stick. every element is made
+// to trouble at the screen's edge, the "+3" that floats up when coins or a star
+// come in, the ring where a pad was bought, and the thumb stick. every element is made
 // once and reused; a frame only moves them and changes text that changed.
 import { followers, isDone, noBed, padVisible, SETTLE, wants } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, World } from "../engine/types.ts";
@@ -19,8 +20,15 @@ const TOP = 40;
 const PAD_HALF = 20;
 const GAP = 3;
 const CLEAR = 4;
+/** how long a "+3" floats, how long it keeps counting up before the next one starts, and how long a ring lasts, in milliseconds */
+const POP_MS = 900;
+const MERGE_MS = 300;
+const RING_MS = 600;
 
 interface Slot { el: HTMLElement; x: number; y: number; shown: boolean; key: string; w: number; h: number }
+/** `born` is the frame time it was first drawn, or -1 while it waits for that frame */
+interface Pop { slot: Slot; kind: "coin" | "star"; n: number; born: number; live: boolean }
+interface Ring { slot: Slot; x: number; y: number; born: number; live: boolean }
 
 export function createOverlay(root: HTMLElement) {
   const make = (cls: string, html = ""): Slot => {
@@ -38,6 +46,15 @@ export function createOverlay(root: HTMLElement) {
   const burst = make("burst");
   const arrow = make("alert-arrow", "<i></i><b>!</b>");
   const stick = make("stick", "<i></i>");
+  // a "+3" is for the eyes: the coin count up top is what gets read out
+  const decor = (s: Slot) => {
+    s.el.setAttribute("aria-hidden", "true");
+    return s;
+  };
+  const pops = Array.from({ length: 8 }, (): Pop => ({ slot: decor(make("pop")), kind: "coin", n: 0, born: 0, live: false }));
+  const rings = Array.from({ length: 4 }, (): Ring => ({ slot: decor(make("ring")), x: 0, y: 0, born: 0, live: false }));
+  const tally = { coins: 0, stars: 0, rings: 0 };
+  let clock = 0;
   const pt: ScreenPoint = { x: 0, y: 0, on: false };
   const edge: ScreenPoint = { x: 0, y: 0, on: false };
   // per tag: candidate spots (x, y each), placed boxes, and who still needs a spot
@@ -65,7 +82,35 @@ export function createOverlay(root: HTMLElement) {
     write();
   };
 
-  function update(w: World, l: LevelDef, view: View, skin: Skin, words: { full: string; noBed: string }, thumb: Thumb, cssW: number, cssH: number) {
+  const oldest = <T extends { born: number }>(a: T, b: T) => (a.born < b.born ? a : b);
+
+  /** coins or stars came in: a "+n" floats up off the warden. more of the same
+   * a moment later counts up on the one already floating */
+  function gain(kind: "coin" | "star", n: number) {
+    tally[kind === "coin" ? "coins" : "stars"] += n;
+    const fresh = pops.find((p) => p.live && p.kind === kind && (p.born < 0 || clock - p.born < MERGE_MS));
+    if (fresh) {
+      fresh.n += n;
+      return;
+    }
+    const p = pops.find((p) => !p.live) ?? pops.reduce(oldest);
+    p.kind = kind;
+    p.n = n;
+    p.born = -1;
+    p.live = true;
+  }
+
+  /** a pad was bought: a ring pops where it stood, at a spot in the world */
+  function ring(x: number, y: number) {
+    tally.rings++;
+    const r = rings.find((r) => !r.live) ?? rings.reduce(oldest);
+    r.x = x;
+    r.y = y;
+    r.born = -1;
+    r.live = true;
+  }
+
+  function update(w: World, l: LevelDef, view: View, skin: Skin, words: { full: string; noBed: string }, thumb: Thumb, cssW: number, cssH: number, now: number) {
     // need bubbles over heads at home
     let b = 0;
     for (const a of w.agents) {
@@ -201,6 +246,33 @@ export function createOverlay(root: HTMLElement) {
     }
     show(nobed, stalled && !!desk);
 
+    // what just came in, over the warden's head, and a ring where a pad was bought.
+    // the css floats and fades them; here they are placed, counted up and put away
+    clock = now;
+    view.screen(me.x, view.height + 8, me.y, pt);
+    for (const p of pops) {
+      if (p.live && p.born < 0) p.born = now;
+      if (p.live && now - p.born >= POP_MS) p.live = false;
+      if (p.live) {
+        const s = p.slot;
+        label(s, `${p.kind}:${p.n}`, () => {
+          s.el.classList.toggle("star", p.kind === "star");
+          s.el.textContent = `+${p.n}`;
+        });
+        move(s, pt.x, pt.y);
+      }
+      show(p.slot, p.live);
+    }
+    for (const r of rings) {
+      if (r.live && r.born < 0) r.born = now;
+      if (r.live && now - r.born >= RING_MS) r.live = false;
+      if (r.live) {
+        view.screen(r.x, 2, r.y, pt);
+        move(r.slot, pt.x, pt.y);
+      }
+      show(r.slot, r.live && pt.on);
+    }
+
     // trouble: a burst over the squabble, an arrow pointing to it from the edge
     const al = w.alert;
     if (al) {
@@ -241,5 +313,5 @@ export function createOverlay(root: HTMLElement) {
     show(stick, !!thumb);
   }
 
-  return { update };
+  return { update, gain, ring, shown: () => ({ ...tally }) };
 }
