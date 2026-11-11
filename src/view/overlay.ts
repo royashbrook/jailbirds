@@ -82,7 +82,8 @@ export function createOverlay(root: HTMLElement) {
     write();
   };
 
-  const oldest = <T extends { born: number }>(a: T, b: T) => (a.born < b.born ? a : b);
+  /** a slot to use: one that is free, or else the one that has been up the longest */
+  const take = <T extends { born: number; live: boolean }>(pool: T[]) => pool.find((p) => !p.live) ?? pool.reduce((a, b) => (a.born <= b.born ? a : b));
 
   /** coins or stars came in: a "+n" floats up off the warden. more of the same
    * a moment later counts up on the one already floating */
@@ -93,7 +94,7 @@ export function createOverlay(root: HTMLElement) {
       fresh.n += n;
       return;
     }
-    const p = pops.find((p) => !p.live) ?? pops.reduce(oldest);
+    const p = take(pops);
     p.kind = kind;
     p.n = n;
     p.born = -1;
@@ -103,7 +104,7 @@ export function createOverlay(root: HTMLElement) {
   /** a pad was bought: a ring pops where it stood, at a spot in the world */
   function ring(x: number, y: number) {
     tally.rings++;
-    const r = rings.find((r) => !r.live) ?? rings.reduce(oldest);
+    const r = take(rings);
     r.x = x;
     r.y = y;
     r.born = -1;
