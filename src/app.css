@@ -209,8 +209,18 @@ a {
     opacity: 0;
   }
 }
+/* a count that just went up gives a little jump */
+.jump {
+  animation: jump 0.3s ease-out;
+}
+@keyframes jump {
+  40% {
+    scale: 1.35;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .cheer {
+  .cheer,
+  .jump {
     animation: none;
   }
 }
@@ -582,7 +592,10 @@ a {
   background: #ff5a5a;
   color: #ffffff;
 }
-.burst {
+/* the burst wobbles and a "+3" pops, both by growing: that is done to the label inside,
+   never to the slot the view puts in place, or where it sits would grow and shrink too */
+.burst b {
+  display: block;
   translate: -50% -50%;
   padding: 10px 14px;
   background: #ffe066;
@@ -594,6 +607,82 @@ a {
 @keyframes wobble {
   to {
     scale: 1.1;
+  }
+}
+/* what just came in, floating up off the warden: "+3" and a coin, "+1" and a star */
+.pop b {
+  translate: -50% -100%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #ffffff;
+  font: 900 20px var(--font-display);
+  text-shadow: 0 2px 0 #3a2e2b, 1.5px 0 0 #3a2e2b, -1.5px 0 0 #3a2e2b, 0 -1.5px 0 #3a2e2b;
+  white-space: nowrap;
+  animation: pop 0.9s ease-out forwards;
+}
+.pop b::after {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--coin);
+  border: 2px solid #3a2e2b;
+}
+/* a star sits a line higher, so it and the coins of a level up both read */
+.pop.star {
+  margin-top: -26px;
+}
+.pop.star b::after {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M12%202.5l2.9%206.2%206.6.8-4.9%204.6%201.3%206.6L12%2017.4l-5.9%203.3%201.3-6.6-4.9-4.6%206.6-.8z%27%20fill%3D%27%23ffd23f%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.8%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E") no-repeat center / contain;
+}
+@keyframes pop {
+  0% {
+    opacity: 0;
+    translate: -50% -60%;
+    scale: 0.6;
+  }
+  15% {
+    opacity: 1;
+    scale: 1.2;
+  }
+  30% {
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: -50% -260%;
+  }
+}
+/* a pad just bought: a ring opens out from where it stood */
+.ring::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 72px;
+  height: 44px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 5px solid #ffd23f;
+  box-shadow: 0 0 0 2px #ffffff;
+  animation: ring 0.6s ease-out forwards;
+}
+@keyframes ring {
+  from {
+    opacity: 1;
+    scale: 0.3;
+  }
+  to {
+    opacity: 0;
+    scale: 1.9;
   }
 }
 .alert-arrow {
@@ -652,10 +741,15 @@ a {
   font-weight: 700;
   color: var(--ink-dim);
 }
+/* less motion: a "+3" shows and goes without floating, and no ring */
 @media (prefers-reduced-motion: reduce) {
-  .burst,
-  .alert-arrow b {
+  .burst b,
+  .alert-arrow b,
+  .pop b {
     animation: none;
+  }
+  .overlay > .ring {
+    display: none;
   }
 }
 /* a phone either way up (a short side under 500px): smaller price tags, so they

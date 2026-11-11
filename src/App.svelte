@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
-  import { cues, snap } from "./engine/cues.ts";
+  import { cues, gains, snap } from "./engine/cues.ts";
   import type { Stick, World } from "./engine/types.ts";
   import { LEVELS, WORDS, hintText } from "./content/jail.ts";
   import { SCORE } from "./content/sound.ts";
@@ -52,6 +52,9 @@
   let lineNow = $state(0);
   let lineMax = $state(world.lineMax);
   let boosted = $state(0);
+  // a count that just went up gives a little jump: each jump is a new number here
+  let coinJump = $state(0);
+  let starJump = $state(0);
   // short cheers that pop up and fade: a level up, a squabble settled, a boost
   let cheer = $state("");
   let cheerKey = $state(0);
@@ -106,6 +109,7 @@
     drawn: () => (view ? { webgl: true, frames, ...view.info() } : { webgl: false, frames }),
     warden: () => (view ? view.where(world, { x: 0, y: 0, on: false }) : null),
     sound: () => sound.report(),
+    pops: () => overlay?.shown() ?? null,
   };
 
   function sync() {
@@ -119,6 +123,20 @@
     lineMax = world.lineMax;
     boosted = Math.ceil(world.boosted);
     sound.cues(cues(before, world, l));
+    // and for the eyes: a "+3" off the warden, a jump in the count, a ring where a pad was bought
+    const got = gains(before, world);
+    if (got.coins) {
+      overlay?.gain("coin", got.coins);
+      coinJump++;
+    }
+    if (got.stars) {
+      overlay?.gain("star", got.stars);
+      starJump++;
+    }
+    for (const id of got.bought) {
+      const at = l.pads.find((p) => p.id === id)?.at;
+      if (at) overlay?.ring(at.x, at.y);
+    }
     before = snap(world);
     // the tune hurries along with the skates
     sound.pace(world.boosted > 0 ? 1.12 : 1);
@@ -264,7 +282,7 @@
     }
     if (view && overlay) {
       view.render(world, level(), past, sheet ? 1 : acc / DT, now, dt, camera);
-      overlay.update(world, level(), view, skin, WORDS, thumb, cssW, cssH);
+      overlay.update(world, level(), view, skin, WORDS, thumb, cssW, cssH, now);
       frames++;
     }
     raf = requestAnimationFrame(frame);
@@ -363,11 +381,11 @@
       <span class="corner"><span id="version">v{__APP_VERSION__}</span><br /><span id="place">{place}</span></span>
     </div>
     <div class="stats">
-      <div class="stat" id="coins" aria-label={`${coins} coins`}><svg class="coin-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg><b>{coins}</b></div>
+      <div class="stat" id="coins" aria-label={`${coins} coins`}><svg class="coin-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg>{#key coinJump}<b class:jump={coinJump > 0}>{coins}</b>{/key}</div>
       <div class="stat" id="line" aria-label={`leading ${lineNow} of ${lineMax}`}><span>line</span><b class:full={lineNow >= lineMax}>{lineNow}/{lineMax}</b></div>
       <div class="stat" id="crowd"><span>beds</span><b>{crowd}</b></div>
       <div class="rank" id="rank" role="img" aria-label={`level ${rank}, ${stars} of ${need} stars to the next`}>
-        <svg class="badge" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>
+        {#key starJump}<svg class="badge" class:jump={starJump > 0} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>{/key}
         <b>{rank}</b>
         <span class="bar"><span class="fill" style:width={`${(100 * stars) / need}%`}></span></span>
         <small>{stars}/{need}</small>
