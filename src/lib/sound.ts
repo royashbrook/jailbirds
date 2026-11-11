@@ -154,7 +154,7 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
     if (c.state !== "running") return stopTune(true);
     if (music) startTune();
     else stopTune(false);
-    if (hello && sfx) play(hello, 0);
+    if (hello) play(hello, 0);
     hello = null;
   }
 

@@ -110,6 +110,8 @@ const C: Bar[] = [
 const FORM: { bars: Bar[]; part: "a" | "again" | "b" | "c" }[] = [
   { bars: A, part: "a" }, { bars: B, part: "b" }, { bars: A, part: "again" }, { bars: C, part: "c" },
 ];
+/** the bass goes up to its fifth while that keeps it under the chords, and down to it otherwise */
+const BASS_TOP = 221;
 /** the tune is written high and played an octave down, under the cues */
 const LEAD_SHIFT = -12;
 
@@ -131,7 +133,7 @@ function compose(): Blip[][] {
         if (part === "again") steps[at + i].push(blip(0, "sine", f * 2, length + 0.1, 0.04));
       });
       // the bass: the root on one, its fifth on three, with an octave on top that small speakers can carry
-      const root = hz(chord.root), fifth = root * (root > 170 ? 0.75 : 1.5);
+      const root = hz(chord.root), fifth = root * (root * 1.5 > BASS_TOP ? 0.75 : 1.5);
       const low = (i: number, f: number, length: number) => steps[at + i].push(blip(0, "triangle", f, length, 0.2), blip(0, "sine", f * 2, length * 0.8, 0.06));
       low(0, root, calm ? 1.1 : 0.5);
       low(4, fifth, calm ? 0.9 : 0.45);
