@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
+  import { cues, snap } from "./engine/cues.ts";
   import type { Stick, World } from "./engine/types.ts";
   import { LEVELS, WORDS, hintText } from "./content/jail.ts";
+  import { SCORE } from "./content/sound.ts";
   import { skinById } from "./skins/index.ts";
   import { createView, remember, type Past } from "./view/view.ts";
   import { createOverlay, type Thumb } from "./view/overlay.ts";
   import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraSettings, cameraStick, type CameraSettings } from "./view/camera.ts";
   import { readJson, readSlot, writeJson, writeSlot } from "./lib/storage.ts";
+  import { createSound } from "./lib/sound.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
   // the drawn name: a striped bird and the word, no font file to load
@@ -60,6 +63,26 @@
     cheerTimer = setTimeout(() => (cheer = ""), 2400);
   }
   let seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
+  // music and sounds: both on unless someone turned them off, each with its own
+  // switch. nothing is heard before the first touch, the browser sees to that
+  const SOUND = "jailbirds:sound";
+  const kept = readJson<{ music?: unknown; sfx?: unknown }>(SOUND, {});
+  const on = { music: kept.music !== false, sfx: kept.sfx !== false };
+  let music = $state(on.music);
+  let sounds = $state(on.sfx);
+  const sound = createSound(SCORE, on);
+  // how the jail looked when it was last listened to
+  let before = snap(world);
+  function setMusic(v: boolean) {
+    music = v;
+    sound.setMusic(v);
+    writeJson(SOUND, { music, sfx: sounds });
+  }
+  function setSounds(v: boolean) {
+    sounds = v;
+    sound.setSfx(v, { kind: "coin", n: 1 });
+    writeJson(SOUND, { music, sfx: sounds });
+  }
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(true);
@@ -82,6 +105,7 @@
     camera: () => ({ ...camera }),
     drawn: () => (view ? { webgl: true, frames, ...view.info() } : { webgl: false, frames }),
     warden: () => (view ? view.where(world, { x: 0, y: 0, on: false }) : null),
+    sound: () => sound.report(),
   };
 
   function sync() {
@@ -94,6 +118,10 @@
     lineNow = followers(world, player(world)).length;
     lineMax = world.lineMax;
     boosted = Math.ceil(world.boosted);
+    sound.cues(cues(before, world, l));
+    before = snap(world);
+    // the tune hurries along with the skates
+    sound.pace(world.boosted > 0 ? 1.12 : 1);
     if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
     else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +${l.rankReward * world.rank} coins`);
     else if (world.settled > seen.settled) shout("all calm again! +coins");
@@ -114,6 +142,7 @@
     keys.clear();
     tapped.clear();
     save();
+    before = snap(world);
     sync();
   }
 
@@ -243,8 +272,21 @@
   const visibility = () => {
     last = 0;
     if (document.hidden) save();
+    sound.quiet(document.hidden);
   };
-  const pagehide = () => save();
+  const pagehide = () => {
+    save();
+    sound.quiet(true);
+  };
+  // back from the page cache, where pagehide left it quiet
+  const pageshow = () => sound.quiet(document.hidden);
+  // a browser lets sound start only on a touch, a click or a key, and may say no
+  // to any one of them, so every one asks. a finger going down is not one of them
+  const WAKES = ["pointerdown", "pointerup", "touchend", "click", "keydown"];
+  const wake = (e: Event) => {
+    if (e.type === "pointerdown" && (e as PointerEvent).pointerType !== "mouse") return;
+    sound.wake();
+  };
 
   let installVisible = $state(false);
   let updateReady = $state(false);
@@ -284,6 +326,8 @@
     addEventListener("blur", blur);
     document.addEventListener("visibilitychange", visibility);
     addEventListener("pagehide", pagehide);
+    addEventListener("pageshow", pageshow);
+    for (const type of WAKES) addEventListener(type, wake, { capture: true, passive: true });
     dark = matchMedia("(prefers-color-scheme: dark)");
     dark.addEventListener("change", repaint);
     repaint();
@@ -298,6 +342,7 @@
     observer?.disconnect();
     dark?.removeEventListener("change", repaint);
     cancelAnimationFrame(raf);
+    sound.quiet(true);
     view?.dispose();
     if (typeof removeEventListener === "function") {
       removeEventListener("keydown", keydown);
@@ -305,6 +350,8 @@
       removeEventListener("blur", blur);
       document.removeEventListener("visibilitychange", visibility);
       removeEventListener("pagehide", pagehide);
+      removeEventListener("pageshow", pageshow);
+      for (const type of WAKES) removeEventListener(type, wake, { capture: true });
     }
   });
 </script>
@@ -377,6 +424,10 @@
       {:else if sheet === "about"}
         <h2 class="title">{@html wordmark}</h2>
         {#if updateReady}<button class="big" onclick={applyUpdate}>load new version</button>{/if}
+        <div class="row">
+          <button id="music" role="switch" aria-checked={music} onclick={() => setMusic(!music)}>music: {music ? "on" : "off"}</button>
+          <button id="sounds" role="switch" aria-checked={sounds} onclick={() => setSounds(!sounds)}>sounds: {sounds ? "on" : "off"}</button>
+        </div>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
         <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop coins, and so do the desks.</p>
