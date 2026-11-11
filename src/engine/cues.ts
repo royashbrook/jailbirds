@@ -16,7 +16,7 @@ export interface Cue { kind: CueKind; n: number; fill?: number }
 /** the little of a world that `cues` compares. the floor and the messes are kept
  * as the same objects the world holds, so one picked up is told from one just dropped */
 export interface Snap {
-  level: number; steps: number; floor: Coin[]; piles: Record<string, number>; paid: Record<string, number>;
+  level: number; steps: number; coins: number; floor: Coin[]; piles: Record<string, number>; paid: Record<string, number>;
   bought: number; queue: number[]; led: number[]; carry: number; messes: Mess[];
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
 }
@@ -30,13 +30,23 @@ const CLEAN_R = 34;
 export function snap(w: World): Snap {
   const me = player(w);
   return {
-    level: w.level, steps: w.steps, floor: w.floor.slice(), piles: { ...w.piles }, paid: { ...w.paid },
+    level: w.level, steps: w.steps, coins: w.coins, floor: w.floor.slice(), piles: { ...w.piles }, paid: { ...w.paid },
     bought: w.bought.length,
     queue: w.agents.filter((a) => a.state === "queue").map((a) => a.id),
     led: followers(w, me).map((a) => a.id),
     carry: me.carry, messes: w.messes.slice(),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
   };
+}
+
+/** what there is to show for it: coins that came in, stars earned, and what was just bought */
+export interface Gain { coins: number; stars: number; bought: string[] }
+
+/** what came in between the snap and now. like `cues`, a new level or a world
+ * that went back in time has nothing to show */
+export function gains(before: Snap, w: World): Gain {
+  if (w.level !== before.level || w.steps <= before.steps) return { coins: 0, stars: 0, bought: [] };
+  return { coins: Math.max(0, w.coins - before.coins), stars: Math.max(0, w.released - before.released), bought: w.bought.slice(before.bought) };
 }
 
 /** what happened between the snap and now. a new level says only that; a world

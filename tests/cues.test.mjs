@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { create, step, route, player, followers, DT } from "../src/engine/sim.ts";
-import { cues, snap } from "../src/engine/cues.ts";
+import { cues, gains, snap } from "../src/engine/cues.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
 const L = LEVELS[0];
@@ -13,7 +13,7 @@ const HALL = { x: 330, y: 540 };
 // a screen's ears: look at the world every `every` steps (a slow frame is up to 15) and keep what was heard
 const ears = new WeakMap();
 function listen(w, every = 1) {
-  const ear = { every, n: 0, before: snap(w), heard: [] };
+  const ear = { every, n: 0, before: snap(w), heard: [], got: { coins: 0, stars: 0, bought: [] } };
   ears.set(w, ear);
   return ear.heard;
 }
@@ -22,10 +22,20 @@ function tick(w, stick) {
   const ear = ears.get(w);
   if (!ear || ++ear.n % ear.every) return;
   ear.heard.push(...cues(ear.before, w, LEVELS[w.level]));
+  const g = gains(ear.before, w);
+  ear.got.coins += g.coins;
+  ear.got.stars += g.stars;
+  ear.got.bought.push(...g.bought);
   ear.before = snap(w);
 }
 /** what was heard since the last take, and forget it */
 const take = (w) => ears.get(w).heard.splice(0);
+/** what there was to show since the last look, and forget it */
+const shown = (w) => {
+  const ear = ears.get(w), got = ear.got;
+  ear.got = { coins: 0, stars: 0, bought: [] };
+  return got;
+};
 const of = (list, kind) => list.filter((c) => c.kind === kind);
 const sum = (list, kind) => of(list, kind).reduce((n, c) => n + c.n, 0);
 const kinds = (list) => [...new Set(list.map((c) => c.kind))].sort();
@@ -330,4 +340,93 @@ test("a slow frame of many steps hears the same story", () => {
   assert.equal(of(slow, "follow").length > 0, true);
   assert.deepEqual(of(slow, "rank"), [{ kind: "rank", n: 2 }]);
   assert.equal(sum(slow, "release") + 1, 2, "one release, and the level up for the other");
+});
+
+test("what came in: coins off the floor and from a pile, and a pad bought", () => {
+  const w = create(LEVELS, 0, 7);
+  listen(w);
+  until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
+  go(w, desk.at);
+  until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  go(w, HALL);
+  assert.deepEqual(shown(w), { coins: 0, stars: 0, bought: [] }, "a pile building up is not coins in hand");
+  const owed = w.piles.desk;
+  go(w, desk.pileAt);
+  assert.deepEqual(shown(w), { coins: owed, stars: 0, bought: [] }, "the pile, once");
+  wait(w, 1);
+  assert.deepEqual(shown(w), { coins: 0, stars: 0, bought: [] }, "and nothing after");
+
+  const s = settle();
+  until(s.w, () => s.w.floor.length > 0, 15, "a first coin");
+  shown(s.w);
+  take(s.w);
+  const had = s.w.coins;
+  for (const c of new Set(s.w.floor.map((x) => x.house))) go(s.w, station(c).at);
+  assert.ok(s.w.coins > had);
+  assert.deepEqual(shown(s.w), { coins: s.w.coins - had, stars: 0, bought: [] });
+
+  // paying into a pad is money going out: only the pad shows
+  s.w.coins = 50;
+  wait(s.w, 1 / 60);
+  shown(s.w);
+  take(s.w);
+  go(s.w, pad("cell3").at);
+  wait(s.w, 1.5);
+  const heard = take(s.w), got = shown(s.w);
+  assert.deepEqual(got.bought, ["cell3"]);
+  assert.equal(got.stars, 0);
+  assert.equal(got.coins, sum(heard, "coin") + sum(heard, "pile"), "no more than was picked up on the way");
+  assert.ok(s.w.coins < 50, "and the price did go out");
+});
+
+test("what came in: a star for each one set free, and the coins a level up pays", () => {
+  const { w, first } = settle();
+  for (const b of first) b.served = L.serve;
+  wait(w, 0.1);
+  go(w, station("c0").at);
+  w.coins = 0;
+  wait(w, 1 / 60);
+  shown(w);
+  go(w, station("stamp").at);
+  wait(w, 1.5);
+  assert.equal(w.released, 2);
+  assert.equal(w.rank, 2);
+  const got = shown(w);
+  assert.equal(got.stars, 2);
+  assert.equal(got.coins, w.coins, "every coin in hand came in since");
+  assert.ok(got.coins >= L.rankReward, "the level up pays");
+  assert.deepEqual(got.bought, []);
+});
+
+test("what came in: nothing for a new level or a fresh start, and a slow frame adds up the same", () => {
+  const { w } = settle();
+  const before = snap(w);
+  const fresh = create(LEVELS, 0, 5);
+  fresh.coins = before.coins + 9;
+  fresh.released = before.released + 1;
+  fresh.bought.push("cell3");
+  assert.deepEqual(gains(before, fresh), { coins: 0, stars: 0, bought: [] }, "a fresh start");
+  const next = create(LEVELS, 1, 5);
+  next.steps = before.steps + 1;
+  next.coins = before.coins + 9;
+  next.released = before.released + 1;
+  next.bought.push("cell3");
+  assert.deepEqual(gains(before, next), { coins: 0, stars: 0, bought: [] }, "a new level");
+  assert.deepEqual(gains(before, w), { coins: 0, stars: 0, bought: [] }, "the same instant");
+
+  const story = (every) => {
+    const s = settle(7, every);
+    for (const b of s.first) b.served = L.serve;
+    wait(s.w, 0.1);
+    go(s.w, station("c0").at);
+    go(s.w, station("stamp").at);
+    wait(s.w, 1.5);
+    return { got: shown(s.w), w: s.w };
+  };
+  const fine = story(1), slow = story(15);
+  assert.deepEqual(slow.got, fine.got);
+  assert.equal(fine.got.stars, fine.w.released);
+  const paid = Object.values(fine.w.paid).reduce((n, c) => n + c, 0);
+  assert.equal(fine.got.coins, fine.w.coins + paid, "all of it is in hand or in a price tag");
+  assert.ok(fine.got.coins > 0 && fine.got.stars > 0);
 });
