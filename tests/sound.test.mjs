@@ -263,6 +263,81 @@ test("a page out of sight is silent and asleep, and comes back by itself", async
   assert.equal(r.heard("music")[written].f, 100 + (written % 4));
 });
 
+/** a cue of 24 long blips from 1.01 to 1.24, and the clock moved on to 1.05: five have begun, the rest are still to come */
+function midCue(t, music) {
+  const r = rig(t);
+  const s = createSound(TOY, { music, sfx: true });
+  s.wake();
+  r.pass(1);
+  s.cues([{ kind: "big", n: 24, fill: 5 }]);
+  r.pass(0.05);
+  s.wake();
+  assert.equal(r.sounding("sfx").length, 24, "a touch cuts nothing while sounds are on");
+  return { r, s };
+}
+
+test("sounds off with the tune playing fades and stops every cue sound, begun or still to come, and on again they are heard", (t) => {
+  const { r, s } = midCue(t, true);
+  const bus = r.gains[2];
+  s.setSfx(false);
+  const old = r.heard("sfx");
+  assert.equal(old.length, 24);
+  for (const b of old) close(b.stop, 1.15);
+  assert.equal(r.sounding("sfx").filter((b) => b.at > 1.15).length, 0, "none begins after the fade");
+  assert.deepEqual(bus.gain.events.map((e) => e[0]), ["cancel", "target"]);
+  close(bus.gain.events[0][1], 1.05);
+  assert.deepEqual(bus.gain.events[1].slice(0, 2), ["target", 0]);
+  close(bus.gain.events[1][2], 1.05);
+  assert.equal(s.report().tune, true);
+  assert.equal(r.suspends, 0);
+  for (const n of r.heard("music")) close(n.stop, n.at + 0.22);
+  const faded = bus.gain.events.length;
+  s.wake();
+  assert.equal(bus.gain.events.length, faded, "a touch with nothing to cut leaves the bus alone");
+  r.pass(0.025);
+  s.setSfx(true, tap);
+  assert.equal(r.heard("sfx").length, 25, "the old ones do not count against the new");
+  assert.deepEqual(bus.gain.events.at(-1).slice(0, 2), ["target", 1]);
+  close(bus.gain.events.at(-1)[2], 1.075);
+  for (const b of r.heard("sfx").slice(0, 24)) close(b.stop, 1.15);
+  const back = bus.gain.events.length;
+  r.pass(1);
+  s.cues([tap]);
+  assert.equal(r.heard("sfx").length, 26);
+  assert.equal(bus.gain.events.length, back, "brought back once, not on every cue");
+});
+
+const SLEEPS = {
+  "the last switch goes off": [(s) => s.setSfx(false), (s) => s.setSfx(true)],
+  "the page goes out of sight": [(s) => s.quiet(true), (s) => s.quiet(false)],
+  "the audio stops by itself": [
+    (_s, r) => { r.ctx.state = "interrupted"; r.ctx.onstatechange(); },
+    (_s, r) => { r.ctx.state = "running"; r.ctx.onstatechange(); },
+  ],
+};
+for (const [name, music] of [
+  ["the last switch goes off", false],
+  ["the page goes out of sight", true], ["the page goes out of sight", false],
+  ["the audio stops by itself", true], ["the audio stops by itself", false],
+])
+  test(`no cue sound is left to play later when ${name}, music ${music ? "on" : "off"}`, async (t) => {
+    const { r, s } = midCue(t, music);
+    const [away, back] = SLEEPS[name];
+    away(s, r);
+    await r.flush();
+    assert.notEqual(s.report().state, "running");
+    assert.equal(r.heard("sfx").length, 24);
+    assert.equal(r.sounding("sfx").length, 0, "begun or not, each is stopped dead");
+    assert.equal(r.gains[2].gain.events.length, 0, "no fade: the audio is asleep before one could run");
+    back(s, r);
+    await r.flush();
+    assert.equal(s.report().state, "running");
+    r.pass(0.5);
+    s.cues([tap]);
+    assert.equal(r.heard("sfx").length, 25, "the old ones do not count against the new");
+    assert.equal(r.sounding("sfx").length, 1);
+  });
+
 test("the browser may say no: every touch asks again, and nothing saved up plays when it says yes", async (t) => {
   const r = rig(t);
   r.refuse = true;

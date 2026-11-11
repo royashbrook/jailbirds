@@ -113,8 +113,9 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
   let step = 0, nextAt = 0, speed = 1, played = 0;
   /** tune blips written but not over yet, so they can be cut short */
   let tune: { source: AudioScheduledSourceNode; end: number }[] = [];
-  /** when each sounding cue blip ends */
-  let voices: number[] = [];
+  /** the same for cue blips. once cut, their bus stays faded out until the next cue brings it back */
+  let voices: { source: AudioScheduledSourceNode; end: number }[] = [];
+  let hushed = false;
   let hello: Cue<K> | null = null;
   const last = new Map<K, number>(), chains = new Map<K, number>();
   const heard: Record<string, number> = {};
@@ -148,13 +149,19 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
     if (!c) return;
     if (!wanted()) {
       stopTune(true);
+      stopCues(true);
       // by the time it is asleep it may be wanted again
       if (c.state === "running") c.suspend().then(() => (wanted() ? run(c) : settle()), never);
       return;
     }
-    if (c.state !== "running") return stopTune(true);
+    if (c.state !== "running") {
+      stopTune(true);
+      stopCues(true);
+      return;
+    }
     if (music) startTune();
     else stopTune(false);
+    if (!sfx) stopCues(false);
     if (hello) play(hello, 0);
     hello = null;
   }
@@ -168,24 +175,34 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
     timer = setInterval(pump, EVERY);
     pump();
   }
-  /** `hard` when the audio is going to sleep: anything left over would sound on waking */
-  function stopTune(hard: boolean) {
-    if (timer === undefined) return;
-    clearInterval(timer);
-    timer = undefined;
-    if (!ctx || !bus) return;
+  /** stop blips written and not over, begun or still to come. `hard` when the audio is going
+   * to sleep: anything left over would sound on waking. otherwise a short fade, so nothing clicks */
+  function cut(list: { source: AudioScheduledSourceNode }[], out: GainNode, hard: boolean) {
+    if (!ctx) return;
     const now = ctx.currentTime;
     if (!hard) {
-      bus.music.gain.cancelScheduledValues(now);
-      bus.music.gain.setTargetAtTime(0, now, 0.02);
+      out.gain.cancelScheduledValues(now);
+      out.gain.setTargetAtTime(0, now, 0.02);
     }
-    for (const t of tune)
+    for (const t of list)
       try {
         t.source.stop(hard ? 0 : now + 0.1);
       } catch {
         // already over
       }
+  }
+  function stopTune(hard: boolean) {
+    if (timer === undefined) return;
+    clearInterval(timer);
+    timer = undefined;
+    if (bus) cut(tune, bus.music, hard);
     tune = [];
+  }
+  function stopCues(hard: boolean) {
+    if (!voices.length || !bus) return;
+    cut(voices, bus.sfx, hard);
+    hushed = true;
+    voices = [];
   }
   /** write the tune a little way ahead of the clock. it picks up where it stopped */
   function pump() {
@@ -204,11 +221,14 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
   function play(cue: Cue<K>, chain: number) {
     if (!ctx || !bus) return;
     const now = ctx.currentTime;
-    voices = voices.filter((end) => end > now);
+    if (hushed) {
+      bus.sfx.gain.setTargetAtTime(1, now, 0.005);
+      hushed = false;
+    }
+    voices = voices.filter((v) => v.end > now);
     for (const b of score.sound(cue, chain)) {
       if (voices.length >= VOICES) break;
-      strike(ctx, bus.sfx, b, now + 0.01 + b.at);
-      voices.push(now + 0.01 + b.at + b.length);
+      voices.push({ source: strike(ctx, bus.sfx, b, now + 0.01 + b.at), end: now + 0.01 + b.at + b.length });
     }
     heard[cue.kind] = (heard[cue.kind] ?? 0) + 1;
   }
