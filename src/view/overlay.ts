@@ -43,7 +43,9 @@ export function createOverlay(root: HTMLElement) {
   const tags = Array.from({ length: 40 }, () => make("tag", "<b></b><span></span>"));
   const full = make("shout");
   const nobed = make("shout warn");
-  const burst = make("burst");
+  // the burst and the "+3" grow and shrink, and that is done to a label inside the slot:
+  // a slot is put in its place by a transform, and a scale on it would scale the place too
+  const burst = make("burst", "<b></b>");
   const arrow = make("alert-arrow", "<i></i><b>!</b>");
   const stick = make("stick", "<i></i>");
   // a "+3" is for the eyes: the coin count up top is what gets read out
@@ -51,7 +53,7 @@ export function createOverlay(root: HTMLElement) {
     s.el.setAttribute("aria-hidden", "true");
     return s;
   };
-  const pops = Array.from({ length: 8 }, (): Pop => ({ slot: decor(make("pop")), kind: "coin", n: 0, born: 0, live: false }));
+  const pops = Array.from({ length: 8 }, (): Pop => ({ slot: decor(make("pop", "<b></b>")), kind: "coin", n: 0, born: 0, live: false }));
   const rings = Array.from({ length: 4 }, (): Ring => ({ slot: decor(make("ring")), x: 0, y: 0, born: 0, live: false }));
   const tally = { coins: 0, stars: 0, rings: 0 };
   let clock = 0;
@@ -258,7 +260,7 @@ export function createOverlay(root: HTMLElement) {
         const s = p.slot;
         label(s, `${p.kind}:${p.n}`, () => {
           s.el.classList.toggle("star", p.kind === "star");
-          s.el.textContent = `+${p.n}`;
+          s.el.firstElementChild!.textContent = `+${p.n}`;
         });
         move(s, pt.x, pt.y);
       }
@@ -285,7 +287,7 @@ export function createOverlay(root: HTMLElement) {
           k++;
         }
       view.screen(k ? mx / k : al.x, view.height + 10, k ? my / k : al.y, pt);
-      label(burst, skin.squabble, () => (burst.el.textContent = skin.squabble));
+      label(burst, skin.squabble, () => (burst.el.firstElementChild!.textContent = skin.squabble));
       move(burst, pt.x, pt.y);
       show(burst, pt.on);
       view.screen(al.x, 0, al.y, pt);

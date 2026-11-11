@@ -32,7 +32,7 @@ function page() {
   const view = { height: HEAD, screen: (x, h, y, out) => Object.assign(out, { x, y: y - h, on: x >= 0 }) };
   const draw = (now) => overlay.update(world, LEVELS[0], view, { squabble: "hey!" }, { full: "full!", noBed: "no beds!" }, null, 390, 700, now);
   const up = (cls) => made.filter((el) => el.className === cls && !el.hidden);
-  const pops = () => up("pop").map((el) => `${el.textContent}${el.classList.contains("star") ? " star" : ""}`).sort();
+  const pops = () => up("pop").map((el) => `${el.firstElementChild.textContent}${el.classList.contains("star") ? " star" : ""}`).sort();
   return { overlay, world, draw, up, pops, made };
 }
 const at = (x, y) => `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
@@ -120,10 +120,11 @@ test("a slot used for a star is a coin's again the next time", () => {
   p.draw(1000);
   const [el] = p.up("pop");
   p.draw(1900);
-  p.overlay.gain("coin", 6);
+  // the same count as the star had, so nothing but the kind has changed
+  p.overlay.gain("coin", 1);
   p.draw(2000);
   assert.deepEqual(p.up("pop"), [el]);
-  assert.deepEqual(p.pops(), ["+6"]);
+  assert.deepEqual(p.pops(), ["+1"]);
 });
 
 test("a pad bought shows a ring where the pad stood, for 600ms", () => {
