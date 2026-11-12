@@ -81,6 +81,8 @@
     if (sheet !== "camera" || onCard(e)) return;
     e.preventDefault();
     camera = cameraWheel(camera, e.deltaY);
+    // a drag still going counts on from here, or its next move would undo the zoom
+    if (grabFrom) grabFrom = { camera, ...grabbed() };
     saveCamera();
   }
 

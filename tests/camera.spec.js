@@ -169,6 +169,26 @@ test("scrolling zooms: up comes in, down backs away, and it is kept", async ({ p
   expect(await settings(page)).toEqual(kept);
 });
 
+test("a scroll in the middle of a drag keeps its zoom when the drag goes on", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit", "our webkit is a phone, and playwright has no wheel for a phone");
+  await page.goto("/");
+  await waitFrames(page, 4);
+  await open(page);
+  const at = await openSpot(page);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 20, at.y, { steps: 2 });
+  await page.mouse.wheel(0, -300);
+  await expect.poll(() => settings(page).then((s) => s.zoom)).toBeGreaterThan(defaults.zoom);
+  const zoomed = await settings(page);
+  await page.mouse.move(at.x + 40, at.y, { steps: 2 });
+  await page.mouse.up();
+  const after = await settings(page);
+  expect(after.zoom).toBe(zoomed.zoom);
+  expect(after.turn).toBeLessThan(zoomed.turn);
+  expect(await stored(page)).toEqual(after);
+});
+
 test("two fingers spreading zoom in, and lifting them keeps it", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "raw multi-touch goes through chromium's devtools protocol");
   await page.goto("/");
