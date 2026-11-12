@@ -21,6 +21,9 @@ export const HELPER_CARRY = 4;
 export const CLEAN_TIME = 0.4;
 const BODY = 10;
 const PAD_R = 24;
+/** how long to stand still on a pad before it starts taking coins, in seconds. walking
+ * never pays, so this only has to be long enough that brushing to a stop on one is not a yes */
+export const PAD_WAIT = 0.2;
 const MESS_R = 20;
 const COIN_R = 24;
 const PILE_R = 30;
@@ -254,8 +257,13 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
       w.boost = { x: at.x, y: at.y, here: true, t: 0 };
     }
   }
+  // a pad takes nothing from someone walking over it, only from someone who stops on it a moment
   const pad = l.pads.find((x) => padVisible(w, x) && near(p, x.at, PAD_R));
-  if (pad && w.coins > 0 && w.rank >= (pad.rank ?? 0)) {
+  if (pad && !p.moving) {
+    w.clock.still = (w.clock.still ?? 0) + DT;
+    live.add("still");
+  }
+  if (pad && (w.clock.still ?? 0) >= PAD_WAIT && w.coins > 0 && w.rank >= (pad.rank ?? 0)) {
     w.clock.pad = (w.clock.pad ?? 0) + DT * Math.max(4, pad.cost);
     live.add("pad");
     while (w.clock.pad >= 1 && w.coins > 0 && (w.paid[pad.id] ?? 0) < pad.cost) {

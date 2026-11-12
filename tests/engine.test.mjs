@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import {
-  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT,
+  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT, PAD_WAIT,
 } from "../src/engine/sim.ts";
 import { LEVELS, hintText } from "../src/content/jail.ts";
 
@@ -218,6 +218,33 @@ test("served their time: led to the release desk, a star, a pile, a level up wit
   assert.equal(gone.length, 2);
   until(w, () => gone.every((b) => !w.agents.includes(b)), 20, "the released to leave");
   assert.equal(freeBeds(w, L) >= 3, true);
+});
+
+test("walking over a pad takes nothing, at a walk or on skates; stopping on it a moment buys it", () => {
+  for (const boosted of [0, 30]) {
+    const w = create(LEVELS, 0, 7), p = player(w), cell3 = pad("cell3");
+    w.coins = 50;
+    w.boosted = boosted;
+    // from well left of it to well right of it, straight through the middle
+    p.x = cell3.at.x - 60;
+    p.y = cell3.at.y;
+    let over = 0;
+    for (let i = 0; i < 240 && p.x < cell3.at.x + 60; i++) {
+      step(w, LEVELS, { x: 1, y: 0 });
+      if (Math.abs(p.x - cell3.at.x) < 24) over++;
+    }
+    assert.ok(p.x >= cell3.at.x + 60, `walked through, stopped at ${p.x}`);
+    assert.ok(over > 3, `on the pad for ${over} steps`);
+    assert.equal(w.coins, 50, "not a coin taken");
+    assert.equal(w.paid.cell3 ?? 0, 0);
+    // back onto it and stand there
+    p.x = cell3.at.x;
+    wait(w, PAD_WAIT - 0.05);
+    assert.equal(w.coins, 50, "a moment's grace before it starts");
+    wait(w, 1.5);
+    assert.ok(w.bought.includes("cell3"), "standing there buys it");
+    assert.equal(w.coins, 50 - cell3.cost);
+  }
 });
 
 test("level-locked pads wait for the rank; upgrades change speed and the line", () => {
