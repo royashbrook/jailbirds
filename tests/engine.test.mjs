@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import {
-  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT,
+  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT, PAD_WAIT,
 } from "../src/engine/sim.ts";
 import { LEVELS, hintText } from "../src/content/jail.ts";
 
@@ -218,6 +218,55 @@ test("served their time: led to the release desk, a star, a pile, a level up wit
   assert.equal(gone.length, 2);
   until(w, () => gone.every((b) => !w.agents.includes(b)), 20, "the released to leave");
   assert.equal(freeBeds(w, L) >= 3, true);
+});
+
+test("walking over a pad takes nothing, at a walk or on skates; stopping on it a moment buys it", () => {
+  for (const boosted of [0, 30]) {
+    const w = create(LEVELS, 0, 7), p = player(w), cell3 = pad("cell3");
+    w.coins = 50;
+    w.boosted = boosted;
+    // from well left of it to well right of it, straight through the middle
+    p.x = cell3.at.x - 60;
+    p.y = cell3.at.y;
+    let over = 0;
+    for (let i = 0; i < 240 && p.x < cell3.at.x + 60; i++) {
+      step(w, LEVELS, { x: 1, y: 0 });
+      if (Math.abs(p.x - cell3.at.x) < 24) over++;
+    }
+    assert.ok(p.x >= cell3.at.x + 60, `walked through, stopped at ${p.x}`);
+    assert.ok(over > 3, `on the pad for ${over} steps`);
+    assert.equal(w.coins, 50, "not a coin taken");
+    assert.equal(w.paid.cell3 ?? 0, 0);
+    // back onto it and stand there
+    p.x = cell3.at.x;
+    wait(w, PAD_WAIT - 0.05);
+    assert.equal(w.coins, 50, "a moment's grace before it starts");
+    wait(w, 1.5);
+    assert.ok(w.bought.includes("cell3"), "standing there buys it");
+    assert.equal(w.coins, 50 - cell3.cost);
+  }
+});
+
+test("moving off again on a pad stops it taking coins at once, and stopping again waits again", () => {
+  const w = create(LEVELS, 0, 7), p = player(w), cell3 = pad("cell3");
+  w.coins = 50;
+  p.x = cell3.at.x - 10;
+  p.y = cell3.at.y;
+  // stood past the wait, right up to where one more step standing would take the first coin
+  const rate = Math.max(4, cell3.cost) * DT;
+  for (let i = 0; i < 120 && !((w.clock.pad ?? 0) + rate >= 1); i++) step(w, LEVELS, { x: 0, y: 0 });
+  assert.equal(w.coins, 50);
+  assert.ok(w.clock.still >= PAD_WAIT && w.clock.pad + rate >= 1, "on the edge of paying");
+  // a step along the pad: still on it, moving, and not a coin
+  for (let i = 0; i < 6; i++) step(w, LEVELS, { x: 1, y: 0 });
+  assert.ok(Math.abs(p.x - cell3.at.x) < 24, "still on the pad");
+  assert.equal(w.coins, 50, "moving takes nothing, even with the wait already done");
+  assert.equal(w.paid.cell3 ?? 0, 0);
+  // stopping again starts the wait over
+  wait(w, PAD_WAIT - 0.05);
+  assert.equal(w.coins, 50, "a fresh wait after moving");
+  wait(w, 1.5);
+  assert.ok(w.bought.includes("cell3"));
 });
 
 test("level-locked pads wait for the rank; upgrades change speed and the line", () => {
