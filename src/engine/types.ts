@@ -75,7 +75,21 @@ export interface NeedDef {
   escort: boolean;
 }
 
-export type HelperKind = "escort" | "carrier" | "cleaner" | "clerk";
+/** what turns up on the floor: two rides that make the player faster, and a fairy that flies off and cleans */
+export type BoostKind = "skates" | "unicorn" | "fairy";
+/** what a boosted player rides */
+export type MountKind = "skates" | "unicorn";
+/** a ride: seconds it lasts, how much faster, and how often it turns up against the others */
+export interface RideBoost { time: number; mult: number; weight: number }
+/** the fairy: how often she turns up, and seconds per mess she visits */
+export interface FairyBoost { weight: number; visit: number }
+export interface BoostKinds { skates: RideBoost; unicorn: RideBoost; fairy: FairyBoost }
+/** the fairy in flight. `target` is the id of the mess she is flying to (null: nobody flying), `todo` the
+ * ids of the messes that were there when she was picked up and are still to visit, `t` seconds into this
+ * visit, `visits` the messes cleaned so far. she never takes on a mess made after she came */
+export interface Fairy { todo: number[]; visits: number; x: number; y: number; target: number | null; t: number }
+
+export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk";
 export interface Unlock {
   room?: string;
   carry?: number;
@@ -125,8 +139,8 @@ export interface LevelDef {
   /** seconds between coins for a content agent */
   coinEvery: number;
   coinsPerHouse: number;
-  /** a free speed boost that turns up on the floor now and then */
-  boost: { spots: Pt[]; every: number; time: number; mult: number };
+  /** a free surprise that turns up on the floor now and then: one of `kinds`, picked by weight */
+  boost: { spots: Pt[]; every: number; kinds: BoostKinds };
   /** two residents squabble now and then (sooner when someone is cross); stand there to settle it */
   fights: { every: number; crossEvery: number; settle: number; reward: number; minPop: number };
 }
@@ -197,7 +211,12 @@ export interface World {
   alert: { x: number; y: number; ids: number[]; held: number } | null;
   fightIn: number;
   boost: { x: number; y: number; here: boolean; t: number };
+  /** what the boost on the floor is, picked once when it turns up */
+  boostKind: BoostKind;
   /** seconds of boost left on the player */
   boosted: number;
+  /** what the boosted player rides */
+  mountKind: MountKind;
+  fairy: Fairy;
 }
 export type Stick = { x: number; y: number };

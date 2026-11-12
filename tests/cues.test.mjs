@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create, step, route, player, followers, DT } from "../src/engine/sim.ts";
+import { create, step, route, player, followers, boostMult, DT } from "../src/engine/sim.ts";
 import { cues, gains, snap } from "../src/engine/cues.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
@@ -52,7 +52,7 @@ function go(w, to, cap = 60 * 40) {
       path.shift();
       continue;
     }
-    const s = w.speed * (w.boosted > 0 ? L.boost.mult : 1) * DT, was = { x: p.x, y: p.y };
+    const s = w.speed * boostMult(w, L) * DT, was = { x: p.x, y: p.y };
     tick(w, d < s ? { x: dx / s, y: dy / s } : { x: dx / d, y: dy / d });
     if (w.level !== 0) return;
     still = Math.hypot(p.x - was.x, p.y - was.y) < 0.01 ? still + 1 : 0;
@@ -266,10 +266,53 @@ test("a speed boost is heard once, when it is picked up", () => {
   w.boost.t = 0;
   wait(w, 0.1);
   assert.ok(w.boost.here);
+  w.boostKind = "skates";
   go(w, w.boost);
-  wait(w, L.boost.time + 0.5);
+  wait(w, L.boost.kinds.skates.time + 0.5);
   assert.equal(w.boosted, 0);
-  assert.deepEqual(of(take(w), "boost"), [{ kind: "boost", n: 1 }]);
+  assert.deepEqual(of(take(w), "skates"), [{ kind: "skates", n: 1 }]);
+});
+
+// a boost of this kind dropped where the player stands, with a mess or none on the floor, listened to `every` steps
+function pickUp(kind, { mess = true, every = 1, boosted = 0, mount = "skates" } = {}) {
+  const w = create(LEVELS, 0, 3);
+  listen(w, every);
+  const p = player(w);
+  if (mess) w.messes.push({ id: w.nextId++, kind: "puddle", x: p.x + 60, y: p.y, station: "showers", seat: 0, clean: 0 });
+  w.boosted = boosted;
+  w.mountKind = mount;
+  w.boost = { x: p.x, y: p.y, here: true, t: 0 };
+  w.boostKind = kind;
+  ears.get(w).before = snap(w);
+  for (let i = 0; i < every; i++) tick(w, { x: 0, y: 0 });
+  return { w, heard: take(w) };
+}
+const boostCues = (heard) => heard.filter((c) => ["skates", "unicorn", "fairy", "ride"].includes(c.kind));
+
+test("each surprise has its own pickup sound, once, and the fairy is heard though she gives no ride", () => {
+  for (const kind of ["skates", "unicorn", "fairy"])
+    for (const every of [1, 15]) {
+      const { w, heard } = pickUp(kind, { every });
+      assert.deepEqual(boostCues(heard), [{ kind, n: 1 }], `${kind}, a look every ${every}`);
+      if (kind === "fairy") assert.equal(w.boosted, 0, "no ride");
+    }
+  // a new ride while a longer one is still on is still heard, by what was picked up
+  const { heard } = pickUp("skates", { boosted: 14.9, mount: "unicorn", every: 15 });
+  assert.deepEqual(boostCues(heard), [{ kind: "skates", n: 1 }]);
+});
+
+test("a fairy picked up on a clean floor comes as skates, and sounds like skates", () => {
+  const { w, heard } = pickUp("fairy", { mess: false });
+  assert.equal(w.mountKind, "skates");
+  assert.ok(w.boosted > 0);
+  assert.deepEqual(boostCues(heard), [{ kind: "skates", n: 1 }]);
+});
+
+test("the ride's cue is still the ride's, untouched by a boost", () => {
+  const w = create(LEVELS, 0, 7);
+  listen(w);
+  until(w, () => w.ride.state !== "away", 20, "the ride");
+  assert.deepEqual(boostCues(take(w)), [{ kind: "ride", n: 1 }]);
 });
 
 test("a new level says only that; a fresh start says nothing", () => {

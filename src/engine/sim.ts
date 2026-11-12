@@ -9,7 +9,9 @@
 // which pays and earns a star; stars raise the rank, and the rank opens price pads.
 import { roll } from "./rng.ts";
 import { collide, dist, inside, nav, near, route as navRoute, walls, type Nav } from "./geom.ts";
-import type { Agent, AgentKind, AnyStation, LevelDef, Mood, PadDef, Pt, Rect, ReleaseDef, Stick, World } from "./types.ts";
+import type {
+  Agent, AgentKind, AnyStation, BoostKind, Fairy, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, World,
+} from "./types.ts";
 
 export const DT = 1 / 60;
 export const AGENT_SPEED = 80;
@@ -47,8 +49,10 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
     alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
+    boostKind: "skates", mountKind: "skates", fairy: idleFairy(),
   };
 }
+const idleFairy = (): Fairy => ({ todo: [], visits: 0, x: 0, y: 0, target: null, t: 0 });
 function agent(id: number, kind: AgentKind, at: Pt, look: number, l: LevelDef): Agent {
   return {
     id, kind, x: at.x, y: at.y, face: 1, moving: false, walk: 0, look, tags: [], state: kind === "agent" ? "arrive" : "idle",
@@ -200,6 +204,72 @@ function addStar(w: World, l: LevelDef) {
   }
 }
 
+/** how much faster the player goes right now: what it rides, while the boost lasts */
+export const boostMult = (w: World, l: LevelDef) => (w.boosted > 0 ? l.boost.kinds[w.mountKind].mult : 1);
+
+/** the kind for a roll in [0, 1) over weighted kinds, in their order. pure, so the edges can be pinned */
+export function pickBoost(roll: number, kinds: [BoostKind, number][]): BoostKind {
+  const total = kinds.reduce((n, [, weight]) => n + weight, 0);
+  let at = roll * total;
+  for (const [kind, weight] of kinds) {
+    if (at < weight) return kind;
+    at -= weight;
+  }
+  return kinds[kinds.length - 1][0];
+}
+/** what may turn up now: the fairy only when there is a mess for her to clean */
+export function boostChoices(w: World, l: LevelDef): [BoostKind, number][] {
+  const k = l.boost.kinds;
+  const out: [BoostKind, number][] = [["skates", k.skates.weight], ["unicorn", k.unicorn.weight]];
+  if (w.messes.length > 0) out.push(["fairy", k.fairy.weight]);
+  return out;
+}
+
+/** a mess is gone: the one way a mess leaves, so its seat opens the same way whoever cleaned it */
+function cleanUp(w: World, m: Mess) {
+  w.messes = w.messes.filter((x) => x.id !== m.id);
+}
+const nearestMess = (messes: Mess[], at: Pt) =>
+  messes.reduce<Mess | null>((best, m) => (!best || dist(m, at) < dist(best, at) ? m : best), null);
+
+/** the fairy's next mess: the nearest of those on her list still there. one cleaned by someone
+ * else drops off the list; with none left, she is done */
+function fairyNext(w: World) {
+  const f = w.fairy;
+  f.todo = f.todo.filter((id) => w.messes.some((m) => m.id === id));
+  const next = nearestMess(w.messes.filter((m) => f.todo.includes(m.id)), f);
+  f.t = 0;
+  if (!next) {
+    w.fairy = { ...idleFairy(), x: f.x, y: f.y, visits: f.visits };
+    return null;
+  }
+  f.target = next.id;
+  f.todo = f.todo.filter((id) => id !== next.id);
+  return next;
+}
+
+/** the fairy flies to a mess, cleans it, and on to the next nearest on her list, until the list is done */
+function fairy(w: World, l: LevelDef) {
+  const f = w.fairy;
+  if (f.target === null) return;
+  const m = w.messes.find((x) => x.id === f.target) ?? fairyNext(w);
+  if (!m) return;
+  f.t += DT;
+  const rest = l.boost.kinds.fairy.visit - f.t;
+  if (rest > 1e-9) {
+    // so she lands just as the visit is up, however far it is
+    const share = DT / (rest + DT);
+    f.x += (m.x - f.x) * share;
+    f.y += (m.y - f.y) * share;
+    return;
+  }
+  f.x = m.x;
+  f.y = m.y;
+  cleanUp(w, m);
+  f.visits++;
+  fairyNext(w);
+}
+
 export function step(w: World, levels: LevelDef[], stick: Stick) {
   const l = levels[w.level];
   w.steps++;
@@ -211,7 +281,7 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   if (w.boosted > 0) w.boosted = Math.max(0, w.boosted - DT);
   const len = Math.hypot(stick.x, stick.y);
   if (len > 0.05) {
-    const k = len > 1 ? 1 / len : 1, speed = w.speed * (w.boosted > 0 ? l.boost.mult : 1);
+    const k = len > 1 ? 1 / len : 1, speed = w.speed * boostMult(w, l);
     const before = { x: p.x, y: p.y };
     p.x += stick.x * k * speed * DT;
     p.y += stick.y * k * speed * DT;
@@ -249,14 +319,25 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   if (w.boost.here && near(p, w.boost, BOOST_R)) {
     w.boost.here = false;
     w.boost.t = l.boost.every;
-    w.boosted = l.boost.time;
+    if (w.boostKind === "fairy" && w.messes.length) {
+      // she takes on the messes there are now, and only those
+      w.fairy = { todo: w.messes.map((m) => m.id), visits: 0, x: p.x, y: p.y, target: null, t: 0 };
+      fairyNext(w);
+    } else {
+      // a ride, or a fairy picked up once the floor is clean already: then it is skates
+      const ride: MountKind = w.boostKind === "unicorn" ? "unicorn" : "skates";
+      w.mountKind = ride;
+      w.boosted = l.boost.kinds[ride].time;
+    }
   } else if (!w.boost.here) {
     w.boost.t -= DT;
     if (w.boost.t <= 0 && l.boost.spots.length) {
       const at = l.boost.spots[Math.floor(rand(w) * l.boost.spots.length)];
       w.boost = { x: at.x, y: at.y, here: true, t: 0 };
+      w.boostKind = pickBoost(rand(w), boostChoices(w, l));
     }
   }
+  fairy(w, l);
   // a pad takes nothing from someone walking over it, only from someone who stops on it a moment
   const pad = l.pads.find((x) => padVisible(w, x) && near(p, x.at, PAD_R));
   // the sweep at the end of the step would clear it too late: the payment below reads it first
@@ -280,7 +361,7 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
 
   // followers walk the leader's trail, so they come through the same doors
   for (const a of w.agents.filter(isActor)) {
-    const speed = a.kind === "player" ? w.speed * (w.boosted > 0 ? l.boost.mult : 1) : HELPER_SPEED;
+    const speed = a.kind === "player" ? w.speed * boostMult(w, l) : HELPER_SPEED;
     followers(w, a).forEach((b, i) => {
       const target = alongTrail(a, (i + 1) * FOLLOW_GAP);
       if (!near(b, target, 1.5)) walkTo(b, target, speed * 1.15);
@@ -380,7 +461,7 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
     const m = w.messes.find((m) => near(m, a, MESS_R));
     if (m) {
       m.clean += DT;
-      if (m.clean >= CLEAN_TIME) w.messes = w.messes.filter((x) => x !== m);
+      if (m.clean >= CLEAN_TIME) cleanUp(w, m);
     }
   }
 }
@@ -639,8 +720,23 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
       typeof w.coins !== "number"
     )
       return null;
-    return { ...create(levels, w.level), ...w, clock: {} };
+    const back: World = { ...create(levels, w.level), ...w, clock: {} };
+    // saves from before the surprises, or with a surprise we cannot read, get the quiet default
+    const got = w as Partial<Record<"boostKind" | "mountKind" | "fairy", unknown>>;
+    back.boostKind = got.boostKind === "unicorn" || got.boostKind === "fairy" ? got.boostKind : "skates";
+    back.mountKind = got.mountKind === "unicorn" ? "unicorn" : "skates";
+    back.fairy = fairyFrom(got.fairy);
+    return back;
   } catch {
     return null;
   }
+}
+/** a saved fairy, whole and sane, or one at rest */
+function fairyFrom(raw: unknown): Fairy {
+  const f = raw as Partial<Fairy> | null;
+  const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  if (!f || typeof f !== "object" || ![f.visits, f.x, f.y, f.t].every(num)) return idleFairy();
+  if (f.target !== null && !num(f.target)) return idleFairy();
+  const todo = Array.isArray(f.todo) ? f.todo.filter(num) : [];
+  return { todo, visits: f.visits!, x: f.x!, y: f.y!, target: f.target ?? null, t: f.t! };
 }

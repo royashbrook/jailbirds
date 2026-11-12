@@ -7,7 +7,7 @@
 // allocations remain per frame (station lookups, closures), and the still parts
 // of the jail are rebuilt only when something is bought.
 import {
-  BoxGeometry, CanvasTexture, Color, CylinderGeometry, Group, HemisphereLight, DirectionalLight, InstancedMesh,
+  BoxGeometry, CanvasTexture, CapsuleGeometry, Color, CylinderGeometry, DoubleSide, Group, HemisphereLight, DirectionalLight, InstancedMesh,
   Line, LineBasicMaterial, BufferGeometry, Float32BufferAttribute, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial,
   Object3D, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, Vector3, WebGLRenderer, DynamicDrawUsage, Euler, Quaternion,
   type Material,
@@ -42,6 +42,10 @@ const MAX_FLY = 48;
 const MAX_MESS = 40;
 const FOV = 34;
 const PIXEL_CAP = 2;
+/** how much higher the warden sits on the unicorn: his hips on her saddle */
+const SADDLE = 14;
+/** the warden rides the unicorn while her ride lasts */
+const riding = (w: World) => w.mountKind === "unicorn" && w.boosted > 0;
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
@@ -89,10 +93,20 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const lumps = pool(new SphereGeometry(1, 10, 8), MAX_MESS * 3);
   const puddles = pool(new CylinderGeometry(1, 1, 0.6, 18), MAX_MESS);
 
-  // the bus and the skates: one each, moved about
+  // the bus, and the surprises on the floor: one each, moved about. the unicorn the warden rides
+  // and the fairy in flight are their own, bigger than the ones waiting to be picked up
   const bus = makeBus();
   const skates = makeSkates();
-  dynamic.add(bus.group, skates);
+  const pony = makeUnicorn();
+  pony.group.scale.setScalar(0.45);
+  const sprite = makeFairy();
+  sprite.group.scale.setScalar(2.2);
+  const mount = makeUnicorn();
+  const fairy = makeFairy();
+  fairy.group.scale.setScalar(2);
+  const fairyAt = new Vector3();
+  let fairyShown = false;
+  dynamic.add(bus.group, skates, pony.group, sprite.group, mount.group, fairy.group);
   // the rainbow behind a boosted warden: six coloured lines along the trail
   const RAINBOW = 24;
   const rainbow = ["#ff6b6b", "#ffb34d", "#ffe066", "#7ccf7c", "#5cb8ee", "#b79be6"].map((c) => {
@@ -232,6 +246,9 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     return out;
   }
 
+  /** how far the warden is lifted off the floor, for anything placed over his head */
+  const lift = (w: World) => (riding(w) ? SADDLE : 0);
+
   function actionOf(w: World, l: LevelDef, a: Agent): Action {
     if (a.state === "fight") return "fight";
     if (a.state === "use") {
@@ -269,12 +286,17 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     forget(w, headings);
     for (const p of partList) p.used = 0;
     tn = fn = bn = cn = ln = pn = 0;
+    const onUnicorn = riding(w);
+    let meHeading = 0, meWalk = 0;
 
     for (const a of w.agents) {
       const p = past?.get(a.id);
       const x = p ? p.x + (a.x - p.x) * alpha : a.x, z = p ? p.y + (a.y - p.y) * alpha : a.y;
       const walk = p ? p.walk + (a.walk - p.walk) * alpha : a.walk;
-      const action = actionOf(w, l, a);
+      // on the unicorn the warden sits, up on her saddle
+      const mounted = a.kind === "player" && onUnicorn;
+      const action = mounted ? "sit" : actionOf(w, l, a);
+      const up = mounted ? SADDLE : 0;
       // face the way it is going, turning smoothly; in a bunk, lie along it
       let heading = headings.get(a.id) ?? 0;
       if (p && (Math.abs(a.x - p.x) > 0.01 || Math.abs(a.y - p.y) > 0.01)) {
@@ -290,6 +312,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         if (st?.kind === "sink") heading = st.seats[a.seat].at.y < st.prop.y ? 0 : Math.PI;
       }
       headings.set(a.id, heading);
+      if (a.kind === "player") (meHeading = heading), (meWalk = walk);
 
       pose.kind = a.kind;
       pose.action = action;
@@ -302,15 +325,15 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       const r = skin.model.root(pose);
       e.set(r.pitch, heading, 0, "YXZ");
       q.setFromEuler(e);
-      v.set(x, r.lift, z);
+      v.set(x, r.lift + up, z);
       root.compose(v, q, one);
       skin.model.pose(pose, put);
-      blob(x, z, action === "sleep" ? 9 : 8);
+      if (!mounted) blob(x, z, action === "sleep" ? 9 : 8);
 
       // a carried stack, held up in front
       const ca = skin.model.carryAt;
       for (let k = 0; k < pose.carry; k++)
-        tray(x + Math.sin(heading) * ca.forward, ca.up + k * ca.step, z + Math.cos(heading) * ca.forward, heading);
+        tray(x + Math.sin(heading) * ca.forward, up + ca.up + k * ca.step, z + Math.cos(heading) * ca.forward, heading);
       if (action === "eat") tray(x + Math.sin(heading) * 9, 11, z + Math.cos(heading) * 9, heading);
     }
     for (const p of partList) {
@@ -386,20 +409,49 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       bus.riders.visible = w.ride.state === "in";
       blob(w.ride.x, spawn.roadY + 6, 40);
     }
-    skates.visible = w.boost.here;
+    // the boost on the floor, by what it is: skates, a little unicorn, a fairy in her glow
+    const kind = w.boostKind;
+    skates.visible = w.boost.here && kind === "skates";
+    pony.group.visible = w.boost.here && kind === "unicorn";
+    sprite.group.visible = w.boost.here && kind === "fairy";
     if (w.boost.here) {
-      skates.position.set(w.boost.x, 2 + Math.abs(Math.sin(t * 3)) * 3, w.boost.y);
-      skates.rotation.y = t * 1.5;
+      const pick = kind === "unicorn" ? pony.group : kind === "fairy" ? sprite.group : skates;
+      pick.position.set(w.boost.x, (kind === "fairy" ? 14 : 2) + Math.abs(Math.sin(t * 3)) * 3, w.boost.y);
+      pick.rotation.y = t * 1.5;
+      if (kind === "fairy") flap(sprite, t);
       blob(w.boost.x, w.boost.y, 7);
     }
-    const trail = me.trail;
+    // the unicorn the warden rides: under him, facing his way, galloping as he goes
+    mount.group.visible = onUnicorn;
+    if (onUnicorn) {
+      mount.group.position.set(fx, 0, fy);
+      mount.group.rotation.y = meHeading;
+      const a = (meWalk / 40) * Math.PI * 2, go = me.moving ? 0.7 : 0;
+      mount.legs.forEach((leg, k) => (leg.rotation.x = Math.sin(a + (k % 2 ? Math.PI : 0) + (k > 1 ? 0.6 : 0)) * go));
+      blob(fx, fy, 14);
+    }
+    // the fairy in flight, eased toward where she is, with a little bob
+    const flying = w.fairy.target !== null;
+    fairy.group.visible = flying;
+    if (flying) {
+      if (!fairyShown) fairyAt.set(w.fairy.x, 0, w.fairy.y);
+      const dx = w.fairy.x - fairyAt.x, dz = w.fairy.y - fairyAt.z, k = 1 - Math.exp(-dt * 18);
+      fairyAt.x += dx * k;
+      fairyAt.z += dz * k;
+      fairy.group.position.set(fairyAt.x, 30 + Math.sin(t * 5) * 3, fairyAt.z);
+      if (Math.abs(dx) + Math.abs(dz) > 0.5) fairy.group.rotation.y = Math.atan2(dx, dz);
+      flap(fairy, t);
+      blob(fairyAt.x, fairyAt.z, 6);
+    }
+    fairyShown = flying;
+    const trail = me.trail, high = onUnicorn ? 10 : 0;
     rainbow.forEach((line, k) => {
       line.visible = w.boosted > 0 && trail.length > 2;
       if (!line.visible) return;
       const pos = line.geometry.getAttribute("position") as Float32BufferAttribute;
       const n = Math.min(RAINBOW, trail.length);
-      pos.setXYZ(0, fx, 3 + k * 1.4, fy);
-      for (let i = 1; i < n; i++) pos.setXYZ(i, trail[i - 1].x, 3 + k * 1.4, trail[i - 1].y);
+      pos.setXYZ(0, fx, high + 3 + k * 1.4, fy);
+      for (let i = 1; i < n; i++) pos.setXYZ(i, trail[i - 1].x, high + 3 + k * 1.4, trail[i - 1].y);
       pos.needsUpdate = true;
       line.geometry.setDrawRange(0, n);
     });
@@ -430,8 +482,9 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     render,
     screen,
     /** the warden on screen, for tests and screenshots */
-    where: (w: World, out: ScreenPoint) => screen(w.agents[0].x, 14, w.agents[0].y, out),
+    where: (w: World, out: ScreenPoint) => screen(w.agents[0].x, 14 + lift(w), w.agents[0].y, out),
     height: skin.model.height,
+    lift,
     info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray() }),
     dispose() {
       built?.dispose();
@@ -482,6 +535,79 @@ function makeBus() {
     }
   group.add(body, roof, riders);
   return { group, wheels, riders };
+}
+
+/** a white unicorn facing +z: body, four legs that swing from the hip, a neck and head, a gold horn,
+ * a pink mane and tail, and a saddle on top at the height the warden's hips sit */
+function makeUnicorn() {
+  const group = new Group();
+  const mat = (c: string) => new MeshLambertMaterial({ color: c });
+  const white = mat("#fbf8ff"), pink = mat("#ff8fc8"), gold = mat("#ffcf33"), dark = mat("#2a2230");
+  const add = (mesh: Mesh, x: number, y: number, z: number, pitch = 0, parent: Object3D = group) => {
+    mesh.position.set(x, y, z);
+    mesh.rotation.x = pitch;
+    parent.add(mesh);
+    return mesh;
+  };
+  // the body: a long capsule, its back just under the saddle
+  add(new Mesh(new CapsuleGeometry(4.5, 13, 6, 12), white), 0, 16.5, 0, Math.PI / 2);
+  add(new Mesh(new BoxGeometry(8, 1, 8), pink), 0, 21.3, -0.5);
+  // legs from the hips, each a pivot so it can swing
+  const legs: Group[] = [];
+  for (const z of [7.5, -7.5])
+    for (const x of [-2.8, 2.8]) {
+      const hip = new Group();
+      hip.position.set(x, 13, z);
+      add(new Mesh(new CylinderGeometry(1.5, 1.3, 12, 8), white), 0, -6, 0, 0, hip);
+      add(new Mesh(new CylinderGeometry(1.5, 1.6, 1.6, 8), gold), 0, -12.2, 0, 0, hip);
+      group.add(hip);
+      legs.push(hip);
+    }
+  // the neck leaning forward, the head on top, well in front of the rider
+  add(new Mesh(new BoxGeometry(4.5, 12, 5), white), 0, 24.5, 12, 0.45);
+  add(new Mesh(new BoxGeometry(5, 5.5, 10), white), 0, 30.5, 16.5, 0.3);
+  add(new Mesh(new CylinderGeometry(0, 1, 8, 10), gold), 0, 36, 18.5, 0.6);
+  for (const side of [-1, 1]) {
+    add(new Mesh(new SphereGeometry(0.8, 8, 6), dark), side * 2.6, 32, 18.5);
+    add(new Mesh(new CylinderGeometry(0, 1, 3, 6), white), side * 1.6, 34.5, 13.5, -0.2);
+  }
+  // the mane down the back of the neck, and the tail
+  add(new Mesh(new BoxGeometry(1.8, 13, 3), pink), 0, 26, 9.6, 0.45);
+  add(new Mesh(new BoxGeometry(2.2, 2, 4), pink), 0, 33.6, 13.4, 0.3);
+  add(new Mesh(new CylinderGeometry(1.6, 0.7, 13, 8), pink), 0, 14, -14.5, 0.64);
+  return { group, legs };
+}
+
+/** a little fairy: a body, a head, two wings that flap on their pivots, and a soft glow round her */
+function makeFairy() {
+  const group = new Group();
+  const body = new Mesh(new SphereGeometry(2.2, 10, 8), new MeshLambertMaterial({ color: "#c9a2ff" }));
+  body.scale.set(1, 1.4, 1);
+  const head = new Mesh(new SphereGeometry(1.7, 10, 8), new MeshLambertMaterial({ color: "#f6dcc0" }));
+  head.position.y = 4;
+  const hair = new Mesh(new SphereGeometry(1.8, 10, 8), new MeshLambertMaterial({ color: "#ffcf33" }));
+  hair.position.set(0, 4.6, -0.4);
+  hair.scale.set(1, 0.7, 1);
+  const glow = new Mesh(new SphereGeometry(6, 14, 10), new MeshBasicMaterial({ color: "#fff3a6", transparent: true, opacity: 0.3, depthWrite: false }));
+  const wingMat = new MeshBasicMaterial({ color: "#ffd6f0", transparent: true, opacity: 0.85, side: DoubleSide, depthWrite: false });
+  const wings: Group[] = [];
+  for (const side of [-1, 1]) {
+    const pivot = new Group();
+    pivot.position.set(0, 1.5, -1.2);
+    const wing = new Mesh(new PlaneGeometry(6, 7), wingMat);
+    wing.position.set(side * 3, 1, 0);
+    pivot.add(wing);
+    group.add(pivot);
+    wings.push(pivot);
+  }
+  group.add(body, head, hair, glow);
+  return { group, wings };
+}
+/** her wings beat fast, both together */
+function flap(f: { wings: Group[] }, t: number) {
+  const open = 0.5 + Math.sin(t * 30) * 0.5;
+  f.wings[0].rotation.y = open;
+  f.wings[1].rotation.y = -open;
 }
 
 function makeSkates() {
