@@ -4,11 +4,11 @@
 // plays the same with or without anyone listening.
 import { near } from "./geom.ts";
 import { followers, player } from "./sim.ts";
-import type { Coin, LevelDef, Mess, World } from "./types.ts";
+import type { BoostKind, Coin, LevelDef, Mess, World } from "./types.ts";
 
 export type CueKind =
   | "coin" | "pile" | "pay" | "buy" | "checkin" | "follow" | "bed" | "seat" | "carry" | "drop"
-  | "clean" | "release" | "rank" | "level" | "fight" | "calm" | "boost" | "ride";
+  | "clean" | "release" | "rank" | "level" | "fight" | "calm" | "skates" | "unicorn" | "fairy" | "ride";
 /** `n` is how many, or how far along: coins picked up, the line's length, the new rank.
  * `fill` is how full a price tag is now, from 0 to 1 */
 export interface Cue { kind: CueKind; n: number; fill?: number }
@@ -19,6 +19,8 @@ export interface Snap {
   level: number; steps: number; coins: number; floor: Coin[]; piles: Record<string, number>; paid: Record<string, number>;
   bought: number; queue: number[]; led: number[]; carry: number; messes: Mess[];
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
+  /** a boost lying on the floor, and what it is */
+  boost: boolean; boostKind: BoostKind; picked: number;
 }
 
 /** how far past a desk's own reach the player still counts as the one who did it:
@@ -36,6 +38,7 @@ export function snap(w: World): Snap {
     led: followers(w, me).map((a) => a.id),
     carry: me.carry, messes: w.messes.slice(),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
+    boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n,
   };
 }
 
@@ -106,7 +109,9 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
   else add("release", w.released - before.released);
   if (w.alert && !before.alert) add("fight", 1);
   add("calm", w.settled - before.settled);
-  if (w.boosted > before.boosted) add("boost", 1);
+  // a boost picked up, named by what the sim says it turned out to be at the moment
+  // of pickup, not guessed from how things look after a batch of steps
+  if (w.picked.n > before.picked) add(w.picked.kind, 1);
   if (before.ride === "away" && w.ride.state !== "away") add("ride", 1);
   return out;
 }

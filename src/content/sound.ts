@@ -52,7 +52,15 @@ const SOUNDS: Record<CueKind, (n: number, chain: number, fill: number) => Blip[]
   level: () => [...run(["C5", "E5", "G5", "C6", "E6", "G6", "C7"], 0.08, 0.24, 0.15), ...run(["C5", "G5", "C6", "E6"], 0, 1.3, 0.09, 0.62)],
   fight: () => [0, 0.5].flatMap((at) => [blip(at, "triangle", hz("G4"), 0.15, 0.22), blip(at + 0.16, "triangle", hz("Eb4"), 0.24, 0.22)]),
   calm: () => run(["E5", "G5", "C6"], 0.1, 0.24, 0.15),
-  boost: () => [blip(0, "sine", 300, 0.3, 0.15, 1200), ...run(["C6", "E6", "G6"], 0.05, 0.16, 0.13, 0.22)],
+  // the three surprises: a whoosh up for the skates, a gallop and a neigh-ish slide for the unicorn,
+  // a twinkle down and up again for the fairy
+  skates: () => [blip(0, "sine", 300, 0.3, 0.15, 1200), ...run(["C6", "E6", "G6"], 0.05, 0.16, 0.13, 0.22)],
+  unicorn: () => [
+    ...[0, 0.09, 0.18].map((at) => blip(at, "triangle", 180, 0.06, 0.14, 120)),
+    blip(0.28, "sine", hz("G5"), 0.3, 0.12, hz("C6")),
+    ...run(["C6", "E6", "G6", "C7"], 0.06, 0.18, 0.12, 0.3),
+  ],
+  fairy: () => [...run(["G6", "E6", "C6"], 0.05, 0.14, 0.1), ...run(["E6", "G6", "C7", "E7"], 0.05, 0.2, 0.11, 0.18)],
   ride: () => [0, 0.2].flatMap((at) => [blip(at, "triangle", hz("A4"), 0.13, 0.08), blip(at, "triangle", hz("D4"), 0.13, 0.06)]),
 };
 

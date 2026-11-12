@@ -595,7 +595,7 @@ test("both buses go out through one limiter, the tune quieter than the cues", (t
 
 // the jail's own score
 
-const KINDS = ["coin", "pile", "pay", "buy", "checkin", "follow", "bed", "seat", "carry", "drop", "clean", "release", "rank", "level", "fight", "calm", "boost", "ride"];
+const KINDS = ["coin", "pile", "pay", "buy", "checkin", "follow", "bed", "seat", "carry", "drop", "clean", "release", "rank", "level", "fight", "calm", "skates", "unicorn", "fairy", "ride"];
 const sane = (b, what) => {
   assert.ok(["sine", "triangle", "square", "sawtooth", "noise"].includes(b.wave), `${what}: wave ${b.wave}`);
   for (const f of [b.from, b.to ?? b.from]) assert.ok(Number.isFinite(f) && f >= 55 && f <= 9000, `${what}: ${f} hz`);

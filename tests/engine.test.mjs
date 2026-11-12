@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import {
-  create, step, route, player, followers, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT, PAD_WAIT,
+  create, step, route, player, followers, boostMult, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT, PAD_WAIT,
 } from "../src/engine/sim.ts";
 import { LEVELS, hintText } from "../src/content/jail.ts";
 
@@ -24,7 +24,7 @@ function go(w, to, cap = 60 * 40) {
       path.shift();
       continue;
     }
-    const s = w.speed * (w.boosted > 0 ? L.boost.mult : 1) * DT, was = { x: p.x, y: p.y };
+    const s = w.speed * boostMult(w, L) * DT, was = { x: p.x, y: p.y };
     step(w, LEVELS, d < s ? { x: dx / s, y: dy / s } : { x: dx / d, y: dy / d });
     if (w.level !== 0) return;
     still = Math.hypot(p.x - was.x, p.y - was.y) < 0.01 ? still + 1 : 0;
@@ -85,7 +85,7 @@ function feed(w, cells) {
 }
 
 test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room, coins, a pad", () => {
-  const w = create(LEVELS, 0, 7);
+  const w = create(LEVELS, 0, 1);
   assert.equal(capacity(w, L), 4);
   until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
   // they came off the bus through the gate on their own, and stand in line at the desk
@@ -360,12 +360,14 @@ test("a free speed boost turns up; walking over it makes the warden faster for a
   w.boost.t = 0;
   wait(w, 0.1);
   assert.ok(w.boost.here);
+  w.boostKind = "skates";
   go(w, w.boost);
   assert.ok(w.boosted > 0);
+  assert.equal(w.mountKind, "skates");
   const p = player(w), x = p.x;
   step(w, LEVELS, { x: 1, y: 0 });
-  assert.ok(Math.abs(p.x - x - w.speed * L.boost.mult * DT) < 0.01 || p.x < x + 1, "boosted step");
-  wait(w, L.boost.time + 0.5);
+  assert.ok(Math.abs(p.x - x - w.speed * L.boost.kinds.skates.mult * DT) < 0.01 || p.x < x + 1, "boosted step");
+  wait(w, L.boost.kinds.skates.time + 0.5);
   assert.equal(w.boosted, 0);
 });
 

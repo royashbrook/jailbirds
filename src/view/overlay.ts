@@ -9,7 +9,8 @@ import type { Skin } from "../skins/types.ts";
 import type { ScreenPoint } from "./view.ts";
 
 export type Thumb = { ox: number; oy: number; x: number; y: number; r: number } | null;
-type View = { screen(x: number, h: number, y: number, out: ScreenPoint): ScreenPoint; height: number };
+/** `lift` is how far the warden rides up off the floor (on a unicorn); only his own signs follow it */
+type View = { screen(x: number, h: number, y: number, out: ScreenPoint): ScreenPoint; height: number; lift?(w: World): number };
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
 /** where a tag may go: above its pad, slid right or left past the warden, below, beside */
@@ -136,14 +137,14 @@ export function createOverlay(root: HTMLElement) {
     // price tags: up off the pad's far edge. a tag that would cover the warden
     // slides sideways past him, or goes below or beside the pad, taking the first spot that covers
     // neither the warden nor a tag already placed.
-    const me = w.agents[0];
+    const me = w.agents[0], up = view.lift?.(w) ?? 0;
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
     // A torso point is not enough at a low angle or close zoom: protect the
     // standing model envelope, including the head and cap, from every direction.
     for (let x = -1; x <= 1; x += 2)
       for (let z = -1; z <= 1; z += 2)
         for (let h = 0; h <= 1; h++) {
-          view.screen(me.x + x * view.height / 3, h * (view.height + 2), me.y + z * view.height / 3, pt);
+          view.screen(me.x + x * view.height / 3, up + h * (view.height + 2), me.y + z * view.height / 3, pt);
           left = Math.min(left, pt.x); right = Math.max(right, pt.x);
           top = Math.min(top, pt.y); bottom = Math.max(bottom, pt.y);
         }
@@ -237,7 +238,7 @@ export function createOverlay(root: HTMLElement) {
     // a full line over the warden; no beds over the desk
     const isFull = followers(w, me).length >= w.lineMax;
     if (isFull) {
-      view.screen(me.x, view.height + 16, me.y, pt);
+      view.screen(me.x, up + view.height + 16, me.y, pt);
       label(full, words.full, () => (full.el.textContent = words.full));
       move(full, pt.x, pt.y);
     }
@@ -254,7 +255,7 @@ export function createOverlay(root: HTMLElement) {
     // what just came in, over the warden's head, and a ring where a pad was bought.
     // the css floats and fades them; here they are placed, counted up and put away
     clock = now;
-    view.screen(me.x, view.height + 8, me.y, pt);
+    view.screen(me.x, up + view.height + 8, me.y, pt);
     for (const p of pops) {
       if (p.live && p.born < 0) p.born = now;
       if (p.live && now - p.born >= POP_MS) p.live = false;

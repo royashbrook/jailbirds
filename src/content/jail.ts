@@ -102,7 +102,15 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     start: { x: 330, y: 540 }, helperHome: { x: 380, y: 540 }, threshold: 0.35, serve: 75,
     rankStars: [2, 3, 3, 5, 7, 10], rankReward: 10, speed: 95, line: 2, carry: 3, looks: 6,
     coinEvery: 4 / scale, coinsPerHouse: 8,
-    boost: { spots: [{ x: 300, y: 290 }, { x: 480, y: 290 }, { x: 290, y: 540 }, { x: 470, y: 520 }, { x: 300, y: 800 }], every: 40, time: 12, mult: 2.2 },
+    // skates most often, a unicorn ride now and then, and a fairy who cleans when there is a mess to clean
+    boost: {
+      spots: [{ x: 300, y: 290 }, { x: 480, y: 290 }, { x: 290, y: 540 }, { x: 470, y: 520 }, { x: 300, y: 800 }], every: 40,
+      kinds: {
+        skates: { time: 12, mult: 2.2, weight: 50 },
+        unicorn: { time: 15, mult: 2.6, weight: 30 },
+        fairy: { weight: 20, visit: 0.8 },
+      },
+    },
     fights: { every: 80, crossEvery: 25, settle: 1.2, reward: 6, minPop: 4 },
   };
 }
