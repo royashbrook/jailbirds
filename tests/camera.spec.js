@@ -145,8 +145,12 @@ test("dragging on the card moves its slider, not the view", async ({ page }) => 
   expect(await settings(page)).toEqual(defaults);
 });
 
-test("scrolling zooms: up comes in, down backs away, and it is kept", async ({ page, browserName }) => {
-  test.skip(browserName === "webkit", "our webkit is a phone, and playwright has no wheel for a phone");
+// a wheel is a desktop thing: these two run as a mac-sized window, not a phone, so
+// both engines can scroll (playwright refuses a wheel on mobile webkit)
+test.describe("on a desktop", () => {
+test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
+
+test("scrolling zooms: up comes in, down backs away, and it is kept", async ({ page }) => {
   await page.goto("/");
   await waitFrames(page, 4);
   await open(page);
@@ -169,8 +173,7 @@ test("scrolling zooms: up comes in, down backs away, and it is kept", async ({ p
   expect(await settings(page)).toEqual(kept);
 });
 
-test("a scroll in the middle of a drag keeps its zoom when the drag goes on", async ({ page, browserName }) => {
-  test.skip(browserName === "webkit", "our webkit is a phone, and playwright has no wheel for a phone");
+test("a scroll in the middle of a drag keeps its zoom when the drag goes on", async ({ page }) => {
   await page.goto("/");
   await waitFrames(page, 4);
   await open(page);
@@ -187,6 +190,7 @@ test("a scroll in the middle of a drag keeps its zoom when the drag goes on", as
   expect(after.zoom).toBe(zoomed.zoom);
   expect(after.turn).toBeLessThan(zoomed.turn);
   expect(await stored(page)).toEqual(after);
+});
 });
 
 test("two fingers spreading zoom in, and lifting them keeps it", async ({ page, browserName }) => {
