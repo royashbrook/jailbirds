@@ -51,7 +51,7 @@ export interface Pose {
   mood: Mood;
 }
 
-export type Part = "body" | "head" | "limb" | "hat";
+export type Part = "body" | "head" | "limb" | "hat" | "dot";
 /** place one part: position in the character's own space (feet at the origin,
  * facing +z), rotation as pitch (x), yaw (y), roll (z), a scale and a colour */
 export type Put = (part: Part, x: number, y: number, z: number, pitch: number, yaw: number, roll: number, sx: number, sy: number, sz: number, colour: number) => void;
