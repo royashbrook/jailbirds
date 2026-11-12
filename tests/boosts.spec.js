@@ -49,14 +49,14 @@ test("the warden rides the unicorn, up on her saddle, and gets down when the rid
   const errors = await open(page, quiet);
   const plain = await drawn(page);
   const standing = await page.evaluate(() => window.__jailbirds.warden());
-  await reopen(page, { ...quiet, boosted: 3, mountKind: "unicorn" });
+  await reopen(page, { ...quiet, boosted: 8, mountKind: "unicorn" });
   expect((await page.evaluate(() => window.__jailbirds.state())).mountKind).toBe("unicorn");
   expect((await drawn(page)).triangles).toBeGreaterThan(plain.triangles);
   // up off the floor, and the camera comes up with him: he sits where a standing warden would
   const riding = await page.evaluate(() => window.__jailbirds.warden());
   expect(riding.on).toBe(true);
   expect(Math.abs(riding.y - standing.y)).toBeLessThan(3);
-  await untilSim(page, (s) => s.boosted === 0, 5, "the ride to end");
+  await untilSim(page, (s) => s.boosted === 0, 10, "the ride to end");
   await waitFrames(page, 3);
   expect((await drawn(page)).triangles).toBe(plain.triangles);
   expect(errors).toEqual([]);
@@ -67,17 +67,16 @@ test("a phone on its side, zoomed right in and low: the rider stays as far in fr
   await page.addInitScript(() => localStorage.setItem("jailbirds:camera", JSON.stringify({ zoom: 3, turn: 180, tilt: 15 })));
   await open(page, quiet);
   const standing = await page.evaluate(() => window.__jailbirds.warden());
-  await reopen(page, { ...quiet, boosted: 3, mountKind: "unicorn" });
-  await waitFrames(page, 30);
-  const riding = await page.evaluate(() => window.__jailbirds.warden());
-  expect(riding.on).toBe(true);
-  expect(Math.abs(riding.y - standing.y)).toBeLessThan(3);
+  // a ride long enough that a slow machine still looks while he is up there
+  await reopen(page, { ...quiet, boosted: 8, mountKind: "unicorn" });
+  const off = () => page.evaluate((y) => {
+    const j = window.__jailbirds, at = j.warden();
+    return { on: at.on, riding: j.state().boosted > 0, off: Math.abs(at.y - y) };
+  }, standing.y);
+  await expect.poll(async () => { const o = await off(); return o.riding && o.on && o.off < 3; }, { timeout: 4000 }).toBe(true);
   // and when he gets down, the camera comes back down with him
-  await untilSim(page, (s) => s.boosted === 0, 5, "the ride to end");
-  await waitFrames(page, 60);
-  const down = await page.evaluate(() => window.__jailbirds.warden());
-  expect(down.on).toBe(true);
-  expect(Math.abs(down.y - standing.y)).toBeLessThan(3);
+  await untilSim(page, (s) => s.boosted === 0, 10, "the ride to end");
+  await expect.poll(async () => { const o = await off(); return o.on && o.off < 3; }, { timeout: 4000 }).toBe(true);
   expect(await page.evaluate(() => window.__jailbirds.camera())).toEqual({ zoom: 3, turn: 180, tilt: 15 });
 });
 
