@@ -114,11 +114,13 @@ export function createOverlay(root: HTMLElement) {
   }
 
   function update(w: World, l: LevelDef, view: View, skin: Skin, words: { full: string; noBed: string }, thumb: Thumb, cssW: number, cssH: number, now: number) {
-    // need bubbles over heads at home
+    // need bubbles over heads: waiting at home, in the warden's line, and on the way
+    // to the seat, so it always shows where someone wants to go until they get there
     let b = 0;
     for (const a of w.agents) {
       if (b >= bubbles.length) break;
-      if (a.kind !== "agent" || a.state !== "home" || a.rest < SETTLE) continue;
+      const asking = (a.state === "home" && a.rest >= SETTLE) || a.state === "follow" || a.state === "go";
+      if (a.kind !== "agent" || !asking) continue;
       const need = isDone(l, a) ? "done" : wants(l, a, true);
       if (!need) continue;
       view.screen(a.x, view.height + 6, a.y, pt);
