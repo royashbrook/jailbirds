@@ -352,9 +352,10 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
       }
       for (const b of line) if (b.house === st.id && !isDone(l, b) && !wants(l, b, true)) goHome(w, l, b);
     } else if ((st.kind === "sink" || (st.kind === "facility" && st.zone)) && leads && inside(a, st.kind === "sink" ? st.zone : st.zone!)) {
-      // led into the room: whoever wants what it offers takes a seat
+      // led into the room: whoever wants what it offers takes a seat. anyone who has
+      // served their time is on the way out and only stops at the release desk
       for (const b of line) {
-        if (wants(l, b, true) !== st.need) continue;
+        if (isDone(l, b) || wants(l, b, true) !== st.need) continue;
         const seat = seatFor(w, st, st.need, b);
         if (seat >= 0) sendTo(w, l, b, st, seat);
       }

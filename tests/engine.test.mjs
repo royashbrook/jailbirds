@@ -220,6 +220,25 @@ test("served their time: led to the release desk, a star, a pile, a level up wit
   assert.equal(freeBeds(w, L) >= 3, true);
 });
 
+test("someone on the way to release stays in line through the canteen, even when hungry", () => {
+  const { w, first } = settle();
+  const food = station("table1").need;
+  for (const b of first) (b.served = L.serve), (b.needs[food] = 0.05);
+  wait(w, 0.1);
+  go(w, station("c0").at);
+  const leaving = line(w);
+  assert.equal(leaving.length, 2);
+  assert.ok(leaving.every((b) => isDone(L, b) && wants(L, b, true) === food), "done, and hungry too");
+  go(w, station("table1").at);
+  wait(w, 1);
+  assert.equal(line(w).length, 2, "nobody sat down to eat");
+  assert.ok(leaving.every((b) => b.state === "follow"));
+  w.coins = 0;
+  go(w, station("stamp").at);
+  wait(w, 1.5);
+  assert.equal(w.released, 2);
+});
+
 test("walking over a pad takes nothing, at a walk or on skates; stopping on it a moment buys it", () => {
   for (const boosted of [0, 30]) {
     const w = create(LEVELS, 0, 7), p = player(w), cell3 = pad("cell3");
