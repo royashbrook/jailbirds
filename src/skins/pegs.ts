@@ -76,7 +76,7 @@ function pose(p: Pose, put: Put) {
   put("head", jitter, hy, hz, 0, 0, 0, s, s, s, head);
   const shut = p.action === "sleep" ? 0.2 : 1;
   for (const side of [-1, 1])
-    put("dot", jitter + side * 1.7 * s, hy + 0.7 * s, hz + HEAD_R * s * 0.86, 0, 0, 0, 0.75 * s, 0.9 * s * shut, 0.5 * s, EYE);
+    put("dot", jitter + side * 1.7 * s, hy - 0.3 * s, hz + HEAD_R * s * 0.86, 0, 0, 0, 0.75 * s, 0.9 * s * shut, 0.5 * s, EYE);
 
   // arms from the shoulders
   const shoulder = top - 4 * s, sz = Math.sin(lean) * BODY_H * s * 0.7;
@@ -105,13 +105,13 @@ function pose(p: Pose, put: Put) {
   const ht = hy + HEAD_R * s * 0.7;
   if (p.kind === "player" || p.kind === "escort") {
     put("hat", jitter, ht, hz, 0, 0, 0, 4.9 * s, 2.6 * s, 4.9 * s, dress.hat);
-    put("hat", jitter, ht - 1.1 * s, hz + 3.6 * s, 0, 0, 0, 3.2 * s, 0.6 * s, 2.6 * s, dress.hat);
+    put("hat", jitter, ht - 1.1 * s, hz + 2.6 * s, 0, 0, 0, 3.2 * s, 0.6 * s, 2.4 * s, dress.hat);
   } else if (p.kind === "carrier") {
     put("hat", jitter, ht + 2.2 * s, hz, 0, 0, 0, 4.1 * s, 5 * s, 4.1 * s, dress.hat);
     put("hat", jitter, ht + 5 * s, hz, 0, 0, 0, 5 * s, 2.4 * s, 5 * s, dress.hat);
   } else if (p.kind === "clerk") {
     put("hat", jitter, ht - 1.2 * s, hz, 0, 0, 0, 4.85 * s, 1.4 * s, 4.85 * s, dress.hat);
-    put("hat", jitter, ht - 1.6 * s, hz + 3.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.8 * s, dress.hat);
+    put("hat", jitter, ht - 1.6 * s, hz + 2.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.4 * s, dress.hat);
   } else if (p.kind === "cleaner") {
     put("hat", jitter, ht - 1.4 * s, hz, 0, 0, 0, 4.8 * s, 1.6 * s, 4.8 * s, dress.hat);
   } else if (p.uniform) {
