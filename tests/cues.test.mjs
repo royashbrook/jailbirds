@@ -498,3 +498,90 @@ test("what came in: nothing for a new level or a fresh start, and a slow frame a
   assert.equal(fine.got.coins, fine.w.coins + paid, "all of it is in hand or in a price tag");
   assert.ok(fine.got.coins > 0 && fine.got.stars > 0);
 });
+
+/** a quiet jail with a collector hired, the player parked in the hall, and an ear on it */
+function withCollector(every = 1) {
+  const w = create(LEVELS, 0, 7);
+  w.ride.t = 1e9;
+  w.boost.t = 1e9;
+  w.coins = 1000;
+  w.rank = 5;
+  go(w, pad("collector").at);
+  until(w, () => w.bought.includes("collector"), 4, "the collector hired");
+  go(w, HALL);
+  const h = w.agents.find((a) => a.kind === "collector");
+  listen(w, every);
+  return { w, h };
+}
+const safe = station("safe");
+
+test("a collector gathering and putting coins in the safe is silent, and shows nothing", () => {
+  for (const every of [1, 15]) {
+    const { w, h } = withCollector(every);
+    const wallet = w.coins;
+    w.piles.desk = 8;
+    w.piles.stamp = 10;
+    let gathered = 0;
+    until(w, () => (gathered = Math.max(gathered, h.cash)) && (w.piles.safe ?? 0) === 18, 80, "both piles in the safe");
+    const heard = take(w), got = shown(w);
+    assert.equal(sum(heard, "pile"), 0, "no pile cue for a collector's pile");
+    assert.equal(sum(heard, "coin"), 0);
+    assert.equal(got.coins, 0, "no +n");
+    assert.equal(w.coins, wallet);
+    assert.ok(gathered > 0);
+  }
+});
+
+test("coins put in the safe and taken out by the player in one look: only what the player took", () => {
+  // the collector puts 6 in, then the player takes all 16, before anyone looks
+  const a = withCollector(1e9);
+  a.w.piles.safe = 10;
+  Object.assign(a.h, { x: safe.at.x, y: safe.at.y, path: [], cash: 6 });
+  const ear = ears.get(a.w);
+  ear.before = snap(a.w);
+  step(a.w, LEVELS, { x: 0, y: 0 });
+  assert.equal(a.w.piles.safe, 16, "in");
+  Object.assign(player(a.w), { x: safe.pileAt.x, y: safe.pileAt.y });
+  step(a.w, LEVELS, { x: 0, y: 0 });
+  assert.equal(a.w.piles.safe, 0, "and out");
+  assert.deepEqual(of(cues(ear.before, a.w, L), "pile"), [{ kind: "pile", n: 16 }]);
+  assert.equal(gains(ear.before, a.w).coins, 16);
+
+  // the player takes the 10 there were, then the collector puts in 15: the safe is fuller than before, still 10 were taken
+  const b = withCollector(1e9);
+  b.w.piles.safe = 10;
+  const eb = ears.get(b.w);
+  eb.before = snap(b.w);
+  const was = { x: player(b.w).x, y: player(b.w).y };
+  Object.assign(player(b.w), { x: safe.pileAt.x, y: safe.pileAt.y });
+  step(b.w, LEVELS, { x: 0, y: 0 });
+  Object.assign(player(b.w), was);
+  Object.assign(b.h, { x: safe.at.x, y: safe.at.y, path: [], cash: 15 });
+  step(b.w, LEVELS, { x: 0, y: 0 });
+  assert.equal(b.w.piles.safe, 15);
+  assert.deepEqual(of(cues(eb.before, b.w, L), "pile"), [{ kind: "pile", n: 10 }]);
+  assert.equal(gains(eb.before, b.w).coins, 10);
+
+  // the same step: the player takes the 10, then the collector puts its 6 in
+  const c = withCollector(1e9);
+  c.w.piles.safe = 10;
+  const ec = ears.get(c.w);
+  ec.before = snap(c.w);
+  Object.assign(c.h, { x: safe.at.x, y: safe.at.y, path: [], cash: 6 });
+  Object.assign(player(c.w), { x: safe.pileAt.x, y: safe.pileAt.y });
+  step(c.w, LEVELS, { x: 0, y: 0 });
+  assert.equal(c.w.coins - (ec.before.coins), 10);
+  assert.equal(c.w.piles.safe, 6);
+  assert.deepEqual(of(cues(ec.before, c.w, L), "pile"), [{ kind: "pile", n: 10 }]);
+  assert.equal(gains(ec.before, c.w).coins, 10);
+});
+
+test("the player's own pickups sound as they did: a desk pile, the safe, and coins off the floor", () => {
+  const { w } = withCollector();
+  w.piles.safe = 7;
+  take(w);
+  shown(w);
+  go(w, safe.pileAt);
+  assert.deepEqual(of(take(w), "pile"), [{ kind: "pile", n: 7 }]);
+  assert.equal(shown(w).coins, 7);
+});

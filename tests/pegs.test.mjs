@@ -12,7 +12,7 @@ function parts(p) {
 const hex = (s) => parseInt(s.slice(1), 16);
 
 test("every character fits in the parts the view sets aside for one", () => {
-  for (const kind of ["agent", "player", "escort", "carrier", "clerk", "cleaner"])
+  for (const kind of ["agent", "player", "escort", "carrier", "clerk", "cleaner", "collector"])
     for (const uniform of [false, true])
       for (const action of ["stand", "walk", "sit", "eat", "sleep", "clean", "fight", "wash"]) {
         const counts = {};
@@ -56,4 +56,13 @@ test("new arrivals wear jeans and cuffs, inmates an orange jumpsuit, guards a ba
   assert.equal(inmate.filter((q) => q.part === "hat" && q.colour === orange).length, 0, "no pants band on a jumpsuit");
   for (const kind of ["player", "escort"]) assert.equal(parts(pose({ kind })).filter((q) => q.colour === badge).length, 1, kind);
   assert.equal(parts(pose({ kind: "cleaner" })).filter((q) => q.colour === badge).length, 0);
+});
+
+test("the collector has a look of its own: green, in a cap", () => {
+  const body = (kind) => parts(pose({ kind })).find((q) => q.part === "body").colour;
+  const looks = ["player", "escort", "carrier", "clerk", "cleaner"].map(body);
+  assert.equal(body("collector"), hex("#4caf50"));
+  assert.ok(!looks.includes(body("collector")), "nobody else in that colour");
+  const cap = parts(pose({ kind: "collector" })).filter((q) => q.part === "hat" && q.colour === hex("#1e5e2a"));
+  assert.equal(cap.length, 2, "a cap and its peak");
 });
