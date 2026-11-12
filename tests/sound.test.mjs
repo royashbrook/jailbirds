@@ -144,7 +144,7 @@ test("a cue is heard at once, on the cue bus, and no tune plays with music off",
   close(r.heard("sfx")[1].at, 1.02);
   assert.equal(r.heard("music").length, 0);
   assert.equal(r.timers.size, 0);
-  assert.deepEqual(s.report(), { music: false, sfx: true, state: "running", tune: false, steps: 0, pace: 1, cues: { tap: 1 } });
+  assert.deepEqual(s.report(), { music: false, sfx: true, state: "running", tune: false, steps: 0, pace: 1, trouble: false, cues: { tap: 1 } });
 });
 
 test("the tune is written a little ahead of the clock, in order, and keeps time", (t) => {
@@ -185,6 +185,42 @@ test("the tune goes faster when asked, from the next step on", (t) => {
   assert.equal(s.report().pace, 1);
   r.pass(1);
   close(r.heard("music").at(-1).at - r.heard("music").at(-2).at, 0.25);
+});
+
+test("trouble adds the alarm to the tune from the next step written, and calm takes it off again", (t) => {
+  const r = rig(t);
+  const s = createSound({ ...TOY, alarm: (st) => [{ at: 0, wave: "triangle", from: 500 + st, length: 0.1, level: 0.05 }] }, { music: true, sfx: false });
+  s.wake();
+  r.pass(1);
+  const calm = r.heard("music").length;
+  assert.ok(r.heard("music").every((n) => n.f < 500), "no alarm before any trouble");
+  s.trouble(true);
+  assert.equal(s.report().trouble, true);
+  r.pass(1);
+  const rough = r.heard("music").slice(calm);
+  const tune = rough.filter((n) => n.f < 500), alarm = rough.filter((n) => n.f >= 500);
+  assert.ok(tune.length >= 3, "the tune keeps going under it");
+  assert.equal(alarm.length, tune.length, "one alarm blip on every step");
+  alarm.forEach((n, i) => {
+    close(n.at, tune[i].at);
+    assert.equal(n.f - 500, tune[i].f - 100, "each on its own step");
+  });
+  s.trouble(false);
+  assert.equal(s.report().trouble, false);
+  const settled = r.heard("music").length;
+  r.pass(1);
+  assert.ok(r.heard("music").length > settled, "the tune goes on");
+  assert.ok(r.heard("music").slice(settled).every((n) => n.f < 500), "and the alarm is gone");
+});
+
+test("a score with no alarm plays its tune as written through trouble", (t) => {
+  const r = rig(t);
+  const s = createSound(TOY, { music: true, sfx: false });
+  s.wake();
+  s.trouble(true);
+  r.pass(1);
+  assert.ok(r.heard("music").length >= 4);
+  r.heard("music").forEach((n, i) => assert.equal(n.f, 100 + (i % 4)));
 });
 
 test("music off fades and stops the tune but leaves the audio running, and on again picks up where it stopped", (t) => {
@@ -679,4 +715,25 @@ test("the tune sits under the cues: its notes are lower than a coin and no loude
       assert.ok(b.level <= coin.level);
       if (b.wave === "sine") assert.ok(b.from <= hz("E5") + 1e-9, `step ${i} is ${b.from}`);
     }
+});
+
+test("the alarm drives on every step: the bar's root, a thump on one and five, the sour note on four and eight", () => {
+  const coin = SCORE.sound({ kind: "coin", n: 1 }, 0)[0];
+  for (let i = 0; i < SCORE.steps; i++) {
+    const here = SCORE.alarm(i);
+    for (const b of here) {
+      sane(b, `alarm step ${i}`);
+      assert.equal(b.at, 0);
+      assert.ok(b.length < SCORE.span(i), `alarm step ${i} rings past its step`);
+      assert.ok(b.level <= coin.level && Math.max(b.from, b.to ?? 0) < coin.from, `alarm step ${i} is not under the cues`);
+    }
+    const bar = Math.floor(i / 8), at = i % 8;
+    const root = SCORE.notes(bar * 8).find((b) => b.wave === "triangle").from;
+    const pulse = here.filter((b) => b.wave === "triangle" && b.from === root);
+    assert.equal(pulse.length, 1, `step ${i} pulses the root of bar ${bar}`);
+    assert.equal(here.filter((b) => b.to !== undefined && b.to < b.from).length, at % 4 === 0 ? 1 : 0, `the thump at step ${i}`);
+    assert.equal(here.filter((b) => b.from === hz("Eb4")).length, at % 4 === 3 ? 1 : 0, `the sour note at step ${i}`);
+  }
+  const cry = SCORE.sound({ kind: "fight", n: 1 }, 0).map((b) => b.from);
+  assert.ok(cry.includes(hz("Eb4")), "the sour note is the fight cry's");
 });

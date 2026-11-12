@@ -140,6 +140,8 @@
     before = snap(world);
     // the tune hurries along with the skates
     sound.pace(world.boosted > 0 ? 1.12 : 1);
+    // and takes on a beat that will not settle while there is a squabble
+    sound.trouble(world.alert !== null);
     if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
     else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +${l.rankReward * world.rank} coins`);
     else if (world.settled > seen.settled) shout("all calm again! +coins");

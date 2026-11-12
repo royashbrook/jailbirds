@@ -19,6 +19,8 @@ export interface Score<K extends string = string> {
   steps: number;
   span(step: number): number;
   notes(step: number): Blip[];
+  /** what the tune adds on a step while there is trouble, if anything */
+  alarm?(step: number): Blip[];
 }
 
 /** how loud everything is, the tune under the cues, before the limiter. set from a measured render:
@@ -110,7 +112,7 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
   let ctx: AudioContext | null = null;
   let bus: ReturnType<typeof mixer> | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
-  let step = 0, nextAt = 0, speed = 1, played = 0;
+  let step = 0, nextAt = 0, speed = 1, played = 0, tense = false;
   /** tune blips written but not over yet, so they can be cut short */
   let tune: { source: AudioScheduledSourceNode; end: number }[] = [];
   /** the same for cue blips. once cut, their bus stays faded out until the next cue brings it back */
@@ -211,7 +213,8 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
     tune = tune.filter((t) => t.end > now);
     if (nextAt < now) nextAt = now + 0.06;
     while (nextAt < now + AHEAD) {
-      for (const b of score.notes(step)) tune.push({ source: strike(ctx, bus.music, b, nextAt + b.at / speed), end: nextAt + b.at / speed + b.length });
+      const notes = tense && score.alarm ? [...score.notes(step), ...score.alarm(step)] : score.notes(step);
+      for (const b of notes) tune.push({ source: strike(ctx, bus.music, b, nextAt + b.at / speed), end: nextAt + b.at / speed + b.length });
       nextAt += score.span(step) / speed;
       step = (step + 1) % score.steps;
       played++;
@@ -265,6 +268,10 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
     pace(mult: number) {
       speed = mult > 0 ? mult : 1;
     },
+    /** trouble (true) or calm again (false): the tune takes on or drops its alarm from the next step written */
+    trouble(v: boolean) {
+      tense = v;
+    },
     /** the switches. turning one is a touch, so the audio may start here */
     setMusic(v: boolean) {
       music = v;
@@ -281,6 +288,6 @@ export function createSound<K extends string>(score: Score<K>, on: { music: bool
       hidden = v;
       turn();
     },
-    report: () => ({ music, sfx, state: ctx ? ctx.state : "none", tune: timer !== undefined, steps: played, pace: speed, cues: { ...heard } }),
+    report: () => ({ music, sfx, state: ctx ? ctx.state : "none", tune: timer !== undefined, steps: played, pace: speed, trouble: tense, cues: { ...heard } }),
   };
 }
