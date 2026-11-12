@@ -14,6 +14,7 @@ import type { Palette } from "../skins/types.ts";
 
 export const WALL_H = 11;
 const TILE = 40;
+const RUGS = ["#e98aa8", "#8fc7e8", "#f2c46b", "#9fd39a"];
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
@@ -117,6 +118,8 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
         box(bx, bz + 1, 21, 40, 2.5, ok ? pal.bed : pal.locked, 6);
         box(bx, bz - 14, 16, 8, 2.5, ok ? pal.pillow : pal.locked, 8.5);
       }
+      // a round rug in the middle, a different colour from the cell next door
+      if (ok) add("cyl", r.rect.x + r.rect.w * 0.62, 0.9 + k * 0.05, r.rect.y + r.rect.h / 2, 13, 0.4, 13, RUGS[k % RUGS.length]);
     }
     if (!ok) {
       // a padlock in the middle
@@ -144,12 +147,21 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
       box(s.prop.x + s.prop.w / 2, s.prop.y + s.prop.h / 2, s.prop.w, s.prop.h, 13, pal.wood);
       // a pile of folded orange shirts
       for (let k = 0; k < 3; k++) box(s.prop.x + 26, s.prop.y + s.prop.h / 2, 16, 12, 2.2, k % 2 ? "#ff8a3d" : "#ffffff", 13 + k * 2.2);
+      // a little computer: a screen on a stand, and a keyboard
+      const mx = s.prop.x + s.prop.w - 26, mz = s.prop.y + s.prop.h / 2;
+      box(mx, mz, 3, 3, 4, pal.dark, 13);
+      box(mx, mz, 18, 2, 12, pal.dark, 17);
+      // facing the warden's spot behind the desk
+      const toward = Math.sign(s.at.y - mz) || -1;
+      box(mx, mz + toward * 1.1, 15, 0.4, 9, "#7fc8f8", 18.5);
+      box(mx, mz + toward * 7, 14, 5, 1, "#e8eef4", 13);
       if (s.gate) {
-        // a walk-through arch
+        // a walk-through scanner: two posts, a top with a light, and a red beam
         box(s.gate.x - 24, s.gate.y, 6, 8, 30, pal.metal);
         box(s.gate.x + 24, s.gate.y, 6, 8, 30, pal.metal);
-        box(s.gate.x, s.gate.y, 54, 8, 6, pal.metal, 30);
-        ball(s.gate.x, 39, s.gate.y, 3, "#7ccf7c");
+        box(s.gate.x, s.gate.y, 58, 10, 7, pal.dark, 30);
+        box(s.gate.x, s.gate.y, 42, 1, 0.8, "#e5484d", 14);
+        ball(s.gate.x, 40, s.gate.y, 3, "#7ccf7c");
       }
     } else if (s.kind === "house" && open(s.locked)) spot(s.at.x, s.at.y);
     else if (s.kind === "source") {
@@ -169,6 +181,9 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
       cyl(s.prop.x + 60, s.prop.y + s.prop.h / 2, 5, 6, "#e5484d", 13);
       cyl(s.prop.x + 60, s.prop.y + s.prop.h / 2, 2, 8, "#6b4b3a", 19);
       ball(s.prop.x + 60, 28, s.prop.y + s.prop.h / 2, 4, "#6b4b3a");
+      // the release papers, a little stack with a stamped one on top
+      for (let k = 0; k < 3; k++) box(s.prop.x + 92, s.prop.y + s.prop.h / 2, 16, 20, 0.6, "#ffffff", 13 + k * 0.6);
+      box(s.prop.x + 92, s.prop.y + s.prop.h / 2 + 3, 7, 7, 0.3, "#e5484d", 14.8);
     } else if (s.kind === "sink") {
       const ok = open(s.locked);
       const c = ok ? pal.wood : pal.locked;
