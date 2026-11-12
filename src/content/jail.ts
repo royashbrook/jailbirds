@@ -70,6 +70,8 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
       id: "stamp", kind: "release", look: "stamp", prop: { x: 540, y: 722, w: 120, h: 24 }, at: { x: 600, y: 704 }, r: 26,
       exit: [{ x: 600, y: 818 }, { x: 790, y: 826 }], every: 0.6, pay: 10, pileAt: { x: 672, y: 774 },
     },
+    // the commissary safe outside intake: the collector puts the desks' coins in, the player takes them out
+    { id: "safe", kind: "safe", at: { x: 250, y: 785 }, r: 26, pileAt: { x: 220, y: 785 } },
   ];
   const cellPad = (i: number, c: number, rank: number): PadDef => ({
     id: `cell${i + 1}`, cost: cost(c), at: { x: cellMid(i), y: 184 }, rank, after: i > 2 ? `cell${i}` : undefined, unlock: { room: `c${i}` }, label: "cell",
@@ -93,6 +95,7 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     { id: "guard3", cost: cost(120), at: { x: 420, y: 625 }, rank: 6, after: "guard2", unlock: { helper: "escort" }, label: "another guard" },
     { id: "clerk", cost: cost(70), at: { x: 420, y: 690 }, rank: 4, unlock: { helper: "clerk" }, label: "hire a clerk" },
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
+    { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
   ];
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: true }, label: "next jail" });
   return {

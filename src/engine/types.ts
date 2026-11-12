@@ -63,7 +63,10 @@ export type StationDef =
   | { id: string; kind: "facility"; seats: Seat[]; need: string; use: number; mess: string; messChance: number; look: string; zone?: Rect };
   /** an actor standing at `at` sends a finished follower out through `exit`: it pays, and earns a star */
 export type ReleaseDef = { id: string; kind: "release"; at: Pt; r: number; exit: Pt[]; every: number; pay: number; pileAt: Pt; look: string; prop: Rect };
-export type AnyStation = StationDef | ReleaseDef;
+/** where a collector brings the desks' coins: it stands at `at` to put them in, they stack at `pileAt`
+ * for the player to walk over like any other pile */
+export type SafeDef = { id: string; kind: "safe"; at: Pt; r: number; pileAt: Pt };
+export type AnyStation = StationDef | ReleaseDef | SafeDef;
 
 export interface NeedDef {
   id: string;
@@ -89,7 +92,7 @@ export interface BoostKinds { skates: RideBoost; unicorn: RideBoost; fairy: Fair
  * visit, `visits` the messes cleaned so far. she never takes on a mess made after she came */
 export interface Fairy { todo: number[]; visits: number; x: number; y: number; target: number | null; t: number }
 
-export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk";
+export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk" | "collector";
 export interface Unlock {
   room?: string;
   carry?: number;
@@ -173,6 +176,8 @@ export interface Agent {
   rest: number;
   t: number;
   carry: number;
+  /** coins a collector is taking to the safe: its own, so nothing that reads `carry` ever sees them */
+  cash: number;
   path: Pt[];
   /** for a leader: where it has been, newest first, so followers walk the same way through doors */
   trail: Pt[];
@@ -220,5 +225,10 @@ export interface World {
   fairy: Fairy;
   /** pickups so far, and what the last one turned out to be, so a sound can name it */
   picked: { n: number; kind: BoostKind };
+  /** every coin that came into the player's hands, counted where it happens, so a screen never
+   * guesses from a pile going down (a collector empties piles too): how many pickups, coins off
+   * the floor, coins for a rank, and coins off each pile by its station id */
+  took: Took;
 }
+export interface Took { n: number; floor: number; rank: number; piles: Record<string, number> }
 export type Stick = { x: number; y: number };

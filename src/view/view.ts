@@ -40,6 +40,10 @@ const MAX_TRAYS = 160;
 const MAX_COINS = 320;
 const MAX_FLY = 48;
 const MAX_MESS = 40;
+const MAX_BAGS = 8;
+const BAG = "#c8a165";
+/** how tall the safe stands in scene.ts, so its coins sit on top of it */
+const SAFE_TOP = 16;
 const FOV = 34;
 const PIXEL_CAP = 2;
 /** how much higher the warden sits on the unicorn: his hips on her saddle */
@@ -92,6 +96,8 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const blobs = pool(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), MAX_CHARS + 8, new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.22 }));
   const lumps = pool(new SphereGeometry(1, 10, 8), MAX_MESS * 3);
   const puddles = pool(new CylinderGeometry(1, 1, 0.6, 18), MAX_MESS);
+  // a collector's money bag, one ball per collector with coins, a little bigger the more it holds
+  const bags = pool(new SphereGeometry(4, 12, 10), MAX_BAGS);
 
   // the bus, and the surprises on the floor: one each, moved about. the unicorn the warden rides
   // and the fairy in flight are their own, bigger than the ones waiting to be picked up
@@ -127,11 +133,12 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   let camReady = false;
   let cssW = 1, cssH = 1;
 
-  // coins that were on the floor last frame, to fly the picked ones to the warden
+  // coins that were on the floor last frame, to fly the picked ones to the warden. what he picked up
+  // is read off the sim's own record of it, never off a pile going down: a collector empties piles too
   let prevFloor = new Set<Coin>(), nowFloor = new Set<Coin>();
   const fly = new Float32Array(MAX_FLY * 4); // x, z, age, live
-  let lastCoins = -1;
-  const lastPiles = new Map<string, number>();
+  let lastFloor = -1;
+  const lastTook = new Map<string, number>();
   function launch(x: number, z: number) {
     for (let i = 0; i < MAX_FLY; i++)
       if (!fly[i * 4 + 3]) {
@@ -159,7 +166,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const partList = [...parts.values()];
 
   // counters and placers for the pooled things, reset each frame
-  let tn = 0, fn = 0, bn = 0, cn = 0, ln = 0, pn = 0;
+  let tn = 0, fn = 0, bn = 0, cn = 0, ln = 0, pn = 0, gn = 0;
   const blob = (x: number, z: number, r: number) => {
     if (bn >= blobs.instanceMatrix.count) return;
     dummy.position.set(x, 0.9, z);
@@ -287,7 +294,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
 
     forget(w, headings);
     for (const p of partList) p.used = 0;
-    tn = fn = bn = cn = ln = pn = 0;
+    tn = fn = bn = cn = ln = pn = gn = 0;
     const onUnicorn = riding(w);
     let meHeading = 0, meWalk = 0;
 
@@ -337,6 +344,16 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       for (let k = 0; k < pose.carry; k++)
         tray(x + Math.sin(heading) * ca.forward, up + ca.up + k * ca.step, z + Math.cos(heading) * ca.forward, heading);
       if (action === "eat") tray(x + Math.sin(heading) * 9, 11, z + Math.cos(heading) * 9, heading);
+      // a collector's bag, hanging at its side
+      if (a.kind === "collector" && a.cash > 0 && gn < MAX_BAGS) {
+        const s = 1 + Math.min(0.6, a.cash / 50);
+        dummy.position.set(x + Math.cos(heading) * 9, 6 * s, z - Math.sin(heading) * 9);
+        dummy.rotation.set(0, heading, 0);
+        dummy.scale.set(s, s * 0.9, s);
+        dummy.updateMatrix();
+        bags.setMatrixAt(gn, dummy.matrix);
+        bags.setColorAt(gn++, tint.set(BAG));
+      }
     }
     for (const p of partList) {
       p.mesh.count = p.used;
@@ -358,16 +375,18 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       nowFloor.add(c);
       coin(c.x, 4 + Math.abs(Math.sin(t * 3 + i)) * 2, c.y, t * 3 + i);
     }
-    if (lastCoins >= 0 && w.coins > lastCoins) for (const c of prevFloor) if (!nowFloor.has(c)) launch(c.x, c.y);
+    if (lastFloor >= 0 && w.took.floor > lastFloor) for (const c of prevFloor) if (!nowFloor.has(c)) launch(c.x, c.y);
     [prevFloor, nowFloor] = [nowFloor, prevFloor];
     for (const s of l.stations) {
-      if (s.kind !== "checkin" && s.kind !== "release") continue;
-      const n = w.piles[s.id] ?? 0, was = lastPiles.get(s.id) ?? 0;
-      if (n < was) for (let k = 0; k < Math.min(8, was); k++) launch(s.pileAt.x + (k % 3) * 4 - 4, s.pileAt.y);
-      lastPiles.set(s.id, n);
-      for (let k = 0; k < Math.min(14, Math.ceil(n / 2)); k++) coin(s.pileAt.x + (k % 2 ? 6 : -6), 1.5 + Math.floor(k / 2) * 1.8, s.pileAt.y, k, 1);
+      if (s.kind !== "checkin" && s.kind !== "release" && s.kind !== "safe") continue;
+      const n = w.piles[s.id] ?? 0, took = w.took.piles[s.id] ?? 0, was = lastTook.get(s.id) ?? took;
+      if (lastFloor >= 0 && took > was) for (let k = 0; k < Math.min(8, took - was); k++) launch(s.pileAt.x + (k % 3) * 4 - 4, s.pileAt.y);
+      lastTook.set(s.id, took);
+      // the safe's coins sit on top of it, the desks' on the floor
+      const up = s.kind === "safe" ? SAFE_TOP : 0;
+      for (let k = 0; k < Math.min(14, Math.ceil(n / 2)); k++) coin(s.pileAt.x + (k % 2 ? 6 : -6), up + 1.5 + Math.floor(k / 2) * 1.8, s.pileAt.y, k, 1);
     }
-    lastCoins = w.coins;
+    lastFloor = w.took.floor;
     for (let i = 0; i < MAX_FLY; i++) {
       if (!fly[i * 4 + 3]) continue;
       const age = (fly[i * 4 + 2] += dt), k = Math.min(1, age / 0.4);
@@ -464,6 +483,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     finish(blobs, bn);
     finish(lumps, ln);
     finish(puddles, pn);
+    finish(bags, gn);
 
     // price pads: tinted by whether the rank allows them, filled by what is paid
     if (built)

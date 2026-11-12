@@ -21,7 +21,12 @@ export interface Snap {
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
   /** a boost lying on the floor, and what it is */
   boost: boolean; boostKind: BoostKind; picked: number;
+  /** what the player has taken so far, as the sim wrote it down: every coin in hand, and those off piles */
+  took: number; tookPiles: number;
 }
+
+const pileSum = (w: World) => Object.values(w.took.piles).reduce((n, c) => n + c, 0);
+const tookAll = (w: World) => w.took.floor + w.took.rank + pileSum(w);
 
 /** how far past a desk's own reach the player still counts as the one who did it:
  * a helper working on its own, somewhere else, makes no sound */
@@ -38,18 +43,19 @@ export function snap(w: World): Snap {
     led: followers(w, me).map((a) => a.id),
     carry: me.carry, messes: w.messes.slice(),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
-    boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n,
+    boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n, took: tookAll(w), tookPiles: pileSum(w),
   };
 }
 
 /** what there is to show for it: coins that came in, stars earned, and what was just bought */
 export interface Gain { coins: number; stars: number; bought: string[] }
 
-/** what came in between the snap and now. like `cues`, a new level or a world
+/** what came in between the snap and now: the coins the player took, as the sim wrote them down
+ * (a collector moving coins about is not coins in hand). like `cues`, a new level or a world
  * that went back in time has nothing to show */
 export function gains(before: Snap, w: World): Gain {
   if (w.level !== before.level || w.steps <= before.steps) return { coins: 0, stars: 0, bought: [] };
-  return { coins: Math.max(0, w.coins - before.coins), stars: Math.max(0, w.released - before.released), bought: w.bought.slice(before.bought) };
+  return { coins: Math.max(0, tookAll(w) - before.took), stars: Math.max(0, w.released - before.released), bought: w.bought.slice(before.bought) };
 }
 
 /** what happened between the snap and now. a new level says only that; a world
@@ -68,9 +74,8 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
     const here = new Set(w.floor);
     add("coin", before.floor.filter((c) => !here.has(c)).length);
   }
-  let pile = 0;
-  for (const id in before.piles) if (before.piles[id] > (w.piles[id] ?? 0)) pile += before.piles[id];
-  add("pile", pile);
+  // a pile is the player's only when the sim says the player took it: a collector empties piles too
+  add("pile", pileSum(w) - before.tookPiles);
   if (w.bought.length > before.bought) add("buy", w.bought.length - before.bought);
   else
     for (const p of l.pads) {

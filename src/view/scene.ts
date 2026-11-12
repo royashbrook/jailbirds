@@ -201,6 +201,12 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
           ball(seat.at.x, 34, seat.at.y + 11, 3.5, pal.metal);
         }
       });
+    } else if (s.kind === "safe") {
+      // a little safe on the floor, 22 by 16, with a coin slot on top and a dial on the front
+      const sx = s.pileAt.x, sz = s.pileAt.y, high = 16;
+      box(sx, sz, 22, 16, high, pal.metal);
+      box(sx, sz, 12, 2, 0.4, pal.dark, high);
+      ball(sx, high / 2, sz + 8, 2.2, pal.dark);
     } else if (s.kind === "spawn") {
       // the stop sign
       cyl(s.at.x - 66, s.at.y, 1.6, 30, pal.dark);

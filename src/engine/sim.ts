@@ -10,7 +10,7 @@
 import { roll } from "./rng.ts";
 import { collide, dist, inside, nav, near, route as navRoute, walls, type Nav } from "./geom.ts";
 import type {
-  Agent, AgentKind, AnyStation, BoostKind, Fairy, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, World,
+  Agent, AgentKind, AnyStation, BoostKind, Fairy, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
 } from "./types.ts";
 
 export const DT = 1 / 60;
@@ -31,6 +31,8 @@ const IDLE_GAP = 16;
 const MESS_R = 20;
 const COIN_R = 24;
 const PILE_R = 30;
+/** the least a desk's pile must hold before a collector walks over for it */
+export const COLLECT_MIN = 6;
 const BOOST_R = 22;
 const ALERT_R = 40;
 const TRAIL_STEP = 3;
@@ -51,16 +53,17 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
     alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
-    boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" },
+    boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" }, took: noneTaken(),
   };
 }
+const noneTaken = (): Took => ({ n: 0, floor: 0, rank: 0, piles: {} });
 const idleFairy = (): Fairy => ({ todo: [], visits: 0, x: 0, y: 0, target: null, t: 0 });
 function agent(id: number, kind: AgentKind, at: Pt, look: number, l: LevelDef): Agent {
   return {
     id, kind, x: at.x, y: at.y, face: 1, moving: false, walk: 0, look, tags: [], state: kind === "agent" ? "arrive" : "idle",
     leader: -1, house: "", slot: -1, station: "", seat: -1,
     needs: kind === "agent" ? Object.fromEntries(l.needs.map((n) => [n.id, n.start])) : {},
-    served: 0, rest: 0, t: 0, carry: 0, path: [], trail: [],
+    served: 0, rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
   };
 }
 
@@ -203,6 +206,7 @@ function addStar(w: World, l: LevelDef) {
     w.stars = 0;
     w.rank++;
     w.coins += l.rankReward * w.rank;
+    w.took.rank += l.rankReward * w.rank;
   }
 }
 
@@ -309,15 +313,25 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   arrivals(w, l);
   for (const a of w.agents.filter(isActor)) act(w, l, a, live);
 
-  // only the player picks up coins, piles and boosts, pays pads and settles squabbles
+  // only the player picks up coins, piles and boosts, pays pads and settles squabbles.
+  // each pickup is written down here, where it happens, for the screen to read
   const before = w.floor.length;
   w.floor = w.floor.filter((c) => !near(c, p, COIN_R));
-  w.coins += before - w.floor.length;
+  const got = before - w.floor.length;
+  if (got) {
+    w.coins += got;
+    w.took.floor += got;
+    w.took.n++;
+  }
   for (const st of l.stations)
-    if ((st.kind === "checkin" || st.kind === "release") && (w.piles[st.id] ?? 0) > 0 && near(p, st.pileAt, PILE_R)) {
+    if ((st.kind === "checkin" || st.kind === "release" || st.kind === "safe") && (w.piles[st.id] ?? 0) > 0 && near(p, st.pileAt, PILE_R)) {
       w.coins += w.piles[st.id];
+      w.took.piles[st.id] = (w.took.piles[st.id] ?? 0) + w.piles[st.id];
+      w.took.n++;
       w.piles[st.id] = 0;
     }
+  // after the player, so a pile both reach in the same step is the player's
+  collect(w, l);
   if (w.boost.here && near(p, w.boost, BOOST_R)) {
     w.boost.here = false;
     w.boost.t = l.boost.every;
@@ -491,7 +505,45 @@ function buy(w: World, levels: LevelDef[], pad: PadDef) {
   if (u.line) w.lineMax = u.line;
   if (u.speed) w.speed = u.speed;
   if (u.helper) w.agents.push(agent(w.nextId++, u.helper, l.helperHome, 0, l));
-  if (u.level && levels[w.level + 1]) Object.assign(w, create(levels, w.level + 1, w.rng), { steps: w.steps });
+  if (u.level && levels[w.level + 1]) {
+    // the safe and whatever a collector was carrying to it move on to the new place, once; the rest starts fresh
+    const kept = banked(w, l);
+    Object.assign(w, create(levels, w.level + 1, w.rng), { steps: w.steps });
+    const safe = all(levels[w.level], "safe")[0];
+    if (safe && kept) w.piles[safe.id] = kept;
+  }
+}
+/** coins in the safe and in collectors' hands */
+const banked = (w: World, l: LevelDef) =>
+  all(l, "safe").reduce((n, s) => n + (w.piles[s.id] ?? 0), 0) + w.agents.reduce((n, a) => n + a.cash, 0);
+
+/** a collector's pile: the fuller of the desks' piles, once it holds enough to be worth the walk */
+function collectFrom(w: World, l: LevelDef) {
+  let best: S<"checkin"> | ReleaseDef | null = null;
+  for (const st of l.stations)
+    if ((st.kind === "checkin" || st.kind === "release") && (w.piles[st.id] ?? 0) >= COLLECT_MIN && (!best || w.piles[st.id] > w.piles[best.id]))
+      best = st;
+  return best;
+}
+/** collectors at work: with empty hands, sweep up the pile they came for; with coins, put them in the safe */
+function collect(w: World, l: LevelDef) {
+  const safe = all(l, "safe")[0];
+  if (!safe) return;
+  for (const h of w.agents) {
+    if (h.kind !== "collector") continue;
+    if (h.cash > 0) {
+      if (near(h, safe.at, safe.r)) {
+        w.piles[safe.id] = (w.piles[safe.id] ?? 0) + h.cash;
+        h.cash = 0;
+      }
+      continue;
+    }
+    const st = collectFrom(w, l);
+    if (st && near(h, st.pileAt, PILE_R)) {
+      h.cash = w.piles[st.id];
+      w.piles[st.id] = 0;
+    }
+  }
 }
 
 function arrivals(w: World, l: LevelDef) {
@@ -656,6 +708,11 @@ function helpers(w: World, l: LevelDef) {
       if (desk) goal = desk.at;
     } else if (h.kind === "escort") {
       goal = escortGoal(w, l, h, claimed) ?? goal;
+    } else if (h.kind === "collector") {
+      // coins in hand go to the safe before any more are fetched; never from the safe, never off the floor
+      const safe = all(l, "safe")[0];
+      if (h.cash > 0) goal = safe?.at ?? goal;
+      else goal = collectFrom(w, l)?.pileAt ?? goal;
     } else continue;
     goTo(w, l, h, goal);
     walkPath(h, HELPER_SPEED);
@@ -749,10 +806,28 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
     back.fairy = fairyFrom(got.fairy);
     const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;
     back.picked = { n: typeof pk?.n === "number" && Number.isFinite(pk.n) && pk.n >= 0 ? pk.n : 0, kind: kind(pk?.kind) };
+    back.took = tookFrom((w as Partial<Record<"took", unknown>>).took);
+    // a collector's coins are put in the safe on the way back in, so a reload never loses or doubles them
+    const safe = all(levels[w.level], "safe")[0];
+    for (const a of back.agents) {
+      const cash = (a as Partial<Record<"cash", unknown>>).cash;
+      a.cash = count(cash) ? cash : 0;
+      if (safe && a.cash > 0) back.piles = { ...back.piles, [safe.id]: (back.piles[safe.id] ?? 0) + a.cash };
+      a.cash = 0;
+    }
     return back;
   } catch {
     return null;
   }
+}
+/** a whole number of coins, none less than none */
+const count = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+/** a saved record of what the player took, or a fresh one when it is missing or cannot be read */
+function tookFrom(raw: unknown): Took {
+  const t = raw as Partial<Took> | null;
+  if (!t || typeof t !== "object" || ![t.n, t.floor, t.rank].every(count) || !t.piles || typeof t.piles !== "object") return noneTaken();
+  const piles = Object.fromEntries(Object.entries(t.piles).filter(([, n]) => count(n)));
+  return { n: t.n!, floor: t.floor!, rank: t.rank!, piles };
 }
 /** a saved fairy, whole and sane, or one at rest */
 function fairyFrom(raw: unknown): Fairy {

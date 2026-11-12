@@ -36,6 +36,7 @@ const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
   carrier: { body: hex("#f4f1ea"), hat: hex("#ffffff"), pants: hex("#8a8f99") },
   clerk: { body: hex("#e0a040"), hat: hex("#2f8f6a"), pants: hex("#5a4a3a") },
   cleaner: { body: hex("#2fb39a"), hat: hex("#1f6f60"), pants: hex("#1f6f60") },
+  collector: { body: hex("#4caf50"), hat: hex("#1e5e2a"), pants: hex("#5b4636") },
 };
 /** how long an arm is, shoulder to wrist, before scaling */
 export const ARM = 7;
@@ -112,6 +113,10 @@ function pose(p: Pose, put: Put) {
   } else if (p.kind === "clerk") {
     put("hat", jitter, ht - 1.2 * s, hz, 0, 0, 0, 4.85 * s, 1.4 * s, 4.85 * s, dress.hat);
     put("hat", jitter, ht - 1.6 * s, hz + 2.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.4 * s, dress.hat);
+  } else if (p.kind === "collector") {
+    // a green cap with its peak turned round to the back
+    put("hat", jitter, ht - 0.9 * s, hz, 0, 0, 0, 4.85 * s, 1.8 * s, 4.85 * s, dress.hat);
+    put("hat", jitter, ht - 1.4 * s, hz - 2.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.4 * s, dress.hat);
   } else if (p.kind === "cleaner") {
     put("hat", jitter, ht - 1.4 * s, hz, 0, 0, 0, 4.8 * s, 1.6 * s, 4.8 * s, dress.hat);
   } else if (p.uniform) {
