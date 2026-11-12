@@ -150,10 +150,31 @@ function compose(): Blip[][] {
 }
 const TUNE = compose();
 
+/** the squabble's sour note, the low one of the fight cry, out of key on purpose */
+const SOUR = hz("Eb4");
+/** what the tune takes on while there is trouble: the bar's root pulsed on every step, a thump
+ * on one and five, and the sour note on four and eight. all short, so it drives and stays under */
+function composeAlarm(): Blip[][] {
+  const steps: Blip[][] = [];
+  for (const { bars } of FORM)
+    for (const [name] of bars) {
+      const root = hz(CHORDS[name].root);
+      for (let i = 0; i < BAR; i++) {
+        const here = [blip(0, "triangle", root, 0.1, 0.12)];
+        if (i % 4 === 0) here.push(blip(0, "sine", 160, 0.18, 0.2, 70));
+        if (i % 4 === 3) here.push(blip(0, "triangle", SOUR, 0.12, 0.05));
+        steps.push(here);
+      }
+    }
+  return steps;
+}
+const ALARM = composeAlarm();
+
 export const SCORE: Score<CueKind> = {
   sound: (cue, chain) => SOUNDS[cue.kind](cue.n, chain, cue.fill ?? 0),
   rest: { coin: 0.05, pay: 0.06, carry: 0.05, drop: 0.05, checkin: 0.1, clean: 0.2, ride: 2 },
   steps: TUNE.length,
   span,
   notes: (step) => TUNE[step],
+  alarm: (step) => ALARM[step],
 };

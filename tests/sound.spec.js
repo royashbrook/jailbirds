@@ -84,7 +84,7 @@ test("music and sounds are on from the start, wait for the first tap, and the tu
   await page.goto("/");
   await untilSim(page, (s) => s.steps > 30, 2, "the game to run a while");
   expect(await audio(page)).toMatchObject({ made: 0, starts: 0 });
-  expect(await sound(page)).toMatchObject({ music: true, sfx: true, state: "none", tune: false, steps: 0, pace: 1 });
+  expect(await sound(page)).toMatchObject({ music: true, sfx: true, state: "none", tune: false, steps: 0, pace: 1, trouble: false });
   await tapJail(page);
   await expect.poll(() => sound(page).then((s) => s.tune)).toBe(true);
   expect(await audio(page)).toMatchObject({ made: 1, state: "running" });
@@ -219,6 +219,21 @@ test("a hidden page goes quiet at once and picks up on return; so does a page le
   await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await expect.poll(() => sound(page).then((s) => s.tune)).toBe(true);
   expect(await audio(page)).toMatchObject({ made: 1, state: "running" });
+});
+
+test("the tune takes on its alarm while there is a squabble, and drops it once the warden calms it", async ({ page }) => {
+  await page.goto("/");
+  await untilSim(page, (s) => s.steps > 5, 1, "the game to start");
+  expect((await sound(page)).trouble).toBe(false);
+  const world = await state(page);
+  // the same jail, saved with a squabble right where the warden stands
+  const { x, y } = world.agents[0];
+  await page.addInitScript((save) => localStorage.setItem("jailbirds:save", save), JSON.stringify({ ...world, alert: { x, y, ids: [], held: 0 } }));
+  await page.reload();
+  await untilSim(page, (s) => s.steps > world.steps + 2 && s.alert !== null, 1, "the squabble to be on");
+  expect((await sound(page)).trouble).toBe(true);
+  await untilSim(page, (s) => s.alert === null && s.settled > world.settled, 10, "the warden to calm it");
+  await expect.poll(() => sound(page).then((s) => s.trouble)).toBe(false);
 });
 
 test("the tune hurries while the skates are on", async ({ page }) => {
