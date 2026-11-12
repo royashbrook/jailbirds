@@ -247,6 +247,28 @@ test("walking over a pad takes nothing, at a walk or on skates; stopping on it a
   }
 });
 
+test("moving off again on a pad stops it taking coins at once, and stopping again waits again", () => {
+  const w = create(LEVELS, 0, 7), p = player(w), cell3 = pad("cell3");
+  w.coins = 50;
+  p.x = cell3.at.x - 10;
+  p.y = cell3.at.y;
+  // stood past the wait, right up to where one more step standing would take the first coin
+  const rate = Math.max(4, cell3.cost) * DT;
+  for (let i = 0; i < 120 && !((w.clock.pad ?? 0) + rate >= 1); i++) step(w, LEVELS, { x: 0, y: 0 });
+  assert.equal(w.coins, 50);
+  assert.ok(w.clock.still >= PAD_WAIT && w.clock.pad + rate >= 1, "on the edge of paying");
+  // a step along the pad: still on it, moving, and not a coin
+  for (let i = 0; i < 6; i++) step(w, LEVELS, { x: 1, y: 0 });
+  assert.ok(Math.abs(p.x - cell3.at.x) < 24, "still on the pad");
+  assert.equal(w.coins, 50, "moving takes nothing, even with the wait already done");
+  assert.equal(w.paid.cell3 ?? 0, 0);
+  // stopping again starts the wait over
+  wait(w, PAD_WAIT - 0.05);
+  assert.equal(w.coins, 50, "a fresh wait after moving");
+  wait(w, 1.5);
+  assert.ok(w.bought.includes("cell3"));
+});
+
 test("level-locked pads wait for the rank; upgrades change speed and the line", () => {
   const { w } = settle();
   w.coins = 500;

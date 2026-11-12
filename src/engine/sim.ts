@@ -259,10 +259,11 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   }
   // a pad takes nothing from someone walking over it, only from someone who stops on it a moment
   const pad = l.pads.find((x) => padVisible(w, x) && near(p, x.at, PAD_R));
+  // the sweep at the end of the step would clear it too late: the payment below reads it first
   if (pad && !p.moving) {
     w.clock.still = (w.clock.still ?? 0) + DT;
     live.add("still");
-  }
+  } else delete w.clock.still;
   if (pad && (w.clock.still ?? 0) >= PAD_WAIT && w.coins > 0 && w.rank >= (pad.rank ?? 0)) {
     w.clock.pad = (w.clock.pad ?? 0) + DT * Math.max(4, pad.cost);
     live.add("pad");
