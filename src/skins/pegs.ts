@@ -1,8 +1,10 @@
-// peg people: a capsule body, a round head with no face, little stubby arms and
-// legs. grey until intake, orange after; the warden in blue with a cap, each kind
-// of helper its own colour and hat. every pose is worked out here from the
-// character's state and how far it has walked, so feet plant instead of sliding.
-import { CapsuleGeometry, CylinderGeometry, SphereGeometry } from "three";
+// peg people: a capsule body, a round head with two dot eyes, arms with hands
+// and legs in the colour of their pants. grey shirt and jeans until intake, with
+// metal cuffs on the wrists; an orange jumpsuit after. the warden in blue with a
+// cap and a badge, each kind of helper its own colour and hat. every pose is
+// worked out here from the character's state and how far it has walked, so feet
+// plant instead of sliding.
+import { CapsuleGeometry, CylinderGeometry, Euler, SphereGeometry, Vector3 } from "three";
 import type { Model, Palette, Part, Pose, Put, Skin } from "./types.ts";
 
 const HIP = 6;
@@ -24,19 +26,28 @@ const GREY = hex("#b9bec7");
 const ORANGE = hex("#ff8a3d");
 const BEANIE = hex("#e8672a");
 const CROSS = hex("#e9877a");
-const DRESS: Record<string, { body: number; hat: number }> = {
-  player: { body: hex("#3f6fd8"), hat: hex("#22325a") },
-  escort: { body: hex("#6b778c"), hat: hex("#2f3a4d") },
-  carrier: { body: hex("#f4f1ea"), hat: hex("#ffffff") },
-  clerk: { body: hex("#e0a040"), hat: hex("#2f8f6a") },
-  cleaner: { body: hex("#2fb39a"), hat: hex("#1f6f60") },
+const JEANS = hex("#4d6a9a");
+const EYE = hex("#2a2230");
+const METAL = hex("#c5ced8");
+const BADGE = hex("#ffcf33");
+const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
+  player: { body: hex("#3f6fd8"), hat: hex("#22325a"), pants: hex("#22325a") },
+  escort: { body: hex("#6b778c"), hat: hex("#2f3a4d"), pants: hex("#2f3a4d") },
+  carrier: { body: hex("#f4f1ea"), hat: hex("#ffffff"), pants: hex("#8a8f99") },
+  clerk: { body: hex("#e0a040"), hat: hex("#2f8f6a"), pants: hex("#5a4a3a") },
+  cleaner: { body: hex("#2fb39a"), hat: hex("#1f6f60"), pants: hex("#1f6f60") },
 };
+/** how long an arm is, shoulder to wrist, before scaling */
+export const ARM = 7;
+const reach = new Vector3(), turn = new Euler();
 
 function pose(p: Pose, put: Put) {
   const s = p.kind === "player" ? 1.15 : p.kind === "agent" ? 1 : 1.08;
   const dress = DRESS[p.kind];
   const body = dress?.body ?? (p.uniform ? ORANGE : GREY);
-  const head = p.mood === "cross" ? CROSS : HEADS[p.look % HEADS.length];
+  const skin = HEADS[p.look % HEADS.length];
+  const head = p.mood === "cross" ? CROSS : skin;
+  const pants = dress?.pants ?? (p.uniform ? ORANGE : JEANS);
   const a = (p.walk / STRIDE) * TAU;
   const walking = p.action === "walk";
   const swing = walking ? Math.sin(a) : 0;
@@ -49,20 +60,28 @@ function pose(p: Pose, put: Put) {
 
   // legs from the hips: swinging opposite, out in front when sitting
   for (const side of [-1, 1]) {
-    const pitch = sitting ? -1.45 : p.action === "sleep" ? 0 : -swing * 0.9 * side;
-    put("limb", side * 2.5 * s + jitter, hip, 0, pitch, 0, 0, s, s, s, dress ? 0x4a4f5c : 0x5d6475);
+    const pitch = sitting ? -1.45 : p.action === "sleep" ? 0 : -swing * 1.0 * side;
+    put("limb", side * 2.5 * s + jitter, hip, 0, pitch, 0, 0, s, s, s, pants);
   }
   // the body, leaning into the walk, breathing when still
   const top = hip + BODY_H * s * (1 + breathe);
   put("body", jitter, hip + (BODY_H * s * (1 + breathe)) / 2, 0, lean, 0, 0, s, s * (1 + breathe), s, body);
-  // the head, a little forward with the lean
+  // the pants: a short band round the hips, unless it is all one jumpsuit
+  if (pants !== body) put("hat", jitter, hip + 2.6 * s, Math.sin(lean) * 2.6 * s, lean, 0, 0, BODY_R * 1.04 * s, 5.2 * s, BODY_R * 1.04 * s, pants);
+  // a badge on a guard's chest
+  if (p.kind === "player" || p.kind === "escort")
+    put("dot", jitter + 2 * s, top - 6 * s, BODY_R * s + Math.sin(lean) * BODY_H * s * 0.6, lean, 0, 0, 1.3 * s, 1.3 * s, 0.6 * s, BADGE);
+  // the head, a little forward with the lean, and two eyes on the front of it
   const hy = top + HEAD_R * s * 0.8, hz = Math.sin(lean) * BODY_H * s * 0.9;
   put("head", jitter, hy, hz, 0, 0, 0, s, s, s, head);
+  const shut = p.action === "sleep" ? 0.2 : 1;
+  for (const side of [-1, 1])
+    put("dot", jitter + side * 1.7 * s, hy + 0.7 * s, hz + HEAD_R * s * 0.86, 0, 0, 0, 0.75 * s, 0.9 * s * shut, 0.5 * s, EYE);
 
   // arms from the shoulders
   const shoulder = top - 4 * s, sz = Math.sin(lean) * BODY_H * s * 0.7;
   for (const side of [-1, 1]) {
-    let pitch = swing * 0.75 * side, yaw = 0, roll = side * 0.18;
+    let pitch = swing * 0.95 * side, yaw = 0, roll = side * 0.18;
     if (p.carry > 0) pitch = -1.35;
     else if (p.action === "eat") pitch = side > 0 ? -1.6 - Math.abs(Math.sin(p.t * 5)) * 0.8 : -0.9;
     else if (p.action === "clean") (pitch = -0.8), (yaw = Math.sin(p.t * 8) * 0.6);
@@ -70,7 +89,16 @@ function pose(p: Pose, put: Put) {
     else if (p.action === "wash") (pitch = -2.9), (roll = side * (0.5 + Math.sin(p.t * 9) * 0.3));
     else if (p.action === "sleep") pitch = 0;
     else if (!walking) pitch = Math.sin(p.t * 1.6 + side) * 0.05;
-    put("limb", side * (BODY_R + 1.2) * s + jitter, shoulder, sz, pitch, yaw, roll, s * 0.85, s * 0.85, s * 0.85, body);
+    const ax = side * (BODY_R + 1.2) * s + jitter, as = s * 0.85;
+    put("limb", ax, shoulder, sz, pitch, yaw, roll, as, as, as, body);
+    // a hand at the end of the arm; a cuff on the wrist until intake
+    const hand = (along: number) => reach.set(0, -along * as, 0).applyEuler(turn.set(pitch, yaw, roll));
+    hand(ARM + 0.4);
+    put("dot", ax + reach.x, shoulder + reach.y, sz + reach.z, 0, 0, 0, 2.1 * s, 2.1 * s, 2.1 * s, skin);
+    if (p.kind === "agent" && !p.uniform) {
+      hand(ARM - 1.6);
+      put("dot", ax + reach.x, shoulder + reach.y, sz + reach.z, pitch, yaw, roll, 2.3 * s, 1.1 * s, 2.3 * s, METAL);
+    }
   }
 
   // hats
@@ -99,8 +127,10 @@ export const model: Model = {
     limb: () => new CapsuleGeometry(2, 3, 4, 8).translate(0, -3.5, 0),
     // a unit cylinder, sized by each hat
     hat: () => new CylinderGeometry(1, 1, 1, 16),
+    // a unit ball, for eyes, hands, cuffs and badges
+    dot: () => new SphereGeometry(1, 10, 8),
   } satisfies Record<Part, unknown>,
-  perCharacter: { body: 1, head: 1, limb: 4, hat: 2 },
+  perCharacter: { body: 1, head: 1, limb: 4, hat: 3, dot: 7 },
   pose,
   root: (p) => (p.action === "sleep" ? LYING : p.action === "sit" || p.action === "eat" ? SITTING : STANDING),
   carryAt: { forward: 9, up: 21, step: 2.6 },
