@@ -369,6 +369,25 @@ a {
 .camera-sheet::backdrop {
   background: transparent;
 }
+/* the open jail around the card is for grabbing: no scroll, no page zoom */
+.sheet.camera-sheet {
+  touch-action: none;
+  cursor: grab;
+}
+.camera-sheet .card {
+  cursor: auto;
+}
+.camera-how {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+/* on a short screen the card stays as small as it was, clear of the warden */
+@media (max-height: 600px) {
+  .camera-how {
+    display: none;
+  }
+}
 .camera-card {
   padding: 14px;
   gap: 6px;

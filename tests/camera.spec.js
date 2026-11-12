@@ -3,7 +3,7 @@ import { state, untilSim, waitFrames, waitSim } from "./helpers.js";
 import { create } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
-const defaults = { zoom: 1, turn: 15, tilt: 50 };
+const defaults = { zoom: 2, turn: 30, tilt: 35 };
 const settings = page => page.evaluate(() => window.__jailbirds.camera());
 const eye = page => page.evaluate(() => window.__jailbirds.drawn().eye);
 const open = async page => { await page.click("#camera"); await expect(page.locator("dialog")).toBeVisible(); };
@@ -57,19 +57,19 @@ test("invalid saved camera values recover without touching progress", async ({ p
   await page.addInitScript(() => localStorage.setItem("jailbirds:camera", '{"zoom":"1000","turn":999,"tilt":null}'));
   await page.goto("/");
   await waitFrames(page, 3);
-  expect(await settings(page)).toEqual({ zoom: 1, turn: 180, tilt: 50 });
+  expect(await settings(page)).toEqual({ zoom: defaults.zoom, turn: 180, tilt: defaults.tilt });
   expect(await page.locator(".nogl").count()).toBe(0);
 });
 
 test("refused camera writes are visible and leave the old preference intact", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("jailbirds:camera", JSON.stringify({ zoom: 1, turn: 15, tilt: 50 }));
+  await page.addInitScript((kept) => {
+    localStorage.setItem("jailbirds:camera", JSON.stringify(kept));
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value) {
       if (key === "jailbirds:camera") throw new DOMException("full", "QuotaExceededError");
       return set.call(this, key, value);
     };
-  });
+  }, defaults);
   await page.goto("/");
   await open(page);
   await page.locator("#camera-zoom").press("End");
@@ -89,6 +89,106 @@ test("touch adjusts the camera slider without walking the warden", async ({ page
   await waitFrames(page, 3);
   expect((await settings(page)).zoom).toBeGreaterThan(before);
   expect(await state(page)).toEqual(paused);
+});
+
+const stored = page => page.evaluate(() => JSON.parse(localStorage.getItem("jailbirds:camera")));
+/** a spot on the open jail above the card, clear of the sliders */
+async function openSpot(page) {
+  const card = await page.locator(".camera-card").boundingBox();
+  const vw = page.viewportSize();
+  return { x: vw.width / 2, y: Math.max(40, Math.min(card.y - 60, 200)) };
+}
+
+test("a fresh game opens on the closer, lower view", async ({ page }) => {
+  await page.goto("/");
+  await waitFrames(page, 3);
+  expect(await settings(page)).toEqual(defaults);
+});
+
+test("dragging the jail with the mouse turns and tilts it, the sliders follow, and it is kept", async ({ page }) => {
+  await page.goto("/");
+  await waitFrames(page, 4);
+  await open(page);
+  const paused = await state(page);
+  const at = await openSpot(page);
+  const h = page.viewportSize().height;
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  // a tenth of the screen's height across and a tenth down, in a few steps
+  await page.mouse.move(at.x + h / 10, at.y + h / 10, { steps: 5 });
+  await waitFrames(page, 2);
+  const moving = await settings(page);
+  expect(moving.turn).toBeCloseTo(defaults.turn - 36, 0);
+  expect(moving.tilt).toBeCloseTo(defaults.tilt + 18, 0);
+  expect(moving.zoom).toBe(defaults.zoom);
+  expect(await stored(page)).toBeNull();
+  await page.mouse.up();
+  expect(await stored(page)).toEqual(moving);
+  await expect(page.locator("output[for=camera-turn]")).toHaveText(`${Math.round(moving.turn)}°`);
+  expect(Number(await page.locator("#camera-tilt").inputValue())).toBeCloseTo(moving.tilt, 0);
+  expect(await state(page)).toEqual(paused);
+  await page.click("#close");
+  await page.reload();
+  await waitFrames(page, 3);
+  expect(await settings(page)).toEqual(moving);
+});
+
+test("dragging on the card moves its slider, not the view", async ({ page }) => {
+  await page.goto("/");
+  await waitFrames(page, 4);
+  await open(page);
+  const heading = await page.locator(".camera-heading").boundingBox();
+  await page.mouse.move(heading.x + 10, heading.y + heading.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(heading.x + 120, heading.y + 80, { steps: 5 });
+  await page.mouse.up();
+  expect(await settings(page)).toEqual(defaults);
+});
+
+test("scrolling zooms: up comes in, down backs away, and it is kept", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit", "our webkit is a phone, and playwright has no wheel for a phone");
+  await page.goto("/");
+  await waitFrames(page, 4);
+  await open(page);
+  const at = await openSpot(page);
+  await page.mouse.move(at.x, at.y);
+  // how far a notch reads is the browser's to say (chromium gives a third of it),
+  // so this checks the way it goes and that it is kept. the amount is camera.test.mjs
+  await page.mouse.wheel(0, -100);
+  await expect.poll(() => settings(page).then((s) => s.zoom)).toBeGreaterThan(defaults.zoom);
+  const closer = (await settings(page)).zoom;
+  expect((await stored(page)).zoom).toBe(closer);
+  await page.mouse.wheel(0, 300);
+  await expect.poll(() => settings(page).then((s) => s.zoom)).toBeLessThan(defaults.zoom);
+  expect((await settings(page)).turn).toBe(defaults.turn);
+  // a wheel outside the view sheet does nothing to the view
+  await page.click("#close");
+  const kept = await settings(page);
+  await page.mouse.wheel(0, -500);
+  await waitFrames(page, 2);
+  expect(await settings(page)).toEqual(kept);
+});
+
+test("two fingers spreading zoom in, and lifting them keeps it", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "raw multi-touch goes through chromium's devtools protocol");
+  await page.goto("/");
+  await waitFrames(page, 4);
+  await open(page);
+  const at = await openSpot(page);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, apart) => cdp.send("Input.dispatchTouchEvent", {
+    type,
+    touchPoints: type === "touchEnd" ? [] : [{ x: at.x - apart / 2, y: at.y, id: 1 }, { x: at.x + apart / 2, y: at.y, id: 2 }],
+  });
+  await touch("touchStart", 60);
+  for (const apart of [80, 100, 120]) await touch("touchMove", apart);
+  await waitFrames(page, 2);
+  const spread = await settings(page);
+  expect(spread.zoom).toBeCloseTo(Math.min(3, defaults.zoom * 2), 2);
+  expect(spread.turn).toBeCloseTo(defaults.turn, 5);
+  expect(spread.tilt).toBeCloseTo(defaults.tilt, 5);
+  await touch("touchEnd", 0);
+  await expect.poll(() => stored(page)).toEqual(spread);
 });
 
 for (const turn of [-180, -90, 0, 90, 180])

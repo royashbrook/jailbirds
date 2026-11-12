@@ -8,7 +8,7 @@
   import { skinById } from "./skins/index.ts";
   import { createView, remember, type Past } from "./view/view.ts";
   import { createOverlay, type Thumb } from "./view/overlay.ts";
-  import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraSettings, cameraStick, type CameraSettings } from "./view/camera.ts";
+  import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraDrag, cameraPinch, cameraSettings, cameraStick, cameraWheel, type CameraSettings } from "./view/camera.ts";
   import { readJson, readSlot, writeJson, writeSlot } from "./lib/storage.ts";
   import { createSound } from "./lib/sound.ts";
   import { installControl } from "./install.ts";
@@ -41,6 +41,47 @@
   function closeSheet() {
     if (sheet === "camera") saveCamera();
     sheet = "";
+    grabs.clear();
+    grabFrom = null;
+  }
+
+  // moving the view by hand while its sheet is up: one finger or the mouse turns and
+  // tilts it, two fingers pinch to zoom, a wheel or trackpad scrolls to zoom. each
+  // gesture counts from where it began, so nothing drifts, and it is kept when it ends.
+  const grabs = new Map<number, { x: number; y: number }>();
+  let grabFrom: { camera: CameraSettings; x: number; y: number; apart: number } | null = null;
+  const onCard = (e: Event) => !!(e.target as Element | null)?.closest?.(".card");
+  function grabbed() {
+    const pts = [...grabs.values()];
+    const x = pts.reduce((s, p) => s + p.x, 0) / pts.length, y = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+    return { x, y, apart: pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0 };
+  }
+  function grabDown(e: PointerEvent) {
+    if (sheet !== "camera" || onCard(e)) return;
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    grabs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    grabFrom = { camera, ...grabbed() };
+  }
+  function grabMove(e: PointerEvent) {
+    if (!grabFrom || !grabs.has(e.pointerId)) return;
+    grabs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const now = grabbed(), from = grabFrom;
+    const turned = cameraDrag(from.camera, now.x - from.x, now.y - from.y, innerHeight);
+    camera = grabs.size > 1 ? cameraPinch(turned, from.apart, now.apart) : turned;
+  }
+  function grabUp(e: PointerEvent) {
+    if (!grabs.delete(e.pointerId)) return;
+    if (grabs.size) grabFrom = { camera, ...grabbed() };
+    else {
+      grabFrom = null;
+      saveCamera();
+    }
+  }
+  function grabWheel(e: WheelEvent) {
+    if (sheet !== "camera" || onCard(e)) return;
+    e.preventDefault();
+    camera = cameraWheel(camera, e.deltaY);
+    saveCamera();
   }
 
   // what the screen watches; the world mutates in place
@@ -98,6 +139,13 @@
   let dialog = $state<HTMLDialogElement>();
   $effect(() => {
     if (dialog && !dialog.open) dialog.showModal();
+  });
+  // a wheel must be held back from the page, so it cannot be a passive listener
+  $effect(() => {
+    const d = dialog;
+    if (!d) return;
+    d.addEventListener("wheel", grabWheel, { passive: false });
+    return () => d.removeEventListener("wheel", grabWheel);
   });
 
   // a read-only window onto the jail, for tests and the curious
@@ -425,15 +473,16 @@
 {#if updateReady}<button class="update" onclick={applyUpdate}>new version, tap to load</button>{/if}
 
 {#if sheet}
-  <dialog bind:this={dialog} class="sheet" class:camera-sheet={sheet === "camera"} onclose={closeSheet}>
+  <dialog bind:this={dialog} class="sheet" class:camera-sheet={sheet === "camera"} onclose={closeSheet} onpointerdown={grabDown} onpointermove={grabMove} onpointerup={grabUp} onpointercancel={grabUp}>
     <div class="card" class:camera-card={sheet === "camera"}>
       {#if sheet === "camera"}
         <div class="camera-heading"><h2>your view</h2><span>paused</span></div>
+        <p class="camera-how">drag the jail to turn it. pinch or scroll to zoom.</p>
         {#each CAMERA_CONTROLS as control (control.key)}
           <label class="camera-control" for={`camera-${control.key}`}>
             <span>{control.label}</span>
             <input id={`camera-${control.key}`} type="range" min={control.min} max={control.max} step={control.step} value={camera[control.key]} oninput={(e) => adjustCamera(control.key, e.currentTarget.valueAsNumber)} onchange={saveCamera} />
-            <output for={`camera-${control.key}`}>{control.key === "zoom" ? `${Math.round(camera.zoom * 100)}%` : `${camera[control.key]}°`}</output>
+            <output for={`camera-${control.key}`}>{control.key === "zoom" ? `${Math.round(camera.zoom * 100)}%` : `${Math.round(camera[control.key])}°`}</output>
           </label>
         {/each}
         {#if !cameraSaved}<p class="warn camera-note" role="status">this browser is not saving your view</p>{/if}
