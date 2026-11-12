@@ -20,7 +20,7 @@ export interface Snap {
   bought: number; queue: number[]; led: number[]; carry: number; messes: Mess[];
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
   /** a boost lying on the floor, and what it is */
-  boost: boolean; boostKind: BoostKind;
+  boost: boolean; boostKind: BoostKind; picked: number;
 }
 
 /** how far past a desk's own reach the player still counts as the one who did it:
@@ -38,7 +38,7 @@ export function snap(w: World): Snap {
     led: followers(w, me).map((a) => a.id),
     carry: me.carry, messes: w.messes.slice(),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
-    boost: w.boost.here, boostKind: w.boostKind,
+    boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n,
   };
 }
 
@@ -109,8 +109,9 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
   else add("release", w.released - before.released);
   if (w.alert && !before.alert) add("fight", 1);
   add("calm", w.settled - before.settled);
-  // a boost picked up, by its kind; a fairy with nothing left to clean came as skates
-  if (before.boost && !w.boost.here) add(before.boostKind === "fairy" && w.fairy.target === null ? "skates" : before.boostKind, 1);
+  // a boost picked up, named by what the sim says it turned out to be at the moment
+  // of pickup, not guessed from how things look after a batch of steps
+  if (w.picked.n > before.picked) add(w.picked.kind, 1);
   if (before.ride === "away" && w.ride.state !== "away") add("ride", 1);
   return out;
 }

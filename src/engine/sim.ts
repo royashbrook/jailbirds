@@ -49,7 +49,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
     alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
-    boostKind: "skates", mountKind: "skates", fairy: idleFairy(),
+    boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" },
   };
 }
 const idleFairy = (): Fairy => ({ todo: [], visits: 0, x: 0, y: 0, target: null, t: 0 });
@@ -323,11 +323,13 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
       // she takes on the messes there are now, and only those
       w.fairy = { todo: w.messes.map((m) => m.id), visits: 0, x: p.x, y: p.y, target: null, t: 0 };
       fairyNext(w);
+      w.picked = { n: w.picked.n + 1, kind: "fairy" };
     } else {
       // a ride, or a fairy picked up once the floor is clean already: then it is skates
       const ride: MountKind = w.boostKind === "unicorn" ? "unicorn" : "skates";
       w.mountKind = ride;
       w.boosted = l.boost.kinds[ride].time;
+      w.picked = { n: w.picked.n + 1, kind: ride };
     }
   } else if (!w.boost.here) {
     w.boost.t -= DT;
@@ -722,10 +724,13 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
       return null;
     const back: World = { ...create(levels, w.level), ...w, clock: {} };
     // saves from before the surprises, or with a surprise we cannot read, get the quiet default
-    const got = w as Partial<Record<"boostKind" | "mountKind" | "fairy", unknown>>;
-    back.boostKind = got.boostKind === "unicorn" || got.boostKind === "fairy" ? got.boostKind : "skates";
+    const got = w as Partial<Record<"boostKind" | "mountKind" | "fairy" | "picked", unknown>>;
+    const kind = (k: unknown): BoostKind => (k === "unicorn" || k === "fairy" ? k : "skates");
+    back.boostKind = kind(got.boostKind);
     back.mountKind = got.mountKind === "unicorn" ? "unicorn" : "skates";
     back.fairy = fairyFrom(got.fairy);
+    const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;
+    back.picked = { n: typeof pk?.n === "number" && Number.isFinite(pk.n) && pk.n >= 0 ? pk.n : 0, kind: kind(pk?.kind) };
     return back;
   } catch {
     return null;

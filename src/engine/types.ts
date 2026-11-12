@@ -218,5 +218,7 @@ export interface World {
   /** what the boosted player rides */
   mountKind: MountKind;
   fairy: Fairy;
+  /** pickups so far, and what the last one turned out to be, so a sound can name it */
+  picked: { n: number; kind: BoostKind };
 }
 export type Stick = { x: number; y: number };

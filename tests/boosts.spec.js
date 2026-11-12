@@ -52,14 +52,33 @@ test("the warden rides the unicorn, up on her saddle, and gets down when the rid
   await reopen(page, { ...quiet, boosted: 3, mountKind: "unicorn" });
   expect((await page.evaluate(() => window.__jailbirds.state())).mountKind).toBe("unicorn");
   expect((await drawn(page)).triangles).toBeGreaterThan(plain.triangles);
-  // up off the floor: higher on screen than the same warden standing in the same spot
+  // up off the floor, and the camera comes up with him: he sits where a standing warden would
   const riding = await page.evaluate(() => window.__jailbirds.warden());
   expect(riding.on).toBe(true);
-  expect(riding.y).toBeLessThan(standing.y - 5);
+  expect(Math.abs(riding.y - standing.y)).toBeLessThan(3);
   await untilSim(page, (s) => s.boosted === 0, 5, "the ride to end");
   await waitFrames(page, 3);
   expect((await drawn(page)).triangles).toBe(plain.triangles);
   expect(errors).toEqual([]);
+});
+
+test("a phone on its side, zoomed right in and low: the rider stays as far in frame as a standing warden", async ({ page }) => {
+  await page.setViewportSize({ width: 932, height: 430 });
+  await page.addInitScript(() => localStorage.setItem("jailbirds:camera", JSON.stringify({ zoom: 3, turn: 180, tilt: 15 })));
+  await open(page, quiet);
+  const standing = await page.evaluate(() => window.__jailbirds.warden());
+  await reopen(page, { ...quiet, boosted: 3, mountKind: "unicorn" });
+  await waitFrames(page, 30);
+  const riding = await page.evaluate(() => window.__jailbirds.warden());
+  expect(riding.on).toBe(true);
+  expect(Math.abs(riding.y - standing.y)).toBeLessThan(3);
+  // and when he gets down, the camera comes back down with him
+  await untilSim(page, (s) => s.boosted === 0, 5, "the ride to end");
+  await waitFrames(page, 60);
+  const down = await page.evaluate(() => window.__jailbirds.warden());
+  expect(down.on).toBe(true);
+  expect(Math.abs(down.y - standing.y)).toBeLessThan(3);
+  expect(await page.evaluate(() => window.__jailbirds.camera())).toEqual({ zoom: 3, turn: 180, tilt: 15 });
 });
 
 test("the fairy flies to a mess, cleans it and is gone", async ({ page }) => {

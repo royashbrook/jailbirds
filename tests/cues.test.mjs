@@ -308,6 +308,21 @@ test("a fairy picked up on a clean floor comes as skates, and sounds like skates
   assert.deepEqual(boostCues(heard), [{ kind: "skates", n: 1 }]);
 });
 
+test("a fairy who cleans her only mess and is gone before the next look still sounds like a fairy", () => {
+  const w = create(LEVELS, 0, 3);
+  listen(w, 15);
+  const p = player(w);
+  // the mess is right under her and nearly clean, so she finishes inside one batch of steps
+  w.messes.push({ id: w.nextId++, kind: "puddle", x: p.x, y: p.y, station: "showers", seat: 0, clean: 0.2 });
+  w.boost = { x: p.x, y: p.y, here: true, t: 0 };
+  w.boostKind = "fairy";
+  ears.get(w).before = snap(w);
+  for (let i = 0; i < 15; i++) tick(w, { x: 0, y: 0 });
+  assert.equal(w.fairy.target, null, "she is gone already");
+  assert.equal(w.boosted, 0, "no ride");
+  assert.deepEqual(boostCues(take(w)), [{ kind: "fairy", n: 1 }]);
+});
+
 test("the ride's cue is still the ride's, untouched by a boost", () => {
   const w = create(LEVELS, 0, 7);
   listen(w);

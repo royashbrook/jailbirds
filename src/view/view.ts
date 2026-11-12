@@ -216,7 +216,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
 
   /** how much floor to show: about 400 world units across a phone's short side,
    * more on an ipad, so a bigger screen is a bigger view, not just bigger people */
-  function frame(focus: { x: number; y: number }, dt: number, settings: CameraSettings) {
+  function frame(focus: { x: number; y: number; h: number }, dt: number, settings: CameraSettings) {
     const pitch = settings.tilt * Math.PI / 180, turn = settings.turn * Math.PI / 180;
     const zoom = Math.min(1.6, Math.max(0.8, Math.min(cssW, cssH) / 400)) * settings.zoom;
     const viewH = cssH / zoom, viewW = cssW / zoom;
@@ -226,14 +226,16 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     // orbit the player rather than clamping to map axes: a turned view must
     // not leave the warden offscreen when walking along an edge.
     const tx = focus.x, tz = focus.y;
-    if (!camReady) target.set(tx, 0, tz), (camReady = true);
-    // ease toward the warden: quick, never a snap
+    if (!camReady) target.set(tx, focus.h, tz), (camReady = true);
+    // ease toward the warden: quick, never a snap. up too, when he rides high,
+    // so his head stays where a standing warden's would be
     const k = 1 - Math.exp(-dt * 7);
     target.x += (tx - target.x) * k;
+    target.y += (focus.h - target.y) * k;
     target.z += (tz - target.z) * k;
     const back = Math.cos(pitch) * dist;
-    camera.position.set(target.x + Math.sin(turn) * back, Math.sin(pitch) * dist, target.z + Math.cos(turn) * back);
-    look.set(target.x, 0, target.z);
+    camera.position.set(target.x + Math.sin(turn) * back, target.y + Math.sin(pitch) * dist, target.z + Math.cos(turn) * back);
+    look.set(target.x, target.y, target.z);
     camera.lookAt(look);
   }
 
@@ -281,7 +283,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     // where each character stands this frame, blended between steps
     const me = w.agents[0], mp = past?.get(me.id);
     const fx = mp ? mp.x + (me.x - mp.x) * alpha : me.x, fy = mp ? mp.y + (me.y - mp.y) * alpha : me.y;
-    frame({ x: fx, y: fy }, dt, settings);
+    frame({ x: fx, y: fy, h: lift(w) }, dt, settings);
 
     forget(w, headings);
     for (const p of partList) p.used = 0;

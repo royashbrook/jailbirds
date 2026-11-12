@@ -284,6 +284,12 @@ test("an old save, from before the surprises, comes back whole with quiet defaul
   assert.equal(back.boostKind, "skates");
   assert.equal(back.mountKind, "skates");
   assert.deepEqual(back.fairy, create(LEVELS, 0).fairy);
+  assert.deepEqual(back.picked, { n: 0, kind: "skates" });
+  // the pickup record is kept when good, and quiet when it is junk
+  const w = create(LEVELS, 0, 3);
+  assert.deepEqual(restore(JSON.stringify({ ...w, picked: { n: 4, kind: "fairy" } }), LEVELS).picked, { n: 4, kind: "fairy" });
+  for (const picked of [null, {}, { n: -1, kind: "dragon" }, { n: "4", kind: 2 }, 7])
+    assert.deepEqual(restore(JSON.stringify({ ...w, picked }), LEVELS).picked, { n: 0, kind: "skates" }, JSON.stringify(picked));
   // the same old save with the skates on: still skates, at skates speed
   const skating = restore(JSON.stringify({ ...old, boosted: 5 }), LEVELS);
   assert.equal(skating.mountKind, "skates");
