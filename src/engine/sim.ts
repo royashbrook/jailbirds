@@ -26,6 +26,8 @@ const PAD_R = 24;
 /** how long to stand still on a pad before it starts taking coins, in seconds. walking
  * never pays, so this only has to be long enough that brushing to a stop on one is not a yes */
 export const PAD_WAIT = 0.2;
+/** how far apart idle helpers stand */
+const IDLE_GAP = 16;
 const MESS_R = 20;
 const COIN_R = 24;
 const PILE_R = 30;
@@ -630,8 +632,15 @@ function residents(w: World, l: LevelDef) {
 /** hired help: each picks a place to be from what needs doing, and walks there through the doors.
  * the goal is worked out fresh every step, so a helper never chases someone already taken */
 function helpers(w: World, l: LevelDef) {
+  // what each guard is already going to fetch this step, so two guards never go for the same one
+  const claimed = new Set<string>();
+  let k = 0;
   for (const h of w.agents) {
-    let goal: Pt = l.helperHome;
+    if (h.kind === "player" || h.kind === "agent") continue;
+    // with nothing to do, helpers stand in rows of three around their home spot, not on top of each other
+    const home = l.helperHome;
+    let goal: Pt = { x: home.x + ((k % 3) - 1) * IDLE_GAP, y: home.y + Math.floor(k / 3) * IDLE_GAP };
+    k++;
     if (h.kind === "carrier") {
       const source = all(l, "source")[0];
       const sinks = all(l, "sink").filter((s) => isOpen(w, s.locked));
@@ -646,7 +655,7 @@ function helpers(w: World, l: LevelDef) {
       const desk = all(l, "checkin")[0];
       if (desk) goal = desk.at;
     } else if (h.kind === "escort") {
-      goal = escortGoal(w, l, h) ?? goal;
+      goal = escortGoal(w, l, h, claimed) ?? goal;
     } else continue;
     goTo(w, l, h, goal);
     walkPath(h, HELPER_SPEED);
@@ -657,7 +666,7 @@ const roomOf = (st: AnyStation): Pt | null => {
   if (st.kind === "facility" && st.zone) return { x: st.zone.x + st.zone.w / 2, y: st.zone.y + st.zone.h / 2 };
   return null;
 };
-function escortGoal(w: World, l: LevelDef, h: Agent): Pt | null {
+function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt | null {
   const first = followers(w, h)[0];
   if (first) {
     if (!first.house) {
@@ -669,12 +678,20 @@ function escortGoal(w: World, l: LevelDef, h: Agent): Pt | null {
     for (const st of l.stations) if (need && roomOf(st) && seatFor(w, st, need, first) >= 0) return roomOf(st);
     return (byId(l, first.house) as S<"house">).at;
   }
-  const ready = w.agents.find((b) => b.state === "ready");
-  if (ready) return ready;
+  // with nobody in line: the first checked-in newcomer, or the first door with someone
+  // waiting, that no other guard has picked this step
+  const ready = w.agents.find((b) => b.state === "ready" && !claimed.has(`a${b.id}`));
+  if (ready) {
+    claimed.add(`a${ready.id}`);
+    return ready;
+  }
   for (const b of w.agents) {
-    if (!waiting(l, b)) continue;
+    if (!waiting(l, b) || claimed.has(`h${b.house}`)) continue;
     const need = wants(l, b, true);
-    if (isDone(l, b) || l.stations.some((st) => need && roomOf(st) && seatFor(w, st, need, b) >= 0)) return (byId(l, b.house) as S<"house">).at;
+    if (isDone(l, b) || l.stations.some((st) => need && roomOf(st) && seatFor(w, st, need, b) >= 0)) {
+      claimed.add(`h${b.house}`);
+      return (byId(l, b.house) as S<"house">).at;
+    }
   }
   return null;
 }

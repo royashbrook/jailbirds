@@ -88,6 +88,9 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     { id: "shower3", cost: cost(40), at: { x: 665, y: 600 }, rank: 4, after: "shower2", unlock: {}, label: "shower" },
     { id: "cook", cost: cost(50), at: { x: 420, y: 560 }, rank: 3, unlock: { helper: "carrier" }, label: "hire a cook" },
     { id: "guard", cost: cost(60), at: { x: 420, y: 625 }, rank: 3, unlock: { helper: "escort" }, label: "hire a guard" },
+    // more guards come one at a time on the same spot, so more people can be led at once
+    { id: "guard2", cost: cost(90), at: { x: 420, y: 625 }, rank: 5, after: "guard", unlock: { helper: "escort" }, label: "another guard" },
+    { id: "guard3", cost: cost(120), at: { x: 420, y: 625 }, rank: 6, after: "guard2", unlock: { helper: "escort" }, label: "another guard" },
     { id: "clerk", cost: cost(70), at: { x: 420, y: 690 }, rank: 4, unlock: { helper: "clerk" }, label: "hire a clerk" },
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
   ];

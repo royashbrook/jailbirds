@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import {
-  create, step, route, player, followers, boostMult, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, DT, PAD_WAIT,
+  create, step, route, player, followers, boostMult, capacity, freeBeds, noBed, population, restore, hint, mood, isDone, wants, padVisible, DT, PAD_WAIT,
 } from "../src/engine/sim.ts";
 import { LEVELS, hintText } from "../src/content/jail.ts";
 
@@ -398,6 +398,155 @@ test("hired help does the chores: clerk checks in, guard leads, cook carries tra
   }
   assert.deepEqual(saw, { housed: true, trays: true, led: true, released: true }, "clerk checks in, guard houses, cook carries, guard leads to eat and to release");
   assert.ok(Math.hypot(player(w).x - HALL.x, player(w).y - HALL.y) < 2, "the player never moved");
+});
+
+test("more guards: a second at level 5 and a third at level 6, each on the same spot after the last", () => {
+  const w = create(LEVELS, 0, 7);
+  const vis = (id) => padVisible(w, pad(id));
+  assert.deepEqual([pad("guard2").at, pad("guard3").at], [pad("guard").at, pad("guard").at]);
+  assert.deepEqual([vis("guard"), vis("guard2"), vis("guard3")], [true, false, false]);
+  w.bought.push("guard");
+  assert.deepEqual([vis("guard2"), vis("guard3")], [true, false]);
+  w.bought.push("guard2");
+  assert.equal(vis("guard3"), true);
+  // a level too low takes nothing; each one bought is one more guard
+  const v = create(LEVELS, 0, 7);
+  v.coins = 1000;
+  v.rank = 4;
+  v.bought.push("guard");
+  go(v, pad("guard2").at);
+  wait(v, 1.5);
+  assert.equal(v.paid.guard2 ?? 0, 0, "guard2 waits for level 5");
+  v.rank = 6;
+  wait(v, 3);
+  assert.ok(v.bought.includes("guard2") && v.bought.includes("guard3"));
+  assert.equal(v.agents.filter((a) => a.kind === "escort").length, 2, "two new guards");
+});
+
+test("guards with nobody in line go for different people, not all for the same one", () => {
+  const { w } = settle();
+  // three guards, two newcomers checked in and standing still, waiting to be led
+  w.coins = 1000;
+  w.rank = 6;
+  go(w, pad("guard").at);
+  until(w, () => w.bought.includes("guard3"), 6, "three guards bought");
+  const guards = w.agents.filter((a) => a.kind === "escort");
+  assert.equal(guards.length, 3);
+  // beds for the newcomers
+  go(w, pad("cell3").at);
+  wait(w, 1.5);
+  until(w, () => count(w, "queue") >= 2, 40, "two more in the queue");
+  go(w, desk.at);
+  until(w, () => count(w, "ready") >= 2, 10, "two check-ins");
+  go(w, HALL);
+  const ready = inmates(w).filter((a) => a.state === "ready");
+  until(w, () => ready.every((b) => !b.path.length || b.state !== "ready"), 5, "the newcomers to stop");
+  assert.ok(ready.slice(0, 2).every((b) => b.state === "ready"), "nobody picked them up yet");
+  step(w, LEVELS, { x: 0, y: 0 });
+  // each guard's path ends where it is going: the two newcomers get one guard each
+  const ends = guards.map((g) => g.path.at(-1)).filter(Boolean);
+  const to = (b) => ends.filter((e) => Math.hypot(e.x - b.x, e.y - b.y) < 1).length;
+  assert.deepEqual(ready.slice(0, 2).map(to), [1, 1], "one guard each");
+});
+
+test("guards fetching residents from their doors split up between the doors", () => {
+  const { w, first } = settle();
+  w.coins = 1000;
+  w.rank = 6;
+  go(w, pad("guard").at);
+  until(w, () => w.bought.includes("guard3"), 6, "three guards bought");
+  go(w, HALL);
+  const guards = w.agents.filter((a) => a.kind === "escort");
+  // everyone at home wants a wash, in both cells
+  for (const b of first) b.needs.wash = 0.05;
+  until(w, () => first.every((b) => b.state === "home" && b.rest >= 2), 5, "residents settled at their doors");
+  const doors = [...new Set(first.map((b) => b.house))].map((id) => station(id).at);
+  assert.equal(doors.length, 2);
+  for (const g of guards) g.path = [];
+  step(w, LEVELS, { x: 0, y: 0 });
+  const ends = guards.map((g) => g.path.at(-1)).filter(Boolean);
+  assert.deepEqual(doors.map((d) => ends.filter((e) => Math.hypot(e.x - d.x, e.y - d.y) < 1).length), [1, 1], "one guard per door");
+});
+
+test("in both jails the guard pads are one chain on one spot, one at a time, in order", () => {
+  for (const [n, lv] of LEVELS.entries()) {
+    const [g1, g2, g3] = ["guard", "guard2", "guard3"].map((id) => lv.pads.find((p) => p.id === id));
+    assert.deepEqual([g1.rank, g2.rank, g3.rank, g2.after, g3.after], [3, 5, 6, "guard", "guard2"], `jail ${n + 1}`);
+    assert.deepEqual([g2.at, g3.at], [g1.at, g1.at]);
+    assert.deepEqual([g1, g2, g3].map((p) => p.unlock), [{ helper: "escort" }, { helper: "escort" }, { helper: "escort" }]);
+    const w = create(LEVELS, n, 7);
+    const shown = () => [g1, g2, g3].filter((p) => padVisible(w, p)).map((p) => p.id);
+    assert.deepEqual(shown(), ["guard"]);
+    w.bought.push("guard");
+    assert.deepEqual(shown(), ["guard2"]);
+    w.bought.push("guard2");
+    assert.deepEqual(shown(), ["guard3"]);
+    w.bought.push("guard3");
+    assert.deepEqual(shown(), []);
+  }
+});
+
+/** a settled jail with all three guards bought by standing on the pad */
+function guarded() {
+  const s = settle();
+  s.w.coins = 1000;
+  s.w.rank = 6;
+  go(s.w, pad("guard").at);
+  until(s.w, () => s.w.bought.includes("guard3"), 6, "three guards bought");
+  return s;
+}
+
+test("a save keeps its guards; an old one-guard save gets no extra guards from the new pads", () => {
+  const { w } = guarded();
+  const back = restore(JSON.stringify(w), LEVELS);
+  assert.equal(back.agents.filter((a) => a.kind === "escort").length, 3);
+  assert.deepEqual(back.bought, w.bought);
+  assert.deepEqual(back.paid, w.paid);
+  // an older jail with the one guard there used to be
+  const one = settle().w;
+  one.coins = 1000;
+  one.rank = 4;
+  go(one, pad("guard").at);
+  until(one, () => one.bought.includes("guard"), 3, "the first guard");
+  go(one, HALL);
+  const old = restore(JSON.stringify(one), LEVELS);
+  assert.equal(old.agents.filter((a) => a.kind === "escort").length, 1);
+  assert.ok(!old.bought.includes("guard2"));
+  assert.ok(padVisible(old, pad("guard2")), "the next guard is on offer, not given");
+});
+
+test("three guards working at once all lead people, and the jail keeps moving", () => {
+  const { w } = guarded();
+  // beds, a clerk to check people in and a cook for the trays, so there is work for three
+  for (const id of ["cell3", "cell4", "clerk", "cook"]) {
+    go(w, pad(id).at);
+    until(w, () => w.bought.includes(id), 4, id);
+  }
+  go(w, HALL);
+  const guards = w.agents.filter((a) => a.kind === "escort");
+  const led = new Set();
+  const housed0 = inmates(w).filter((a) => a.house).length;
+  for (let i = 0; i < 60 * 180; i++) {
+    step(w, LEVELS, { x: 0, y: 0 });
+    for (const b of inmates(w)) if (b.state === "follow" && b.leader !== player(w).id) led.add(b.leader);
+  }
+  assert.equal(guards.filter((g) => led.has(g.id)).length, 3, "every guard led somebody");
+  assert.ok(inmates(w).filter((a) => a.house).length > housed0, "more people moved in");
+  assert.ok(w.released > 0, "and some served their time and went home");
+});
+
+test("idle helpers stand apart around their spot, not on top of each other", () => {
+  const { w } = guarded();
+  // nothing for anyone to do: everyone at home is full up, nobody waits at the desk
+  for (const b of inmates(w)) for (const n of L.needs) b.needs[n.id] = 1;
+  w.agents = w.agents.filter((a) => a.kind !== "agent" || a.house);
+  w.ride.t = 9999;
+  go(w, HALL);
+  wait(w, 8);
+  const guards = w.agents.filter((a) => a.kind === "escort");
+  for (let i = 0; i < guards.length; i++)
+    for (let j = i + 1; j < guards.length; j++)
+      assert.ok(Math.hypot(guards[i].x - guards[j].x, guards[i].y - guards[j].y) >= 12, `guards ${i} and ${j} apart`);
 });
 
 test("level 6 and the next jail pad moves on to jail 2", () => {
