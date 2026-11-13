@@ -74,6 +74,13 @@ const inmates = (w) => w.agents.filter((a) => a.kind === "agent");
 const count = (w, state) => inmates(w).filter((a) => a.state === state).length;
 const line = (w) => followers(w, player(w));
 
+/** to a cell's door from below, clear of the other doors: the player's line moves in at the
+ * first door with a free bed it passes, so the way there must not pass one */
+function toCell(w, id) {
+  const at = station(id).at;
+  go(w, { x: at.x, y: at.y + 46 });
+  go(w, at);
+}
 /** the first busload checked in and led to cells 1 and 2, full up and at home */
 function settle(seed = 7, every = 1) {
   const w = create(LEVELS, 0, seed);
@@ -81,10 +88,13 @@ function settle(seed = 7, every = 1) {
   until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
   go(w, desk.at);
   until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  // standing still by them takes them one at a time
   go(w, desk.out[1]);
-  go(w, station("c0").at);
+  until(w, () => line(w).length === 2, 2, "two to join");
+  toCell(w, "c0");
   wait(w, 1);
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "the third to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   const first = inmates(w).filter((a) => a.house);
@@ -122,20 +132,22 @@ test("the first busload: the ride, three check-ins, the line, beds, coins, a pil
   assert.deepEqual(of(heard, "checkin"), [{ kind: "checkin", n: 1 }, { kind: "checkin", n: 1 }, { kind: "checkin", n: 1 }]);
   assert.deepEqual(kinds(heard), ["checkin"]);
 
-  // the line holds two: each one who joins says how long it is now
+  // the line holds two: each one who joins, after a hold, says how long it is now
   go(w, desk.out[1]);
+  until(w, () => line(w).length === 2, 2, "two to join");
   heard = take(w);
   assert.deepEqual(of(heard, "follow").map((c) => c.n), [1, 2]);
-  go(w, station("c0").at);
+  toCell(w, "c0");
   wait(w, 1);
   heard = take(w);
   assert.equal(sum(heard, "bed"), 2, "two into their beds");
   assert.equal(sum(heard, "seat"), 0);
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "the third to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   heard = take(w);
-  // the third, and maybe someone from the first cell who tagged along on the way past
+  // the third, and nobody else: walking past the first cell takes nobody along
   assert.equal(of(heard, "follow")[0].n, 1);
   assert.ok(sum(heard, "bed") >= 1, "the third into a bed");
 
@@ -193,7 +205,8 @@ test("the canteen: a stack picked up, put down, and the hungry sitting down", ()
   wait(w, 0.5);
   take(w);
   go(w, station("c0").at);
-  wait(w, 0.3);
+  // a hold for each one waiting there
+  wait(w, 1.3);
   const led = line(w).length;
   assert.ok(led > 0, "someone hungry to lead");
   go(w, station("table1").at);
@@ -208,6 +221,7 @@ test("set free: a bell for a release, and a level up speaks for the release that
   for (const b of first) b.served = L.serve;
   wait(w, 0.1);
   go(w, station("c0").at);
+  until(w, () => line(w).length === 2, 2, "both to join");
   w.coins = 0;
   take(w);
   go(w, station("stamp").at);
@@ -239,9 +253,11 @@ test("a squabble: an alarm when it starts, a calm when it is settled", () => {
   go(w, desk.at);
   until(w, () => count(w, "ready") === 3, 5, "check-ins");
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "one to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   go(w, desk.out[0]);
+  until(w, () => line(w).length === 1, 1, "one more to join");
   go(w, station("c2").at);
   until(w, () => count(w, "home") >= 4, 15, "four at home");
   take(w);
@@ -387,6 +403,7 @@ test("a slow frame of many steps hears the same story", () => {
     for (const b of first) b.served = L.serve;
     wait(w, 0.1);
     go(w, station("c0").at);
+    until(w, () => line(w).length === 2, 2, "both to join");
     w.coins = 0;
     go(w, station("stamp").at);
     wait(w, 1.5);
@@ -442,6 +459,7 @@ test("what came in: a star for each one set free, and the coins a level up pays"
   for (const b of first) b.served = L.serve;
   wait(w, 0.1);
   go(w, station("c0").at);
+  until(w, () => line(w).length === 2, 2, "both to join");
   w.coins = 0;
   wait(w, 1 / 60);
   shown(w);
@@ -487,6 +505,7 @@ test("what came in: nothing for a new level or a fresh start, and a slow frame a
     for (const b of s.first) b.served = L.serve;
     wait(s.w, 0.1);
     go(s.w, station("c0").at);
+    until(s.w, () => line(s.w).length === 2, 2, "both to join");
     go(s.w, station("stamp").at);
     wait(s.w, 1.5);
     return { got: shown(s.w), w: s.w };

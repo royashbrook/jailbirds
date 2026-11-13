@@ -8,8 +8,10 @@ import { CapsuleGeometry, CylinderGeometry, Euler, SphereGeometry, Vector3 } fro
 import type { Model, Palette, Part, Pose, Put, Skin } from "./types.ts";
 
 const HIP = 6;
-const BODY_R = 5.2;
-const BODY_LEN = 6;
+// slim, not round ("why am i so fat")
+const BODY_R = 4.2;
+// the same height as before slimming, so shoulders, hands and a carried tray stay where they were
+const BODY_LEN = 8;
 const BODY_H = BODY_LEN + BODY_R * 2;
 const HEAD_R = 4.6;
 const STRIDE = 22;
@@ -56,7 +58,8 @@ function pose(p: Pose, put: Put) {
   const breathe = p.action === "sleep" ? Math.sin(p.t * 1.3) * 0.03 : walking ? 0 : Math.sin(p.t * 2.2) * 0.02;
   const jitter = p.action === "fight" ? Math.sin(p.t * 38) * 1.2 : 0;
   const sitting = p.action === "sit" || p.action === "eat";
-  const lean = walking ? 0.12 : p.action === "clean" ? 0.25 : 0;
+  // upright when walking (she asked why her head pushed forward); only a mop leans
+  const lean = p.action === "clean" ? 0.25 : 0;
   const hip = (HIP + bob) * s;
 
   // legs from the hips: swinging opposite, out in front when sitting
@@ -152,8 +155,9 @@ const light: Palette = {
   wood: "#d9a066",
   metal: "#c5ced8",
   porcelain: "#ffffff",
-  bed: "#8fb8ef",
-  pillow: "#ffffff",
+  // jail bunks: a plain grey mattress and a dull pillow, nothing dream house
+  bed: "#8f97a3",
+  pillow: "#d6dade",
   road: "#a9adb7",
   roadLine: "#ffffff",
   spot: "#c3dbf2",

@@ -14,7 +14,6 @@ import type { Palette } from "../skins/types.ts";
 
 export const WALL_H = 11;
 const TILE = 40;
-const RUGS = ["#e98aa8", "#8fc7e8", "#f2c46b", "#9fd39a"];
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
@@ -111,15 +110,13 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     const ok = open(r.locked);
     add("floor", r.rect.x + r.rect.w / 2, 0.2 + k * 0.05, r.rect.y + r.rect.h / 2, r.rect.w, 0.6, r.rect.h, ok ? (pal.floors[r.look] ?? pal.hall) : pal.locked);
     if (r.look === "cell") {
-      // two bunks: a frame, a mattress and a pillow each
+      // two jail bunks: a metal frame, a thin grey mattress and a flat pillow
       for (const dy of [30, 82]) {
         const bx = r.rect.x + 18, bz = r.rect.y + dy - 2;
-        box(bx, bz, 24, 44, 6, ok ? pal.wood : pal.locked);
+        box(bx, bz, 24, 44, 6, ok ? pal.metal : pal.locked);
         box(bx, bz + 1, 21, 40, 2.5, ok ? pal.bed : pal.locked, 6);
         box(bx, bz - 14, 16, 8, 2.5, ok ? pal.pillow : pal.locked, 8.5);
       }
-      // a round rug in the middle, a different colour from the cell next door
-      if (ok) add("cyl", r.rect.x + r.rect.w * 0.62, 0.9 + k * 0.05, r.rect.y + r.rect.h / 2, 13, 0.4, 13, RUGS[k % RUGS.length]);
     }
     if (!ok) {
       // a padlock in the middle
