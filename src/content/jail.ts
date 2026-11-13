@@ -112,8 +112,9 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     boost: {
       spots: [{ x: 300, y: 290 }, { x: 480, y: 290 }, { x: 290, y: 540 }, { x: 470, y: 520 }, { x: 300, y: 800 }], every: 40,
       kinds: {
-        skates: { time: 12, mult: 2.2, weight: 50 },
-        unicorn: { time: 15, mult: 2.6, weight: 30 },
+        // a minute each, and gentler than before: she found them "bonkers fast"
+        skates: { time: 60, mult: 1.4, weight: 50 },
+        unicorn: { time: 60, mult: 1.6, weight: 30 },
         fairy: { weight: 20, visit: 0.8 },
       },
     },
@@ -124,7 +125,7 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
 export const LEVELS: LevelDef[] = [jail(1, 1, true), jail(2, 2, false)];
 
 /** the little words that pop up in the world */
-export const WORDS = { full: "full!", noBed: "no beds!" };
+export const WORDS = { full: "max!", noBed: "no beds!" };
 
 const NEEDS: Record<string, (noun: string) => string> = {
   food: (noun) => `hungry ${noun}! walk them to the canteen`,

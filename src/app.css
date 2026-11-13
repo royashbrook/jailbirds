@@ -551,8 +551,9 @@ a {
 .bubble[data-need="food"] {
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M4%2011h16a8%208%200%200%201-16%200z%27%20fill%3D%27%23ff9f40%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M9%204v4M12%203v5M15%204v4%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20fill%3D%27none%27%2F%3E%3C%2Fsvg%3E");
 }
+/* smelly: three wavy green stink lines, not a water drop */
 .bubble[data-need="wash"] {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M12%203c4%205%206%208%206%2011a6%206%200%200%201-12%200c0-3%202-6%206-11z%27%20fill%3D%27%235cb8ee%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3C%2Fsvg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M7%2021c-2-3%202-5%200-8s2-5%200-8M12%2021c-2-3%202-5%200-8s2-5%200-8M17%2021c-2-3%202-5%200-8s2-5%200-8%27%20fill%3D%27none%27%20stroke%3D%27%237cb342%27%20stroke-width%3D%272.4%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");
 }
 .bubble[data-need="done"] {
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Ccircle%20cx%3D%278%27%20cy%3D%2712%27%20r%3D%274.5%27%20fill%3D%27%23ffd23f%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M12%2012h9M18%2012v3M21%2012v3%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");

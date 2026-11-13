@@ -351,6 +351,14 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         heading += d * Math.min(1, dt * 14 * (own?.turn ?? 1));
       }
       if (action === "sleep") heading = Math.PI;
+      if (action === "fight" && w.alert) {
+        // a squabble: the two come out of their bunks and square up in the doorway,
+        // face to face, so it reads as a fight and not a bad dream
+        const side = w.alert.ids.indexOf(a.id) === 0 ? -1 : 1;
+        x = w.alert.x + side * 9;
+        z = w.alert.y;
+        heading = side * -Math.PI / 2;
+      }
       if (action === "sit" || action === "eat") {
         // at a table, face it
         const st = l.stations.find((s) => s.id === a.station);
