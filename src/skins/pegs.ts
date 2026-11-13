@@ -10,7 +10,8 @@ import type { Model, Palette, Part, Pose, Put, Skin } from "./types.ts";
 const HIP = 6;
 // slim, not round ("why am i so fat")
 const BODY_R = 4.2;
-const BODY_LEN = 6;
+// the same height as before slimming, so shoulders, hands and a carried tray stay where they were
+const BODY_LEN = 8;
 const BODY_H = BODY_LEN + BODY_R * 2;
 const HEAD_R = 4.6;
 const STRIDE = 22;

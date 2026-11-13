@@ -83,3 +83,14 @@ test("walking stands up straight, and bodies are slim", () => {
   }
   assert.ok(model.parts.body().parameters.radius <= 4.5, "slim");
 });
+
+test("a carried tray rests on the hands: slimming kept the body's height", () => {
+  // the tray is 1.6 tall, centred at carryAt.up; its underside should meet the top of the hands
+  const under = model.carryAt.up - 0.8;
+  // the cook (carrier) holds trays all day; the warden is drawn bigger and never touched it
+  for (const kind of ["carrier"]) {
+    const hands = parts(pose({ kind, carry: 1 })).filter((q) => q.part === "dot" && q.sx === q.sy && q.sx > 1.5);
+    const top = Math.max(...hands.map((h) => h.y + h.sy));
+    assert.ok(Math.abs(under - top) < 0.6, `${kind}: tray underside ${under} vs hand top ${top.toFixed(2)}`);
+  }
+});
