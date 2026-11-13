@@ -136,12 +136,30 @@ test("a cell cleared stays cleared and never shows clearing again: leaving mid-c
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await seedMapOnce(page, world({ coins: 300, rank: 6, bought: ["next"] }, { x: pad("cell3").at.x, y: pad("cell3").at.y }));
+  // off to desert rock from inside a frame where c2 is still tumbling, so the trip always
+  // leaves mid-clear, however slow the runner. a click from the test could come after it ended
+  await page.addInitScript(() => {
+    const watch = () => {
+      const api = window.__jailbirds;
+      if (!window.__left && api?.drawn().rubble?.clearing.includes("c2")) {
+        const s = api.state();
+        window.__left = { clearing: api.drawn().rubble.clearing, coins: s.coins, bought: s.bought.includes("cell3") };
+        document.querySelector("#map").click();
+        queueMicrotask(() => {
+          window.__left.atGo = api.drawn().rubble.clearing;
+          document.querySelector('[data-jail="jail2"] .go').click();
+        });
+      }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  });
   await page.goto("/");
-  const paid = await untilSim(page, (s) => s.bought.includes("cell3"), 5, "the cell to be paid for");
-  // straight off to desert rock while the rubble is still tumbling
-  await page.click("#map");
-  await page.click('[data-jail="jail2"] .go');
-  await expect(page.locator("#place")).toHaveText("desert rock");
+  // the trip goes on its own, so the wait is for desert rock: c2 was bought and still clearing
+  // at the map click and at go
+  await expect(page.locator("#place")).toHaveText("desert rock", { timeout: 20000 });
+  const paid = await page.evaluate(() => window.__left);
+  expect(paid).toMatchObject({ clearing: ["c2"], atGo: ["c2"], bought: true });
   await waitFrames(page, 3);
   const there = await rubble(page);
   expect(there.clearing).toEqual([]);
