@@ -40,6 +40,14 @@
   }
   function closeSheet() {
     if (sheet === "camera") saveCamera();
+    // a level up is shown one at a time: ok on one brings up the next, if there is one
+    if (sheet === "level") {
+      levelUps = levelUps.slice(1);
+      if (levelUps.length) {
+        if (dialog && !dialog.open) dialog.showModal();
+        return;
+      }
+    }
     sheet = "";
     grabs.clear();
     grabFrom = null;
@@ -108,7 +116,8 @@
     clearTimeout(cheerTimer);
     cheerTimer = setTimeout(() => (cheer = ""), 2400);
   }
-  let seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
+  // `paid` is what the sim has paid out for level ups so far, so a new one reads what it paid
+  let seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted, paid: world.took.rank };
   // music and sounds: both on unless someone turned them off, each with its own
   // switch. nothing is heard before the first touch, the browser sees to that
   const SOUND = "jailbirds:sound";
@@ -132,7 +141,16 @@
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(true);
-  let sheet = $state<"" | "about" | "camera" | "ios" | "restart">("");
+  let sheet = $state<"" | "about" | "camera" | "ios" | "restart" | "level">("");
+  // a level up gets its own window: the new level, the money it paid, and a big ok. it is a
+  // sheet like any other, so the jail holds still behind it. two at once wait their turn
+  let levelUps = $state<{ rank: number; reward: number }[]>([]);
+  function levelUp(from: number, to: number, reward: number, paid: number) {
+    // one level up shows what the sim paid for it. more than one between two looks splits
+    // that by what the sim pays per rank (sim.ts addStar): the reward times the new rank
+    for (let r = from + 1; r <= to; r++) levelUps.push({ rank: r, reward: to - from === 1 ? paid : reward * r });
+    if (!sheet) sheet = "level";
+  }
   let noGl = $state(false);
 
   let canvasEl = $state<HTMLCanvasElement>();
@@ -193,10 +211,10 @@
     // and takes on a beat that will not settle while there is a squabble
     sound.trouble(world.alert !== null);
     if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
-    else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +$${l.rankReward * world.rank}`);
+    else if (world.rank > seen.rank) levelUp(seen.rank, world.rank, l.rankReward, world.took.rank - seen.paid);
     else if (world.settled > seen.settled) shout("all calm again! +money");
     else if (world.boosted > seen.boosted + 1) shout("speed boost!");
-    seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
+    seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted, paid: world.took.rank };
     place = l.name;
     tip = hintText(hint(world, l), skin.noun);
   }
@@ -476,7 +494,7 @@
 
 {#if sheet}
   <dialog bind:this={dialog} class="sheet" class:camera-sheet={sheet === "camera"} onclose={closeSheet} onpointerdown={grabDown} onpointermove={grabMove} onpointerup={grabUp} onpointercancel={grabUp}>
-    <div class="card" class:camera-card={sheet === "camera"}>
+    <div class="card" class:camera-card={sheet === "camera"} class:level-card={sheet === "level"}>
       {#if sheet === "camera"}
         <div class="camera-heading"><h2>your view</h2><span>paused</span></div>
         <p class="camera-how">drag the jail to turn it. pinch or scroll to zoom.</p>
@@ -524,8 +542,17 @@
       {:else if sheet === "ios"}
         <h2>install jailbirds</h2>
         <p>in safari, tap the <b>share</b> button, then <b>add to home screen</b>.</p>
+      {:else if sheet === "level" && levelUps[0]}
+        <div class="level-up" id="level-up" role="status">
+          <div class="confetti" aria-hidden="true">{#each { length: 14 } as _, i (i)}<i style:--i={i}></i>{/each}</div>
+          <div class="level-stars" aria-hidden="true">{#each [0, 1, 2] as k (k)}<svg viewBox="0 0 24 24" style:--k={k}><path d="M12 2.5l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>{/each}</div>
+          <h2 id="level-title">level {levelUps[0].rank}!</h2>
+          <p class="level-reward" id="level-reward">+${levelUps[0].reward}</p>
+          <!-- svelte-ignore a11y_autofocus -->
+          <button id="level-ok" class="big" autofocus onclick={closeSheet}>ok</button>
+        </div>
       {/if}
-      {#if sheet !== "camera"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
+      {#if sheet !== "camera" && sheet !== "level"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
     </div>
   </dialog>
 {/if}
