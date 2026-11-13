@@ -314,28 +314,22 @@ test("coins in a collector's bag are put in the safe on reload, once, however of
   }
 });
 
-test("the next jail: the old safe and the collector's bag go into the new safe once, and the wallet is untouched", () => {
-  const run = (keep) => {
-    const { w, h } = hired();
-    w.rank = 6;
-    w.coins = 500;
-    if (keep) {
-      w.piles.safe = 15;
-      h.cash = 9;
-    }
-    w.piles.desk = 4;
-    go(w, pad(w, "next").at);
-    until(w, () => w.level === 1, 5, "the next jail");
-    return w;
-  };
-  const w = run(true), plain = run(false);
-  assert.equal(w.piles.safe, 24, "15 in the safe and 9 in the bag");
-  assert.equal(plain.piles.safe ?? 0, 0);
-  assert.equal(w.coins, plain.coins, "the wallet is what it would have been anyway");
-  assert.equal(w.piles.desk ?? 0, 0, "the rest starts fresh");
-  assert.equal(collectors(w).length, 0, "the collector stays behind, as all help does");
+test("the next jail pad: the safe, the collector's bag and the wallet stay in this jail, less only the price", () => {
+  // no money moves between jails (agreed with ludo): the old carry-over into the new safe is gone
+  const { w, h } = hired();
+  w.rank = 6;
+  w.coins = 500;
+  w.piles.safe = 15;
+  h.cash = 9;
+  w.piles.desk = 4;
+  const coins = total(w);
+  go(w, pad(w, "next").at);
+  until(w, () => w.bought.includes("next"), 5, "the next jail pad bought");
   wait(w, 2);
-  assert.equal(w.piles.safe, 24, "once");
+  assert.equal(w.level, 0, "she stays");
+  assert.equal(collectors(w).length, 1, "the collector too");
+  assert.equal(total(w), coins - pad(w, "next").cost, "every coin still here but what the pad took");
+  assert.equal(w.piles.safe + h.cash, 24, "15 in the safe and 9 in the bag, wherever the bag has got to");
   const back = restore(JSON.stringify(w), LEVELS);
-  assert.equal(back.piles.safe, 24, "and once across a reload");
+  assert.equal(total(back), total(w), "and the same across a reload");
 });

@@ -13,7 +13,7 @@ const CELL_Y = 28;
 const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + by * 2, h: r.h + by * 2 });
 const cellLock = (i: number) => (i >= 2 ? `cell${i + 1}` : undefined);
 
-function jail(n: number, scale: number, next: boolean): LevelDef {
+function jail(n: number, name: string, scale: number, next: boolean): LevelDef {
   const cost = (c: number) => Math.round(c * scale);
   const rooms: RoomDef[] = [
     { id: "block", look: "block", rect: { x: 20, y: 20, w: 680, h: 250 }, doors: [{ side: "s", at: 300, width: 80 }], label: "cells" },
@@ -98,9 +98,10 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
     { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
   ];
+  // paid once, it opens the next jail on the map. she stays where she is until she goes
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: true }, label: "next jail" });
   return {
-    id: `jail${n}`, name: `jail ${n}`, size: { w: 720, h: 900 }, rooms, stations, pads,
+    id: `jail${n}`, name, size: { w: 720, h: 900 }, rooms, stations, pads,
     needs: [
       { id: "food", decay: 60, start: 0.5, escort: true },
       { id: "wash", decay: 90, start: 0.9, escort: true },
@@ -123,7 +124,17 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
   };
 }
 
-export const LEVELS: LevelDef[] = [jail(1, 1, true), jail(2, 2, false)];
+// the ids are what saves are kept by, so they never change. the names are only for the screen
+export const LEVELS: LevelDef[] = [jail(1, "pine hill", 1, true), jail(2, "desert rock", 2, false)];
+
+/** a place on the map. one with no jail behind it yet is shown as coming later and is never sold */
+export interface Place { id: string; name: string; later?: true }
+/** the map, top to bottom: every jail there is, then the ones still to come */
+export const MAP: Place[] = [
+  ...LEVELS.map((l) => ({ id: l.id, name: l.name })),
+  { id: "jail3", name: "snowy peak", later: true },
+  { id: "jail4", name: "island bay", later: true },
+];
 
 /** the little words that pop up in the world */
 export const WORDS = { full: "max!", noBed: "no beds!" };

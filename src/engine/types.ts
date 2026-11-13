@@ -109,7 +109,7 @@ export interface Unlock {
   line?: number;
   speed?: number;
   helper?: HelperKind;
-  /** move on to the next level */
+  /** open the next level, for the screen to offer. the world that bought it carries on as it is */
   level?: true;
 }
 export interface PadDef {

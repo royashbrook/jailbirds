@@ -370,17 +370,20 @@ test("the ride's cue is still the ride's, untouched by a boost", () => {
   assert.deepEqual(boostCues(take(w)), [{ kind: "ride", n: 1 }]);
 });
 
-test("a new level says only that; a fresh start says nothing", () => {
+test("a new level says only that; the next jail pad is a pad like any; a fresh start says nothing", () => {
   const { w } = settle();
   w.coins = 500;
   w.rank = 6;
   take(w);
+  // the next jail pad no longer moves the world on: it is bought like any other pad, and sounds like one
   go(w, pad("next").at);
   wait(w, 2);
-  assert.equal(w.level, 1);
+  assert.equal(w.level, 0);
   const heard = take(w);
-  assert.deepEqual(of(heard, "level"), [{ kind: "level", n: 2 }]);
-  assert.equal(sum(heard, "buy"), 0, "the level's own fanfare, not a pad's");
+  assert.equal(sum(heard, "buy"), 1);
+  assert.deepEqual(of(heard, "level"), []);
+  // a world that is another level says only that
+  assert.deepEqual(cues(snap(w), create(LEVELS, 1, 5), LEVELS[1]), [{ kind: "level", n: 2 }]);
 
   // the old world's snap against a brand new one, as after "start over"
   const old = settle().w;
