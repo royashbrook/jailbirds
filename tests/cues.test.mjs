@@ -234,14 +234,38 @@ test("set free: a bell for a release, and a level up speaks for the release that
 });
 
 test("a mess wiped by the player is heard", () => {
-  const { w } = settle(11);
-  until(w, () => w.messes.some((m) => m.kind === "poop"), 240, "a messy toilet");
-  const mess = w.messes.find((m) => m.kind === "poop");
+  const w = create(LEVELS, 0, 3), p = player(w);
+  listen(w);
+  const mess = { id: w.nextId++, kind: "puddle", x: p.x + 50, y: p.y, station: "showers", seat: 0, clean: 0 };
+  w.messes.push(mess);
+  wait(w, 0.2);
   assert.equal(sum(take(w), "clean"), 0);
   go(w, mess);
   wait(w, 0.5);
   assert.ok(!w.messes.includes(mess));
   assert.deepEqual(of(take(w), "clean"), [{ kind: "clean", n: 1 }]);
+});
+
+test("each layer the player takes off a clogged toilet is heard, once", () => {
+  const { w } = settle(11);
+  const toilets = station("toilets");
+  until(w, () => toilets.seats.some((_, i) => (w.dirt[`toilets:${i}`]?.level ?? 0) > 0), 240, "a clogged toilet");
+  const seat = toilets.seats.findIndex((_, i) => (w.dirt[`toilets:${i}`]?.level ?? 0) > 0);
+  const key = `toilets:${seat}`;
+  assert.equal(sum(take(w), "clean"), 0);
+  go(w, toilets.seats[seat].messAt);
+  // count the layers as they come off, step by step, against what was heard
+  let layers = 0, was = w.dirt[key].removed;
+  for (let i = 0; i < 60 * 5 && w.dirt[key].level > 0; i++) {
+    tick(w, { x: 0, y: 0 });
+    if (w.dirt[key].removed > was) layers++;
+    was = w.dirt[key].removed;
+  }
+  assert.equal(w.dirt[key].level, 0);
+  assert.ok(layers >= 1);
+  const heard = of(take(w), "clean");
+  assert.equal(heard.length, layers, "one sound a layer");
+  assert.ok(heard.every((c) => c.n === 1));
 });
 
 test("a squabble: an alarm when it starts, a calm when it is settled", () => {

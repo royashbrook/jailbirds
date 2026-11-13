@@ -10,7 +10,7 @@
 import { roll } from "./rng.ts";
 import { collide, dist, inside, nav, near, route as navRoute, walls, type Nav } from "./geom.ts";
 import type {
-  Agent, AgentKind, AnyStation, BoostKind, Fairy, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
+  Agent, AgentKind, AnyStation, BoostKind, Claim, Dirt, Fairy, Job, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
 } from "./types.ts";
 
 export const DT = 1 / 60;
@@ -45,6 +45,20 @@ const ALERT_R = 40;
 const TRAIL_STEP = 3;
 /** seconds home before a resident asks to be led anywhere */
 export const SETTLE = 2;
+/** the dirtiest a clogged seat gets */
+export const DIRT_MAX = 4;
+/** seconds for a clogged seat to seep one level dirtier on its own. far longer than CLEAN_TIME,
+ * so someone cleaning always wins */
+export const SEEP = 30;
+/** from this dirty on, a home's own seat makes its residents restless */
+export const DIRT_UNREST = 2;
+/** unrest at which a resident is upset */
+export const UPSET = 0.6;
+/** unrest per second: for each need below the threshold, for a dirty seat at home, and the fall
+ * per second while there is neither */
+export const U_NEED = 1 / 90;
+export const U_DIRT = 1 / 90;
+export const U_CALM = 1 / 30;
 
 type Kind = AnyStation["kind"];
 type S<K extends Kind> = Extract<AnyStation, { kind: K }>;
@@ -56,7 +70,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
   return {
     v: 3, level, steps: 0, rng: seed >>> 0, nextId: 2, coins: 0,
     agents: [agent(1, "player", l.start, 0, l)],
-    bought: [], paid: {}, stock: {}, piles: {}, messes: [], floor: [],
+    bought: [], paid: {}, stock: {}, piles: {}, messes: [], dirt: {}, floor: [],
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
     alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
@@ -70,9 +84,42 @@ function agent(id: number, kind: AgentKind, at: Pt, look: number, l: LevelDef): 
     id, kind, x: at.x, y: at.y, face: 1, moving: false, walk: 0, look, tags: [], state: kind === "agent" ? "arrive" : "idle",
     leader: -1, house: "", slot: -1, station: "", seat: -1,
     needs: kind === "agent" ? Object.fromEntries(l.needs.map((n) => [n.id, n.start])) : {},
-    served: 0, rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
+    unrest: 0, served: 0, rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
   };
 }
+
+/** a seat that clogs: a home's own facility seat, where it is (`seatAt`), where its dirt is cleaned
+ * from (`at`), and whose home it is */
+export interface Spot { key: string; station: string; seat: number; at: Pt; seatAt: Pt; house: string }
+const spotCache = new WeakMap<LevelDef, Spot[]>();
+/** every seat in the level that clogs with use, in station and seat order. worked out once a level */
+export function dirtSpots(l: LevelDef): Spot[] {
+  let got = spotCache.get(l);
+  if (!got) {
+    got = [];
+    for (const st of l.stations)
+      if (st.kind === "facility")
+        for (let i = 0; i < st.seats.length; i++) {
+          const seat = st.seats[i];
+          if (seat.house) got.push({ key: `${st.id}:${i}`, station: st.id, seat: i, at: seat.messAt ?? seat.at, seatAt: seat.at, house: seat.house });
+        }
+    spotCache.set(l, got);
+  }
+  return got;
+}
+/** how dirty a seat is, 0 when it never was */
+export const dirtLevel = (w: World, key: string) => w.dirt[key]?.level ?? 0;
+const dirtOf = (w: World, key: string) => (w.dirt[key] ??= { level: 0, clean: 0, removed: 0 });
+/** the one way dirt comes off a seat, whoever takes it: `removed` counts every bit. once it is clean,
+ * any clean under way is gone with it */
+function scrub(d: Dirt, amount: number) {
+  if (amount <= 0) return;
+  d.level = amount >= d.level ? 0 : d.level - amount;
+  d.removed += amount;
+  if (d.level === 0) d.clean = 0;
+}
+/** anything for a cleaner to do: a mess on the floor, or a seat that is clogged */
+export const messy = (w: World, l: LevelDef) => w.messes.length > 0 || dirtSpots(l).some((s) => dirtLevel(w, s.key) > 0);
 
 function rand(w: World) {
   const [v, next] = roll(w.rng);
@@ -98,9 +145,11 @@ const queued = (w: World) => w.agents.filter((a) => a.state === "queue").sort((a
 export const noBed = (w: World, l: LevelDef) => queued(w).length > 0 && freeBeds(w, l) <= 0;
 export const rankNeed = (w: World, l: LevelDef) => l.rankStars[Math.min(w.rank - 1, l.rankStars.length - 1)];
 
+/** the one judge of how someone feels, worst first: a need run out, unrest built up, a need low */
 export function mood(l: LevelDef, a: Agent): Mood {
   const v = Object.values(a.needs);
   if (v.some((n) => n <= 0)) return "cross";
+  if ((a.unrest ?? 0) >= UPSET) return "upset";
   if (v.some((n) => n < l.threshold)) return "needy";
   return "ok";
 }
@@ -187,7 +236,7 @@ function seatFor(w: World, st: AnyStation, need: string, a: Agent) {
   return st.seats.findIndex(
     (seat, i) =>
       isOpen(w, seat.locked) && (!seat.house || seat.house === a.house) && freeSeat(w, st.id, i) &&
-      !w.messes.some((m) => m.station === st.id && m.seat === i),
+      !w.messes.some((m) => m.station === st.id && m.seat === i) && dirtLevel(w, `${st.id}:${i}`) <= 0,
   );
 }
 function sendTo(w: World, l: LevelDef, a: Agent, st: S<"sink"> | S<"facility">, seat: number) {
@@ -230,11 +279,11 @@ export function pickBoost(roll: number, kinds: [BoostKind, number][]): BoostKind
   }
   return kinds[kinds.length - 1][0];
 }
-/** what may turn up now: the fairy only when there is a mess for her to clean */
+/** what may turn up now: the fairy only when there is a mess or a clogged seat for her to clean */
 export function boostChoices(w: World, l: LevelDef): [BoostKind, number][] {
   const k = l.boost.kinds;
   const out: [BoostKind, number][] = [["skates", k.skates.weight], ["unicorn", k.unicorn.weight]];
-  if (w.messes.length > 0) out.push(["fairy", k.fairy.weight]);
+  if (messy(w, l)) out.push(["fairy", k.fairy.weight]);
   return out;
 }
 
@@ -242,45 +291,63 @@ export function boostChoices(w: World, l: LevelDef): [BoostKind, number][] {
 function cleanUp(w: World, m: Mess) {
   w.messes = w.messes.filter((x) => x.id !== m.id);
 }
-const nearestMess = (messes: Mess[], at: Pt) =>
-  messes.reduce<Mess | null>((best, m) => (!best || dist(m, at) < dist(best, at) ? m : best), null);
 
-/** the fairy's next mess: the nearest of those on her list still there. one cleaned by someone
- * else drops off the list; with none left, she is done */
-function fairyNext(w: World) {
+/** what the fairy still owes a seat she took on: what was there when she came, less all that anyone
+ * took off it since. dirt that seeped in after she came is never hers */
+export const budget = (w: World, c: Claim) => Math.max(0, c.amount - ((w.dirt[c.key]?.removed ?? 0) - c.removedAt));
+/** what she would take off it now: her budget, or what is there if that is less */
+const owed = (w: World, c: Claim) => Math.min(budget(w, c), dirtLevel(w, c.key));
+/** where a job of hers is, while there is still something there for her */
+function jobAt(w: World, l: LevelDef, j: Job): Pt | null {
+  if (typeof j === "number") return w.messes.find((m) => m.id === j) ?? null;
+  if (owed(w, j) <= 0) return null;
+  return dirtSpots(l).find((s) => s.key === j.key)?.at ?? null;
+}
+
+/** the fairy's next job: the nearest of those on her list with something still there for her. one
+ * cleaned by someone else drops off the list; with none left, she is done */
+function fairyNext(w: World, l: LevelDef) {
   const f = w.fairy;
-  f.todo = f.todo.filter((id) => w.messes.some((m) => m.id === id));
-  const next = nearestMess(w.messes.filter((m) => f.todo.includes(m.id)), f);
+  f.todo = f.todo.filter((j) => jobAt(w, l, j));
+  let next: Job | null = null, at: Pt | null = null;
+  for (const j of f.todo) {
+    const p = jobAt(w, l, j)!;
+    if (!at || dist(p, f) < dist(at, f)) (next = j), (at = p);
+  }
   f.t = 0;
-  if (!next) {
+  if (next === null) {
     w.fairy = { ...idleFairy(), x: f.x, y: f.y, visits: f.visits };
     return null;
   }
-  f.target = next.id;
-  f.todo = f.todo.filter((id) => id !== next.id);
-  return next;
+  f.target = next;
+  f.todo = f.todo.filter((j) => j !== next);
+  return at;
 }
 
-/** the fairy flies to a mess, cleans it, and on to the next nearest on her list, until the list is done */
+/** the fairy flies to a job, does it, and on to the next nearest on her list, until the list is done.
+ * a mess she cleans away; at a clogged seat she takes off what she still owes it, and no more */
 function fairy(w: World, l: LevelDef) {
   const f = w.fairy;
   if (f.target === null) return;
-  const m = w.messes.find((x) => x.id === f.target) ?? fairyNext(w);
-  if (!m) return;
+  const at = jobAt(w, l, f.target) ?? fairyNext(w, l);
+  if (!at) return;
   f.t += DT;
   const rest = l.boost.kinds.fairy.visit - f.t;
   if (rest > 1e-9) {
     // so she lands just as the visit is up, however far it is
     const share = DT / (rest + DT);
-    f.x += (m.x - f.x) * share;
-    f.y += (m.y - f.y) * share;
+    f.x += (at.x - f.x) * share;
+    f.y += (at.y - f.y) * share;
     return;
   }
-  f.x = m.x;
-  f.y = m.y;
-  cleanUp(w, m);
+  f.x = at.x;
+  f.y = at.y;
+  const j = f.target!;
+  if (typeof j === "number") cleanUp(w, at as Mess);
+  // a whole level or a bit of one, it is only dirt off: a clean under way on what she leaves is kept
+  else scrub(w.dirt[j.key], owed(w, j));
   f.visits++;
-  fairyNext(w);
+  fairyNext(w, l);
 }
 
 export function step(w: World, levels: LevelDef[], stick: Stick) {
@@ -349,10 +416,15 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   if (w.boost.here && near(p, w.boost, BOOST_R)) {
     w.boost.here = false;
     w.boost.t = l.boost.every;
-    if (w.boostKind === "fairy" && w.messes.length) {
-      // she takes on the messes there are now, and only those
-      w.fairy = { todo: w.messes.map((m) => m.id), visits: 0, x: p.x, y: p.y, target: null, t: 0 };
-      fairyNext(w);
+    if (w.boostKind === "fairy" && messy(w, l)) {
+      // she takes on the messes there are now, and the dirt there is now, and only those
+      const todo: Job[] = w.messes.map((m) => m.id);
+      for (const s of dirtSpots(l)) {
+        const d = w.dirt[s.key];
+        if (d && d.level > 0) todo.push({ key: s.key, amount: d.level, removedAt: d.removed });
+      }
+      w.fairy = { todo, visits: 0, x: p.x, y: p.y, target: null, t: 0 };
+      fairyNext(w, l);
       w.picked = { n: w.picked.n + 1, kind: "fairy" };
     } else {
       // a ride, or a fairy picked up once the floor is clean already: then it is skates
@@ -402,7 +474,17 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   }
 
   residents(w, l);
+  seep(w, l);
   for (const k of Object.keys(w.clock)) if (!live.has(k)) delete w.clock[k];
+}
+
+/** a clogged seat gets dirtier on its own, a level every SEEP seconds, up to the most it gets. a clean
+ * one stays clean. only here, in a step: nothing seeps while the game is not running */
+function seep(w: World, l: LevelDef) {
+  for (const s of dirtSpots(l)) {
+    const d = w.dirt[s.key];
+    if (d && d.level > 0 && d.level < DIRT_MAX) d.level = Math.min(DIRT_MAX, d.level + DT / SEEP);
+  }
 }
 
 /** how much faster than the player one of its followers walks to catch up: its own share by id,
@@ -521,12 +603,23 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
       }
     }
   }
-  // cleaners: stand on a mess for a moment and it is gone
+  // cleaners: stand on a mess for a moment and it is gone. by a clogged seat, the same moment takes
+  // one level off it, or what is left when that is less, so a full one takes a few goes
   if (a.kind === "player" || a.kind === "cleaner") {
     const m = w.messes.find((m) => near(m, a, MESS_R));
     if (m) {
       m.clean += DT;
       if (m.clean >= CLEAN_TIME) cleanUp(w, m);
+    } else {
+      const s = dirtSpots(l).find((s) => dirtLevel(w, s.key) > 0 && near(s.at, a, MESS_R));
+      if (s) {
+        const d = w.dirt[s.key];
+        d.clean += DT;
+        if (d.clean >= CLEAN_TIME) {
+          scrub(d, Math.min(1, d.level));
+          d.clean = 0;
+        }
+      }
     }
   }
 }
@@ -668,8 +761,12 @@ function fights(w: World, l: LevelDef) {
   }
   const home = w.agents.filter((a) => a.state === "home" && !isDone(l, a));
   if (home.length < f.minPop) return;
-  // a cross resident makes a squabble come sooner
-  w.fightIn -= DT * (home.some((a) => mood(l, a) === "cross") ? f.every / f.crossEvery : 1);
+  // a cross or upset resident makes a squabble come sooner
+  const sooner = home.some((a) => {
+    const m = mood(l, a);
+    return m === "cross" || m === "upset";
+  });
+  w.fightIn -= DT * (sooner ? f.every / f.crossEvery : 1);
   if (w.fightIn > 0) return;
   const houses = all(l, "house").filter((h) => home.filter((a) => a.house === h.id).length >= 2);
   if (!houses.length) {
@@ -682,9 +779,22 @@ function fights(w: World, l: LevelDef) {
   w.alert = { x: h.at.x, y: h.at.y, ids: pair.map((a) => a.id), held: 0 };
 }
 
+/** a home's own seat is dirty enough to be a bother */
+const dirtyHome = (w: World, l: LevelDef, house: string) =>
+  dirtSpots(l).some((s) => s.house === house && dirtLevel(w, s.key) >= DIRT_UNREST);
+/** unrest builds for each need that is low and for a dirty seat at home, and falls while there is
+ * neither. only those: how upset someone looks never feeds back into it */
+function restless(w: World, l: LevelDef, a: Agent) {
+  let rise = 0;
+  for (const n of l.needs) if (a.needs[n.id] < l.threshold) rise += U_NEED;
+  if (dirtyHome(w, l, a.house)) rise += U_DIRT;
+  a.unrest = rise > 0 ? Math.min(1, a.unrest + rise * DT) : Math.max(0, a.unrest - U_CALM * DT);
+}
+
 function residents(w: World, l: LevelDef) {
   for (const a of [...w.agents]) {
     if (a.kind !== "agent") continue;
+    if (a.house) restless(w, l, a);
     if (a.state === "enter" || a.state === "back") {
       if (walkPath(a, AGENT_SPEED)) {
         a.state = "home";
@@ -737,7 +847,11 @@ function residents(w: World, l: LevelDef) {
       if (a.t >= st.use) {
         a.needs[st.need] = 1;
         a.carry = 0;
-        if (st.kind === "facility" && rand(w) < st.messChance) {
+        // a home's own seat clogs with every use; any other may leave a mess on the floor
+        if (st.kind === "facility" && st.seats[a.seat].house) {
+          const d = dirtOf(w, `${st.id}:${a.seat}`);
+          d.level = Math.min(DIRT_MAX, d.level + 1);
+        } else if (st.kind === "facility" && rand(w) < st.messChance) {
           const at = st.seats[a.seat].messAt ?? st.seats[a.seat].at;
           w.messes.push({ id: w.nextId++, kind: st.mess, x: at.x, y: at.y, station: st.id, seat: a.seat, clean: 0 });
         }
@@ -767,8 +881,11 @@ function helpers(w: World, l: LevelDef) {
       if (room && (h.carry === 0 || filling)) goal = source.at;
       else if (room && h.carry > 0) goal = room.at;
     } else if (h.kind === "cleaner") {
+      // the oldest mess first, then clogged seats in order, each until it is clean
       const m = [...w.messes].sort((a, b) => a.id - b.id)[0];
+      const s = m ? undefined : dirtSpots(l).find((s) => dirtLevel(w, s.key) > 0);
       if (m) goal = m;
+      else if (s) goal = s.at;
     } else if (h.kind === "clerk") {
       const desk = all(l, "checkin")[0];
       if (desk) goal = desk.at;
@@ -839,7 +956,7 @@ export function hint(w: World, l: LevelDef): Hint {
   if (w.agents.some((a) => a.state === "home" && isDone(l, a))) return { key: "done" };
   const errand = w.agents.map((a) => (a.state === "home" ? wants(l, a, true) : null)).find(Boolean);
   if (errand) return { key: "errand", need: errand };
-  if (w.messes.length) return { key: "clean" };
+  if (messy(w, l)) return { key: "clean" };
   if (w.floor.length || Object.values(w.piles).some((n) => n > 0)) return { key: "coins" };
   const open = l.pads.filter((x) => padVisible(w, x) && w.coins >= x.cost - (w.paid[x.id] ?? 0));
   if (open.some((x) => w.rank >= (x.rank ?? 0))) return { key: "pad" };
@@ -869,7 +986,14 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
     const kind = (k: unknown): BoostKind => (k === "unicorn" || k === "fairy" ? k : "skates");
     back.boostKind = kind(got.boostKind);
     back.mountKind = got.mountKind === "unicorn" ? "unicorn" : "skates";
-    back.fairy = fairyFrom(got.fairy);
+    const l = levels[w.level], spots = dirtSpots(l);
+    back.dirt = dirtFrom((w as Partial<Record<"dirt", unknown>>).dirt, spots);
+    back.fairy = fairyFrom(got.fairy, new Set(spots.map((s) => s.key)));
+    clogOldMesses(back, spots);
+    for (const a of back.agents) {
+      const u = (a as Partial<Record<"unrest", unknown>>).unrest;
+      a.unrest = typeof u === "number" && Number.isFinite(u) ? Math.min(1, Math.max(0, u)) : 0;
+    }
     const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;
     back.picked = { n: typeof pk?.n === "number" && Number.isFinite(pk.n) && pk.n >= 0 ? pk.n : 0, kind: kind(pk?.kind) };
     back.took = tookFrom((w as Partial<Record<"took", unknown>>).took);
@@ -897,12 +1021,70 @@ function tookFrom(raw: unknown): Took {
   const piles = Object.fromEntries(Object.entries(t.piles).filter(([, n]) => count(n)));
   return { n: t.n!, floor: t.floor!, rank: t.rank!, piles };
 }
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** the saved dirt, one entry per seat that clogs and none for anything else. a value that cannot be
+ * read is clean; a level or a clean under way is kept within its bounds, the count of what came off too */
+function dirtFrom(raw: unknown, spots: Spot[]): Record<string, Dirt> {
+  const out: Record<string, Dirt> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const saved = raw as Record<string, unknown>;
+  for (const s of spots) {
+    if (!(s.key in saved)) continue;
+    const d = saved[s.key] as Partial<Record<keyof Dirt, unknown>> | null;
+    const ok = !!d && typeof d === "object";
+    const level = ok && num(d.level) ? clamp(d.level, 0, DIRT_MAX) : 0;
+    const clean = ok && num(d.clean) && level > 0 ? clamp(d.clean, 0, CLEAN_TIME) : 0;
+    const removed = ok && num(d.removed) && d.removed >= 0 ? d.removed : 0;
+    out[s.key] = { level, clean, removed };
+  }
+  return out;
+}
+/** a job saved on the fairy's list: a mess id, or a seat she took on that is still a seat that clogs */
+function jobFrom(raw: unknown, keys: Set<string>): Job | null {
+  if (num(raw)) return raw;
+  const c = raw as Partial<Record<keyof Claim, unknown>> | null;
+  if (!c || typeof c !== "object" || typeof c.key !== "string" || !keys.has(c.key)) return null;
+  if (!num(c.amount) || c.amount <= 0 || !num(c.removedAt) || c.removedAt < 0) return null;
+  return { key: c.key, amount: Math.min(DIRT_MAX, c.amount), removedAt: c.removedAt };
+}
 /** a saved fairy, whole and sane, or one at rest */
-function fairyFrom(raw: unknown): Fairy {
-  const f = raw as Partial<Fairy> | null;
-  const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+function fairyFrom(raw: unknown, keys: Set<string>): Fairy {
+  const f = raw as (Omit<Partial<Fairy>, "todo" | "target"> & { todo?: unknown; target?: unknown }) | null;
   if (!f || typeof f !== "object" || ![f.visits, f.x, f.y, f.t].every(num)) return idleFairy();
-  if (f.target !== null && !num(f.target)) return idleFairy();
-  const todo = Array.isArray(f.todo) ? f.todo.filter(num) : [];
-  return { todo, visits: f.visits!, x: f.x!, y: f.y!, target: f.target ?? null, t: f.t! };
+  const target = f.target === null ? null : jobFrom(f.target, keys);
+  if (f.target !== null && target === null) return idleFairy();
+  const todo: Job[] = [];
+  if (Array.isArray(f.todo)) for (const j of f.todo) {
+    const got = jobFrom(j, keys);
+    if (got !== null) todo.push(got);
+  }
+  return { todo, visits: f.visits!, x: f.x!, y: f.y!, target, t: f.t! };
+}
+/** saves from before seats clogged had a mess on the floor for each dirty one. each becomes that seat's
+ * first level, with the clean it had got to, once: the mess goes, so it is never both. nothing is paid.
+ * a fairy flying then had those messes on her list by id: each becomes the seat she owes one level, in
+ * its place, and nothing else is added to her list. other messes, and ids that are gone, stay as they were */
+function clogOldMesses(w: World, spots: Spot[]) {
+  const was = new Map<number, string>();
+  w.messes = w.messes.filter((m) => {
+    const s = m && typeof m === "object" ? spots.find((s) => s.station === m.station && s.seat === m.seat) : undefined;
+    if (!s) return true;
+    const d = dirtOf(w, s.key);
+    if (d.level <= 0) {
+      d.level = 1;
+      d.clean = num(m.clean) ? clamp(m.clean, 0, CLEAN_TIME) : 0;
+    }
+    if (num(m.id)) was.set(m.id, s.key);
+    return false;
+  });
+  const f = w.fairy;
+  const job = (j: Job): Job => {
+    const key = typeof j === "number" ? was.get(j) : undefined;
+    return key ? { key, amount: 1, removedAt: w.dirt[key].removed } : j;
+  };
+  f.todo = f.todo.map(job);
+  if (f.target !== null) f.target = job(f.target);
+  // a claim can never be from a time with more taken off than now
+  for (const j of [...f.todo, f.target]) if (j !== null && typeof j !== "number") j.removedAt = Math.min(j.removedAt, w.dirt[j.key]?.removed ?? 0);
 }

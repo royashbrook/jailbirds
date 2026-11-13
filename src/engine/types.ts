@@ -32,9 +32,9 @@ export interface Seat {
   at: Pt;
   /** a pad id that opens this seat */
   locked?: string;
-  /** where its mess lands, for a station that makes one */
+  /** where its mess lands, for a station that makes one, and where a seat that clogs is cleaned from */
   messAt?: Pt;
-  /** only residents of this house use it */
+  /** only residents of this house use it: a facility seat with a house is that home's own, and clogs */
   house?: string;
   /** what the skin draws there */
   look?: string;
@@ -59,6 +59,7 @@ export type StationDef =
       look: string; prop: Rect; locked?: string;
     }
   /** agents use a seat to meet a need; a use may leave a mess that blocks the seat until cleaned.
+   * a seat that belongs to one house clogs with every use instead, and gets dirtier until cleaned.
    * with a zone, residents are led there; without one, they walk to it themselves */
   | { id: string; kind: "facility"; seats: Seat[]; need: string; use: number; mess: string; messChance: number; look: string; zone?: Rect };
   /** an actor standing at `at` sends a finished follower out through `exit`: it pays, and earns a star */
@@ -87,10 +88,19 @@ export interface RideBoost { time: number; mult: number; weight: number }
 /** the fairy: how often she turns up, and seconds per mess she visits */
 export interface FairyBoost { weight: number; visit: number }
 export interface BoostKinds { skates: RideBoost; unicorn: RideBoost; fairy: FairyBoost }
-/** the fairy in flight. `target` is the id of the mess she is flying to (null: nobody flying), `todo` the
- * ids of the messes that were there when she was picked up and are still to visit, `t` seconds into this
- * visit, `visits` the messes cleaned so far. she never takes on a mess made after she came */
-export interface Fairy { todo: number[]; visits: number; x: number; y: number; target: number | null; t: number }
+/** a home's own seat that clogs with use. `level` is how dirty it is, from 0 (clean) up to the most it
+ * gets, any fraction between; `clean` how far a clean of its top layer has got, in seconds; `removed`
+ * all the dirt ever taken off it, by anyone. `removed` only goes up, and dirt seeping in never adds to it */
+export interface Dirt { level: number; clean: number; removed: number }
+/** what the fairy took on at a clogged seat when she came: its key, how dirty it was, and its `removed`
+ * then. whatever anyone takes off it after that comes out of what she still owes it */
+export interface Claim { key: string; amount: number; removedAt: number }
+/** a mess by its id, or a clogged seat she took on */
+export type Job = number | Claim;
+/** the fairy in flight. `target` is the job she is flying to (null: nobody flying), `todo` the jobs that
+ * were there when she was picked up and are still to visit, `t` seconds into this visit, `visits` the
+ * jobs done so far. she never takes on a mess, or dirt, made after she came */
+export interface Fairy { todo: Job[]; visits: number; x: number; y: number; target: Job | null; t: number }
 
 export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk" | "collector";
 export interface Unlock {
@@ -148,7 +158,8 @@ export interface LevelDef {
   fights: { every: number; crossEvery: number; settle: number; reward: number; minPop: number };
 }
 
-export type Mood = "ok" | "needy" | "cross";
+/** worst first: cross (a need run out), upset (unrest built up), needy (a need low), ok */
+export type Mood = "ok" | "needy" | "upset" | "cross";
 export type AgentKind = "player" | "agent" | HelperKind;
 export interface Agent {
   id: number;
@@ -170,6 +181,8 @@ export interface Agent {
   station: string;
   seat: number;
   needs: Record<string, number>;
+  /** from 0 to 1: builds while a need is low or the home's own seat is dirty, falls while neither is so */
+  unrest: number;
   /** seconds served at home */
   served: number;
   /** seconds since it last got home: it settles in before asking to go anywhere */
@@ -199,6 +212,8 @@ export interface World {
   /** coins stacked by each paying station, waiting to be walked over */
   piles: Record<string, number>;
   messes: Mess[];
+  /** the homes' own seats that are or were dirty, by `${station}:${seat}`. one each, never a mess */
+  dirt: Record<string, Dirt>;
   floor: Coin[];
   ride: { state: "away" | "in" | "out"; x: number; t: number };
   /** cadence timers, keyed by actor and station */
