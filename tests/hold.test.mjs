@@ -370,7 +370,9 @@ test("on skates the line still catches up: each follower faster than the leader 
   const three = [0, 1, 2].map((k) => follower(w, p, k, { x: p.x - (k + 1) * FOLLOW_GAP - 20, y: p.y }));
   const gaps = () => three.map((b, i) => Math.abs(p.x - (i + 1) * FOLLOW_GAP - b.x));
   for (let i = 0; i < 60 * 1.7; i++) step(w, LEVELS, { x: 1, y: 0 });
-  assert.ok(w.boosted > 0 && p.x > 400, `boosted the whole way, at ${p.x}`);
+  // on skates the whole way: as far as skates go in that time, near enough
+  const far = 100 + w.speed * LEVELS[0].boost.kinds.skates.mult * 1.7 * 0.9;
+  assert.ok(w.boosted > 0 && p.x > far, `boosted the whole way, at ${p.x}, past ${far}`);
   assert.ok(gaps().every((g) => g < 2), `each in its place: ${gaps().map((g) => g.toFixed(1))}`);
   assert.ok(three[0].x > three[1].x && three[1].x > three[2].x, "in order");
 });
