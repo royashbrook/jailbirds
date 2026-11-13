@@ -124,7 +124,10 @@ test("two tabs: once the other tab saves the map, this one stops saving and says
   expect(JSON.stringify(await record(page))).toBe(held);
   expect(JSON.parse(held).worlds.jail1.steps).toBeGreaterThan(a.steps);
   // play here loads b's jail
-  await page.click("#play-here");
+  // play here reloads: wait for the new page's load, or the old page (or a page not yet set up)
+  // answers what comes next. the sheet gone alone passed mid-reload once on a hosted run
+  await Promise.all([page.waitForEvent("load"), page.click("#play-here")]);
+  await page.waitForFunction(() => window.__jailbirds?.state);
   await expect(page.locator("#elsewhere-title")).toHaveCount(0);
   expect((await state(page)).steps).toBeGreaterThanOrEqual(JSON.parse(held).worlds.jail1.steps);
   await b.close();
