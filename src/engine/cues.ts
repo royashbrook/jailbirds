@@ -3,7 +3,7 @@
 // asks `cues` what changed since. nothing here touches the world, so the game
 // plays the same with or without anyone listening.
 import { near } from "./geom.ts";
-import { followers, player, stamped } from "./sim.ts";
+import { dirtSpots, followers, player, stamped } from "./sim.ts";
 import type { BoostKind, Coin, LevelDef, Mess, World } from "./types.ts";
 
 export type CueKind =
@@ -18,6 +18,8 @@ export interface Cue { kind: CueKind; n: number; fill?: number }
 export interface Snap {
   level: number; steps: number; coins: number; floor: Coin[]; piles: Record<string, number>; paid: Record<string, number>;
   bought: number; queue: number[]; led: number[]; carry: number; messes: Mess[];
+  /** how much dirt has ever come off each clogged seat */
+  scrubbed: Record<string, number>;
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
   /** residents whose release papers are not stamped yet, by id */
   unstamped: number[];
@@ -43,7 +45,7 @@ export function snap(w: World): Snap {
     bought: w.bought.length,
     queue: w.agents.filter((a) => a.state === "queue").map((a) => a.id),
     led: followers(w, me).map((a) => a.id),
-    carry: me.carry, messes: w.messes.slice(),
+    carry: me.carry, messes: w.messes.slice(), scrubbed: Object.fromEntries(Object.entries(w.dirt).map(([k, d]) => [k, d.removed])),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
     unstamped: w.agents.filter((a) => a.kind === "agent" && !stamped(a)).map((a) => a.id),
     boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n, took: tookAll(w), tookPiles: pileSum(w),
@@ -104,13 +106,16 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
   add("bed", bed);
   add("seat", seat);
 
-  // chores: a load picked up and put down, a mess wiped
+  // chores: a load picked up and put down, a mess wiped, a layer off a clogged seat
   if (me.carry > before.carry) add("carry", me.carry);
   else add("drop", before.carry - me.carry);
+  let wiped = 0;
   if (before.messes.length) {
     const left = new Set(w.messes);
-    add("clean", before.messes.filter((m) => !left.has(m) && near(m, me, CLEAN_R)).length);
+    wiped += before.messes.filter((m) => !left.has(m) && near(m, me, CLEAN_R)).length;
   }
+  for (const s of dirtSpots(l)) if ((w.dirt[s.key]?.removed ?? 0) > (before.scrubbed[s.key] ?? 0) && near(s.at, me, CLEAN_R)) wiped++;
+  add("clean", wiped);
 
   // the big moments. a rank up speaks for the release that earned it; any others set free
   // in the same moment (the player sees off everyone done at once) still get their bell

@@ -55,7 +55,8 @@ function jail(n: number, scale: number, next: boolean): LevelDef {
     {
       id: "toilets", kind: "facility", look: "toilet", need: "toilet", use: 1.5, mess: "poop", messChance: 0.35,
       seats: Array.from({ length: CELLS }, (_, i) => ({
-        at: { x: cellX(i) + 60, y: CELL_Y + 22 }, messAt: { x: cellX(i) + 52, y: CELL_Y + 80 }, house: `c${i}`, locked: cellLock(i),
+        // cleaned from just beside the toilet, in front of it and to the left
+        at: { x: cellX(i) + 60, y: CELL_Y + 22 }, messAt: { x: cellX(i) + 60 - 12, y: CELL_Y + 22 + 16 }, house: `c${i}`, locked: cellLock(i),
       })),
     },
     { id: "stove", kind: "source", look: "stove", prop: { x: 340, y: 325, w: 110, h: 44 }, at: { x: 395, y: 412 }, r: 32, item: "tray", every: 0.3 },
