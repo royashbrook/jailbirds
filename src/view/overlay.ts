@@ -283,6 +283,8 @@ export function createOverlay(root: HTMLElement) {
 
     // trouble: a burst over the squabble, an arrow pointing to it from the edge
     const al = w.alert;
+    // the arrow only points the way to a squabble off the screen; one in view has its shout
+    let pointing = false;
     if (al) {
       // over the doorway, where the view draws the two squaring up, not over their bunks
       view.screen(al.x, view.height + 10, al.y, pt);
@@ -306,8 +308,9 @@ export function createOverlay(root: HTMLElement) {
       move(arrow, ax, ay);
       const deg = String(Math.round((angle * 180) / Math.PI));
       label(arrow, deg, () => (arrow.el.style.setProperty("--turn", `${deg}deg`)));
+      pointing = !inView;
     } else show(burst, false);
-    show(arrow, !!al);
+    show(arrow, pointing);
 
     // the thumb stick where the finger went down
     if (thumb) {

@@ -199,7 +199,10 @@ test("the squabble burst wobbles where it is, and does not slide about the scree
   await started(page);
   const burst = page.locator(".overlay > .burst");
   await expect(burst).toBeVisible();
-  await expect(burst.locator("b")).toHaveText("hey!");
+  // the shout takes turns through a list, so any of them
+  await expect(burst.locator("b")).toHaveText(/^(hey!|watch this!|pow!|take that!|bonk!|oof!)$/);
+  // a squabble in view has its shout, and no arrow on top of it
+  await expect(page.locator(".overlay > .alert-arrow")).toHaveJSProperty("hidden", true);
   expect(await motion(burst.locator("b"))).toBe("wobble");
   // forty frames of it, once the camera has come to rest
   const seen = await page.evaluate(() => new Promise((done) => {
@@ -226,4 +229,21 @@ test("the squabble burst wobbles where it is, and does not slide about the scree
   // and with less motion it holds still
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(await motion(burst.locator("b"))).toBe("none");
+});
+
+test("a squabble off the screen gets the arrow pointing the way, and one in view does not", async ({ page }) => {
+  await page.goto("/");
+  const world = await started(page);
+  // far from the warden, so the camera that follows him can't see it
+  await reopen(page, world, { warden: { x: 60, y: 760 }, alert: { x: 780, y: 120, ids: [], held: 0 } });
+  await started(page);
+  const arrow = page.locator(".overlay > .alert-arrow");
+  // the arrow itself has no box, its parts do: read whether it is shown
+  await expect(arrow).toHaveJSProperty("hidden", false);
+  await expect(arrow.locator("b")).toBeVisible();
+  // walk the squabble right under him: now it is in view, the arrow goes and the shout is clear
+  await reopen(page, world, { warden: { x: 330, y: 540 }, alert: { x: 330, y: 470, ids: [], held: 0 } });
+  await started(page);
+  await expect(page.locator(".overlay > .burst")).toBeVisible();
+  await expect(arrow).toHaveJSProperty("hidden", true);
 });
