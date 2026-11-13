@@ -3,7 +3,7 @@
   import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
   import { cues, gains, snap } from "./engine/cues.ts";
   import type { Stick, World } from "./engine/types.ts";
-  import { LEVELS, WORDS, hintText } from "./content/jail.ts";
+  import { LEVELS, PICKED, WORDS, hintText } from "./content/jail.ts";
   import { SCORE } from "./content/sound.ts";
   import { skinById } from "./skins/index.ts";
   import { createView, remember, type Past } from "./view/view.ts";
@@ -117,7 +117,7 @@
     cheerTimer = setTimeout(() => (cheer = ""), 2400);
   }
   // `paid` is what the sim has paid out for level ups so far, so a new one reads what it paid
-  let seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted, paid: world.took.rank };
+  let seen = { rank: world.rank, settled: world.settled, level: world.level, picked: world.picked.n, paid: world.took.rank };
   // music and sounds: both on unless someone turned them off, each with its own
   // switch. nothing is heard before the first touch, the browser sees to that
   const SOUND = "jailbirds:sound";
@@ -213,8 +213,9 @@
     if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
     else if (world.rank > seen.rank) levelUp(seen.rank, world.rank, l.rankReward, world.took.rank - seen.paid);
     else if (world.settled > seen.settled) shout("all calm again! +money");
-    else if (world.boosted > seen.boosted + 1) shout("speed boost!");
-    seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted, paid: world.took.rank };
+    // a surprise picked up says what it was
+    else if (world.picked.n > seen.picked) shout(PICKED[world.picked.kind]);
+    seen = { rank: world.rank, settled: world.settled, level: world.level, picked: world.picked.n, paid: world.took.rank };
     place = l.name;
     tip = hintText(hint(world, l), skin.noun);
   }
@@ -518,7 +519,7 @@
           <button id="sounds" role="switch" aria-checked={sounds} onclick={() => setSounds(!sounds)}>sounds: {sounds ? "on" : "off"}</button>
         </div>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
-        <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
+        <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then stand by them a moment and they follow you. lead them to a cell with a free bed.</p>
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop money, and so do the desks.</p>
         <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
         <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
