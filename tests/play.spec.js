@@ -86,13 +86,17 @@ test("the bus, the desk, a line that fills up, and a reload that keeps it", asyn
   expect(first.every((id) => byId(after, id)?.tags.includes("uniform"))).toBe(true);
 });
 
-test("start over asks first, then gives a fresh jail", async ({ page }) => {
+test("start over lives in the menu, asks first, then gives a fresh jail", async ({ page }) => {
   await page.goto("/");
   await untilSim(page, (s) => inmates(s).length === 3, 20, "the first bus");
+  // not on the bottom bar, where it read like a reward
+  await expect(page.locator(".nav #restart")).toHaveCount(0);
+  await page.click("#about");
   await page.click("#restart");
   await page.click("#close");
   // the sheet held the world still, and keep playing kept it
   expect(inmates(await state(page)).length).toBe(3);
+  await page.click("#about");
   await page.click("#restart");
   await page.click("#confirm-restart");
   expect(inmates(await state(page)).length).toBe(0);
