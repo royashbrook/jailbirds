@@ -126,6 +126,8 @@ export const LEVELS: LevelDef[] = [jail(1, 1, true), jail(2, 2, false)];
 
 /** the little words that pop up in the world */
 export const WORDS = { full: "max!", noBed: "no beds!" };
+/** what pops up when a floor surprise is picked up */
+export const PICKED = { skates: "skates! zoom!", unicorn: "unicorn ride!", fairy: "here comes the fairy!" } as const;
 
 const NEEDS: Record<string, (noun: string) => string> = {
   food: (noun) => `hungry ${noun}! walk them to the canteen`,
@@ -138,7 +140,7 @@ export function hintText(h: Hint, noun: string): string {
     case "alert": return "uh oh, a squabble! run over and calm it down";
     case "checkin": return "stand behind the intake desk to check them in";
     case "nobed": return "no free beds! unlock another cell";
-    case "pickup": return `walk up to the checked-in ${noun} to lead them`;
+    case "pickup": return `stand by the checked-in ${noun} to lead them`;
     case "house": return "lead them to a cell with a free bed";
     case "release": return "lead them to the release desk to set them free";
     case "done": return `some ${noun} served their time: fetch them from their cell`;

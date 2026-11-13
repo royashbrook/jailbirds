@@ -115,7 +115,7 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   until(w, () => count(w, "ready") === 3, 5, "three check-ins");
   assert.ok(q.every((a) => a.tags.includes("uniform")));
   assert.equal(w.piles.desk, 3 * desk.pay, "each check-in pays into the desk's pile");
-  assert.equal(say(w), "walk up to the checked-in birds to lead them");
+  assert.equal(say(w), "stand by the checked-in birds to lead them");
 
   // the line holds two at the start; the third waits. walking up takes nobody: standing
   // still by them takes them, one after the other

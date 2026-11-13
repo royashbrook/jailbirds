@@ -92,3 +92,16 @@ test("the fairy flies to a mess, cleans it and is gone", async ({ page }) => {
   await waitFrames(page, 3);
   expect(errors).toEqual([]);
 });
+
+test("picking up a surprise says what it was: skates, the unicorn, or the fairy", async ({ page }) => {
+  const errors = await open(page, quiet);
+  const me = (await page.evaluate(() => window.__jailbirds.state())).agents[0];
+  const words = { skates: "skates! zoom!", unicorn: "unicorn ride!", fairy: "here comes the fairy!" };
+  for (const kind of ["skates", "unicorn", "fairy"]) {
+    // the surprise right under the warden; the fairy needs a mess to come for
+    const messes = kind === "fairy" ? [{ id: 50, kind: "puddle", x: 470, y: 520, station: "showers", seat: 0, clean: 0 }] : [];
+    await reopen(page, { ...quiet, messes, boost: { x: me.x, y: me.y, here: true, t: 0 }, boostKind: kind });
+    await expect(page.locator(".cheer")).toHaveText(words[kind]);
+  }
+  expect(errors).toEqual([]);
+});
