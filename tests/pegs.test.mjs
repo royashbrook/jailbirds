@@ -73,3 +73,13 @@ test("the collector has a look of its own: green, in a cap", () => {
   const cap = parts(pose({ kind: "collector" })).filter((q) => q.part === "hat" && q.colour === hex("#1e5e2a"));
   assert.equal(cap.length, 2, "a cap and its peak");
 });
+
+test("walking stands up straight, and bodies are slim", () => {
+  for (const walk of [0, 5, 11, 17]) {
+    const all = parts(pose({ action: "walk", walk }));
+    const body = all.find((q) => q.part === "body"), head = all.find((q) => q.part === "head");
+    assert.equal(body.pitch, 0, "no lean");
+    assert.ok(Math.abs(head.z - body.z) < 1e-9, "the head sits over the body, not out in front");
+  }
+  assert.ok(model.parts.body().parameters.radius <= 4.5, "slim");
+});
