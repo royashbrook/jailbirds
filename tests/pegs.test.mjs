@@ -21,14 +21,21 @@ test("every character fits in the parts the view sets aside for one", () => {
       }
 });
 
-test("a face has two eyes on the front of the head, shut when asleep", () => {
-  const all = parts(pose({}));
-  const head = all.find((q) => q.part === "head");
-  const eyes = all.filter((q) => q.colour === hex("#2a2230"));
-  assert.equal(eyes.length, 2);
-  for (const e of eyes) assert.ok(e.z > head.z + 3 && Math.abs(e.y - head.y) < 2, "eyes sit on the front of the head");
-  const shut = parts(pose({ action: "sleep" })).filter((q) => q.colour === hex("#2a2230"));
-  assert.ok(shut.every((e) => e.sy < eyes[0].sy / 3), "eyes close in bed");
+test("heads are blank: nothing on the face for anyone", () => {
+  for (const kind of ["agent", "player", "escort", "carrier", "clerk", "cleaner", "collector"]) {
+    const all = parts(pose({ kind }));
+    const head = all.find((q) => q.part === "head");
+    const onFace = all.filter((q) => q.part === "dot" && Math.hypot(q.x - head.x, q.y - head.y, q.z - head.z) < 6);
+    assert.deepEqual(onFace, [], kind);
+  }
+});
+
+test("a squabble is a hop and windmill punches, one arm then the other", () => {
+  const at = (t) => parts(pose({ action: "fight", t }));
+  const hips = [0, 0.05, 0.1, 0.15].map((t) => at(t).find((q) => q.part === "body").y);
+  assert.ok(Math.max(...hips) - Math.min(...hips) > 1.5, "hops");
+  const arms = at(0.3).filter((q) => q.part === "limb").slice(2);
+  assert.ok(Math.abs(arms[0].pitch - arms[1].pitch) > 0.5, "the arms take turns");
 });
 
 test("hands sit at the end of the arms, wherever the arms swing", () => {

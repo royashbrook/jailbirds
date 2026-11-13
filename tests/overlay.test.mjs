@@ -176,3 +176,30 @@ test("a fifth ring while four are up takes the place of the one up the longest",
   p.draw(2000);
   assert.deepEqual(p.up("ring"), []);
 });
+
+test("a squabble's burst says a new comic shout every so often, from the skin's list", async () => {
+  const { SHOUT_MS } = await import("../src/view/overlay.ts");
+  const { pegs } = await import("../src/skins/pegs.ts");
+  const made = [];
+  globalThis.document = {
+    createElement() {
+      const el = { className: "", innerHTML: "", hidden: false, textContent: "", dataset: {}, offsetWidth: 40, offsetHeight: 20,
+        style: { transform: "", setProperty() {} }, classList: { toggle() {}, contains: () => false },
+        setAttribute() {}, getAttribute: () => null, firstElementChild: { textContent: "" }, lastElementChild: { textContent: "" } };
+      made.push(el);
+      return el;
+    },
+  };
+  const overlay = createOverlay({ append() {} });
+  const world = create(LEVELS, 0);
+  world.alert = { x: 200, y: 300, ids: [], held: 0 };
+  const view = { height: HEAD, screen: (x, h, y, out) => Object.assign(out, { x, y: y - h, on: x >= 0 }) };
+  const said = (now) => {
+    overlay.update(world, LEVELS[0], view, pegs, { full: "max!", noBed: "no beds!" }, null, 390, 700, now);
+    return made.find((el) => el.className === "burst").firstElementChild.textContent;
+  };
+  const heard = new Set(pegs.shouts.map((_, k) => said(k * SHOUT_MS + 1)));
+  assert.deepEqual([...heard].sort(), [...pegs.shouts].sort(), "every shout comes round");
+  assert.equal(said(10), said(SHOUT_MS - 10), "one shout holds for a moment");
+  assert.ok(pegs.shouts.includes("watch this!") && pegs.shouts.includes("pow!"));
+});

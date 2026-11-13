@@ -15,6 +15,8 @@ type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
 /** where a tag may go: above its pad, slid right or left past the warden, below, beside */
 const SPOTS = 6;
+/** how long each comic shout over a squabble stays up, in ms */
+export const SHOUT_MS = 900;
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
@@ -290,7 +292,10 @@ export function createOverlay(root: HTMLElement) {
           k++;
         }
       view.screen(k ? mx / k : al.x, view.height + 10, k ? my / k : al.y, pt);
-      label(burst, skin.squabble, () => (burst.el.firstElementChild!.textContent = skin.squabble));
+      // comic shouts, a new one every so often, like a cartoon fight
+      const shouts = skin.shouts?.length ? skin.shouts : [skin.squabble];
+      const said = shouts[Math.floor(now / SHOUT_MS) % shouts.length];
+      label(burst, said, () => (burst.el.firstElementChild!.textContent = said));
       move(burst, pt.x, pt.y);
       show(burst, pt.on);
       view.screen(al.x, 0, al.y, pt);

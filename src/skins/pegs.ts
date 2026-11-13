@@ -1,4 +1,4 @@
-// peg people: a capsule body, a round head with two dot eyes, arms with hands
+// peg people: a capsule body, a round blank head, arms with hands
 // and legs in the colour of their pants. grey shirt and jeans until intake, with
 // metal cuffs on the wrists; an orange jumpsuit after. the warden in blue with a
 // cap and a badge, each kind of helper its own colour and hat. every pose is
@@ -27,7 +27,6 @@ const ORANGE = hex("#ff8a3d");
 const BEANIE = hex("#e8672a");
 const CROSS = hex("#e9877a");
 const JEANS = hex("#4d6a9a");
-const EYE = hex("#2a2230");
 const METAL = hex("#c5ced8");
 const BADGE = hex("#ffcf33");
 const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
@@ -52,7 +51,8 @@ function pose(p: Pose, put: Put) {
   const a = (p.walk / STRIDE) * TAU;
   const walking = p.action === "walk";
   const swing = walking ? Math.sin(a) : 0;
-  const bob = walking ? Math.abs(Math.cos(a)) * 1.3 : 0;
+  // a squabble is a hop on the spot, cartoon style
+  const bob = walking ? Math.abs(Math.cos(a)) * 1.3 : p.action === "fight" ? Math.abs(Math.sin(p.t * 9)) * 3 : 0;
   const breathe = p.action === "sleep" ? Math.sin(p.t * 1.3) * 0.03 : walking ? 0 : Math.sin(p.t * 2.2) * 0.02;
   const jitter = p.action === "fight" ? Math.sin(p.t * 38) * 1.2 : 0;
   const sitting = p.action === "sit" || p.action === "eat";
@@ -72,12 +72,9 @@ function pose(p: Pose, put: Put) {
   // a badge on a guard's chest
   if (p.kind === "player" || p.kind === "escort")
     put("dot", jitter + 2 * s, top - 6 * s, BODY_R * s + Math.sin(lean) * BODY_H * s * 0.6, lean, 0, 0, 1.3 * s, 1.3 * s, 0.6 * s, BADGE);
-  // the head, a little forward with the lean, and two eyes on the front of it
+  // the head, a little forward with the lean. no face: she likes them blank
   const hy = top + HEAD_R * s * 0.8, hz = Math.sin(lean) * BODY_H * s * 0.9;
   put("head", jitter, hy, hz, 0, 0, 0, s, s, s, head);
-  const shut = p.action === "sleep" ? 0.2 : 1;
-  for (const side of [-1, 1])
-    put("dot", jitter + side * 1.7 * s, hy - 0.3 * s, hz + HEAD_R * s * 0.86, 0, 0, 0, 0.75 * s, 0.9 * s * shut, 0.5 * s, EYE);
 
   // arms from the shoulders
   const shoulder = top - 4 * s, sz = Math.sin(lean) * BODY_H * s * 0.7;
@@ -86,7 +83,8 @@ function pose(p: Pose, put: Put) {
     if (p.carry > 0) pitch = -1.35;
     else if (p.action === "eat") pitch = side > 0 ? -1.6 - Math.abs(Math.sin(p.t * 5)) * 0.8 : -0.9;
     else if (p.action === "clean") (pitch = -0.8), (yaw = Math.sin(p.t * 8) * 0.6);
-    else if (p.action === "fight") pitch = -2.5 + Math.sin(p.t * 20 + side) * 0.5;
+    // windmill punches, one arm then the other
+    else if (p.action === "fight") pitch = -1.7 + Math.sin(p.t * 14 + (side > 0 ? Math.PI : 0)) * 1.1;
     else if (p.action === "wash") (pitch = -2.9), (roll = side * (0.5 + Math.sin(p.t * 9) * 0.3));
     else if (p.action === "sleep") pitch = 0;
     else if (!walking) pitch = Math.sin(p.t * 1.6 + side) * 0.05;
@@ -132,7 +130,7 @@ export const model: Model = {
     limb: () => new CapsuleGeometry(2, 3, 4, 8).translate(0, -3.5, 0),
     // a unit cylinder, sized by each hat
     hat: () => new CylinderGeometry(1, 1, 1, 16),
-    // a unit ball, for eyes, hands, cuffs and badges
+    // a unit ball, for hands, cuffs and badges
     dot: () => new SphereGeometry(1, 10, 8),
   } satisfies Record<Part, unknown>,
   perCharacter: { body: 1, head: 1, limb: 4, hat: 3, dot: 7 },
@@ -193,6 +191,7 @@ export const pegs: Skin = {
   name: "peg people",
   noun: "inmates",
   squabble: "hey!",
+  shouts: ["hey!", "watch this!", "pow!", "take that!", "bonk!", "oof!"],
   palette: (d) => (d ? dark : light),
   model,
 };

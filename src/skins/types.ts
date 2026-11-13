@@ -78,6 +78,8 @@ export interface Skin {
   noun: string;
   /** what two of them shout when they squabble */
   squabble: string;
+  /** comic shouts that take turns over a squabble; without them it is just `squabble` */
+  shouts?: string[];
   palette(dark: boolean): Palette;
   model: Model;
 }
