@@ -172,7 +172,9 @@ export interface Agent {
   walk: number;
   look: number;
   tags: string[];
-  /** arrive, queue, ready, follow, enter, home, go, use, back, fight, leave; helpers: idle */
+  /** arrive, queue, ready, follow, enter, home, go, use, back, fight, stamp, leave; helpers: idle.
+   * stamp: set free and paid already, at the release desk (`station`, standing at place `seat`) for
+   * the papers, with `t` the seconds stood there */
   state: string;
   leader: number;
   house: string;

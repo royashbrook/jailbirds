@@ -48,6 +48,8 @@ const SOUNDS: Record<CueKind, (n: number, chain: number, fill: number) => Blip[]
   clean: () => [blip(0, "noise", 1500, 0.24, 0.2, 5200), ...run(["C7", "E7"], 0.07, 0.14, 0.09, 0.12)],
   // the big moments
   release: () => run(["C6", "G6"], 0.12, 0.5, 0.17),
+  // the rubber stamp coming down on the papers: a low thunk with a little slap of paper on top
+  stamp: () => [blip(0, "sine", 150, 0.14, 0.28, 55), blip(0, "noise", 2400, 0.04, 0.12, 900)],
   rank: () => [...run(["G5", "C6", "E6", "G6"], 0.09, 0.22, 0.16), ...run(["C5", "E5", "G5", "C6"], 0, 0.8, 0.09, 0.4)],
   level: () => [...run(["C5", "E5", "G5", "C6", "E6", "G6", "C7"], 0.08, 0.24, 0.15), ...run(["C5", "G5", "C6", "E6"], 0, 1.3, 0.09, 0.62)],
   fight: () => [0, 0.5].flatMap((at) => [blip(at, "triangle", hz("G4"), 0.15, 0.22), blip(at + 0.16, "triangle", hz("Eb4"), 0.24, 0.22)]),
