@@ -28,7 +28,11 @@ test("a release shows the stamp lift, come down on their papers with a red mark,
   const [done, ...rest] = world.agents.slice(1);
   const led = { ...done, state: "follow", leader: world.agents[0].id, house: "c0", slot: 0, served: 999, x: STAMP.x - 30, y: STAMP.y, path: [] };
   const save = { ...world, agents: [{ ...world.agents[0], ...STAMP }, led, ...rest] };
-  await page.addInitScript((raw) => localStorage.setItem("jailbirds:save", raw), JSON.stringify(save));
+  await page.addInitScript((raw) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", raw);
+  }, JSON.stringify(save));
   await page.reload();
   await untilSim(page, (s) => s.released === 1, 3, "the release");
   await untilSim(page, (s) => !s.agents.some((a) => a.id === led.id), 20, "them to walk out");

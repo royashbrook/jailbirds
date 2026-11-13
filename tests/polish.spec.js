@@ -54,7 +54,11 @@ async function reopen(page, world, change) {
   const save = { ...world, ...change, agents: [warden, ...(change.others ?? world.agents.slice(1))] };
   delete save.warden;
   delete save.others;
-  await page.addInitScript((raw) => localStorage.setItem("jailbirds:save", raw), JSON.stringify(save));
+  await page.addInitScript((raw) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", raw);
+  }, JSON.stringify(save));
   await page.reload();
 }
 const started = (page) => untilSim(page, (s) => s.steps > 5, 1, "the game to start");

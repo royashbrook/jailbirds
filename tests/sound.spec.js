@@ -228,7 +228,11 @@ test("the tune takes on its alarm while there is a squabble, and drops it once t
   const world = await state(page);
   // the same jail, saved with a squabble right where the warden stands
   const { x, y } = world.agents[0];
-  await page.addInitScript((save) => localStorage.setItem("jailbirds:save", save), JSON.stringify({ ...world, alert: { x, y, ids: [], held: 0 } }));
+  await page.addInitScript((save) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", save);
+  }, JSON.stringify({ ...world, alert: { x, y, ids: [], held: 0 } }));
   await page.reload();
   await untilSim(page, (s) => s.steps > world.steps + 2 && s.alert !== null, 1, "the squabble to be on");
   expect((await sound(page)).trouble).toBe(true);
@@ -242,7 +246,11 @@ test("the tune hurries while the skates are on", async ({ page }) => {
   expect((await sound(page)).pace).toBe(1);
   const world = await state(page);
   // the same jail, saved with a minute of skates still to run
-  await page.addInitScript((save) => localStorage.setItem("jailbirds:save", save), JSON.stringify({ ...world, boosted: 60 }));
+  await page.addInitScript((save) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", save);
+  }, JSON.stringify({ ...world, boosted: 60 }));
   await page.reload();
   await untilSim(page, (s) => s.steps > world.steps + 5 && s.boosted > 0, 1, "the skates to be on");
   expect((await sound(page)).pace).toBe(1.12);

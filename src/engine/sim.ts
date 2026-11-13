@@ -505,9 +505,8 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
       w.coins--;
       w.paid[pad.id] = (w.paid[pad.id] ?? 0) + 1;
     }
-    if (w.paid[pad.id] >= pad.cost) buy(w, levels, pad);
+    if (w.paid[pad.id] >= pad.cost) buy(w, l, pad);
   }
-  if (levels[w.level] !== l) return;
 
   fights(w, l);
 
@@ -711,8 +710,7 @@ function release(w: World, l: LevelDef, b: Agent, st: ReleaseDef) {
   addStar(w, l);
 }
 
-function buy(w: World, levels: LevelDef[], pad: PadDef) {
-  const l = levels[w.level];
+function buy(w: World, l: LevelDef, pad: PadDef) {
   w.bought.push(pad.id);
   delete w.clock.pad;
   const u = pad.unlock;
@@ -720,17 +718,9 @@ function buy(w: World, levels: LevelDef[], pad: PadDef) {
   if (u.line) w.lineMax = u.line;
   if (u.speed) w.speed = u.speed;
   if (u.helper) w.agents.push(agent(w.nextId++, u.helper, l.helperHome, 0, l));
-  if (u.level && levels[w.level + 1]) {
-    // the safe and whatever a collector was carrying to it move on to the new place, once; the rest starts fresh
-    const kept = banked(w, l);
-    Object.assign(w, create(levels, w.level + 1, w.rng), { steps: w.steps });
-    const safe = all(levels[w.level], "safe")[0];
-    if (safe && kept) w.piles[safe.id] = kept;
-  }
+  // `level` changes nothing here: the pad being in `bought` is what the screen reads to open the
+  // next level. this world, its money and everyone in it stay just as they are
 }
-/** coins in the safe and in collectors' hands */
-const banked = (w: World, l: LevelDef) =>
-  all(l, "safe").reduce((n, s) => n + (w.piles[s.id] ?? 0), 0) + w.agents.reduce((n, a) => n + a.cash, 0);
 
 /** a collector's pile: the fuller of the desks' piles, once it holds enough to be worth the walk */
 function collectFrom(w: World, l: LevelDef) {

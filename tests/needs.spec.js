@@ -7,7 +7,11 @@ const HALL = { x: 330, y: 540 };
 
 async function reopen(page, world, warden, others) {
   const save = { ...world, coins: 0, agents: [{ ...world.agents[0], ...warden }, ...others] };
-  await page.addInitScript((raw) => localStorage.setItem("jailbirds:save", raw), JSON.stringify(save));
+  await page.addInitScript((raw) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", raw);
+  }, JSON.stringify(save));
   await page.reload();
 }
 const shown = (page) =>

@@ -9,6 +9,16 @@ export function readSlot(key: string): string | null {
   }
 }
 
+/** like readSlot, but a store that would not answer says so: undefined when the read threw, null
+ * only when there is nothing there. the map must not take "would not answer" for "empty" */
+export function tryReadSlot(key: string): string | null | undefined {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return undefined
+  }
+}
+
 export function writeSlot(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value)

@@ -352,5 +352,11 @@ export function createOverlay(root: HTMLElement) {
     show(stick, !!thumb);
   }
 
-  return { update, gain, ring, shown: () => ({ ...tally }) };
+  /** another world from here on: what was floating up off the last one goes, the count of all shown stays */
+  function reset() {
+    for (const p of pops) p.live = false;
+    for (const r of rings) r.live = false;
+  }
+
+  return { update, gain, ring, reset, shown: () => ({ ...tally }) };
 }

@@ -6,6 +6,7 @@ import {
 } from "../src/engine/sim.ts";
 import { roll } from "../src/engine/rng.ts";
 import { LEVELS } from "../src/content/jail.ts";
+import { worldOf } from "../src/lib/map.ts";
 import { actionOf, dirtStage, poseMood } from "../src/view/view.ts";
 import { model } from "../src/skins/pegs.ts";
 
@@ -683,7 +684,7 @@ test("on screen: only ok sleeps, upset looks as red as cross, and the toilet is 
   assert.equal(actionOf(w, L, player(w)), "clean");
 });
 
-test("a new jail starts with clean toilets and nobody restless", () => {
+test("a new jail starts with clean toilets and nobody restless, and the old one keeps its own", () => {
   const { w } = settle();
   dirt(w, 0, 3, 0.1, 2);
   w.coins = 500;
@@ -691,7 +692,13 @@ test("a new jail starts with clean toilets and nobody restless", () => {
   const next = L.pads.find((p) => p.id === "next");
   stand(w, next.at);
   wait(w, 2);
-  assert.equal(w.level, 1);
-  assert.deepEqual(w.dirt, {});
-  assert.ok(w.agents.every((a) => a.unrest === 0));
+  // the pad opens jail 2 on the map; this jail, dirt and all, carries on
+  assert.ok(w.bought.includes("next"));
+  assert.equal(w.level, 0);
+  assert.ok(w.dirt[key(0)].level >= 3, "the dirt is still here");
+  // jail 2, the first time she goes, as the map makes it
+  const fresh = worldOf(LEVELS, "jail2", undefined, 1);
+  assert.equal(fresh.level, 1);
+  assert.deepEqual(fresh.dirt, {});
+  assert.ok(fresh.agents.every((a) => a.unrest === 0));
 });

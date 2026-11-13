@@ -587,15 +587,21 @@ test("idle helpers stand apart around their spot, not on top of each other", () 
       assert.ok(Math.hypot(guards[i].x - guards[j].x, guards[i].y - guards[j].y) >= 12, `guards ${i} and ${j} apart`);
 });
 
-test("level 6 and the next jail pad moves on to jail 2", () => {
+test("level 6 and the next jail pad is paid once, and the jail carries on as it was", () => {
   const { w } = settle();
   w.coins = 500;
   w.rank = 6;
+  const people = population(w);
   go(w, pad("next").at);
+  until(w, () => w.bought.includes("next"), 5, "the next jail pad bought");
+  const paid = w.coins;
   wait(w, 2);
-  assert.equal(w.level, 1);
-  assert.equal(population(w), 0);
-  assert.equal(w.agents.length, 1);
+  // opening jail 2 is the map's to do (src/lib/map.ts): the world never moves itself on
+  assert.equal(w.level, 0);
+  assert.ok(w.bought.includes("next"));
+  assert.equal(w.paid.next, pad("next").cost);
+  assert.ok(population(w) >= people, "nobody sent away");
+  assert.ok(w.coins >= paid, "and standing there takes no more");
   assert.ok(LEVELS[1].pads.every((p) => p.unlock.level !== true), "jail 2 is the last for now");
 });
 

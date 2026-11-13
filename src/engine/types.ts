@@ -109,8 +109,9 @@ export interface Unlock {
   line?: number;
   speed?: number;
   helper?: HelperKind;
-  /** move on to the next level */
-  level?: true;
+  /** the id of the level this opens, for the screen to offer. named, never "the next one along", so
+   * a change in the order of levels never moves it. the world that bought it carries on as it is */
+  level?: string;
 }
 export interface PadDef {
   id: string;
