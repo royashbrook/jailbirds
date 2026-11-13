@@ -17,7 +17,11 @@ async function oneToFree(page, stars, off = 0) {
   const at = { x: STAMP.x - off, y: STAMP.y };
   const led = { ...done, state: "follow", leader: world.agents[0].id, house: "c0", slot: 0, served: 999, x: at.x, y: at.y - 16, path: [] };
   const save = { ...world, coins: 0, stars, agents: [{ ...world.agents[0], ...at }, led, ...rest] };
-  await page.addInitScript((raw) => localStorage.setItem("jailbirds:save", raw), JSON.stringify(save));
+  await page.addInitScript((raw) => {
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", raw);
+  }, JSON.stringify(save));
   await page.reload();
   return world;
 }

@@ -285,7 +285,7 @@ a {
 }
 .nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
   max-width: 480px;
@@ -559,6 +559,61 @@ a {
 .row {
   display: flex;
   gap: 10px;
+}
+/* the map: one line a jail, its name and what she can do there */
+.jails {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 56px;
+  padding: 4px 6px 4px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-sunk);
+}
+.jail-name {
+  font-weight: 800;
+  font-size: 18px;
+}
+.jail-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+.jail.here {
+  outline: 3px solid var(--accent);
+}
+.jail.here .jail-note {
+  color: var(--ink);
+}
+.jail.later {
+  opacity: 0.5;
+}
+.jail .go {
+  background: var(--accent);
+  color: var(--ink-on-accent);
+  min-width: 72px;
+}
+.jail .lock {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .row > button {
   flex: 1;

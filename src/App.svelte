@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { capacity, create, DT, followers, freeBeds, hint, player, rankNeed, restore, step } from "./engine/sim.ts";
+  import { capacity, DT, followers, freeBeds, hint, player, rankNeed, step } from "./engine/sim.ts";
   import { cues, gains, snap } from "./engine/cues.ts";
   import type { Stick, World } from "./engine/types.ts";
-  import { LEVELS, PICKED, WORDS, hintText } from "./content/jail.ts";
+  import { LEVELS, MAP, PICKED, WORDS, hintText } from "./content/jail.ts";
   import { SCORE } from "./content/sound.ts";
   import { skinById } from "./skins/index.ts";
   import { createView, remember, type Past } from "./view/view.ts";
   import { createOverlay, type Thumb } from "./view/overlay.ts";
   import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraDrag, cameraPinch, cameraSettings, cameraStick, cameraWheel, type CameraSettings } from "./view/camera.ts";
   import { readJson, readSlot, writeJson, writeSlot } from "./lib/storage.ts";
+  import { load, rows, save as saveMap, startOver, travel, unlockNext, type Atlas, type Row } from "./lib/map.ts";
   import { createSound } from "./lib/sound.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
@@ -18,10 +19,13 @@
 
   const ETHOS =
     "no ads, no lives, no timers, nothing to buy, no accounts, no cookies, nothing sold or shared.";
-  // the whole jail is one saved record: a blocked store just means "not saving"
-  const SAVE = "jailbirds:save";
+  // every jail on the map is one saved record (lib/map.ts): a blocked store just means "not saving"
+  const store = { read: readSlot, write: writeSlot };
   const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
-  let world: World = restore(readSlot(SAVE), LEVELS) ?? create(LEVELS, 0, freshSeed());
+  const opened = load(store, LEVELS, freshSeed());
+  let atlas: Atlas = opened.atlas;
+  // the open jail's world, the one played and drawn. always the same object as atlas.world
+  let world: World = atlas.world;
   const level = () => LEVELS[world.level];
   // the look: one skin for now (peg people); the view draws whatever the skin describes
   const skin = skinById(null);
@@ -40,13 +44,14 @@
   }
   function closeSheet() {
     if (sheet === "camera") saveCamera();
-    // a level up is shown one at a time: ok on one brings up the next, if there is one
-    if (sheet === "level") {
-      levelUps = levelUps.slice(1);
-      if (levelUps.length) {
-        if (dialog && !dialog.open) dialog.showModal();
-        return;
-      }
+    if (sheet === "level") levelUps = levelUps.slice(1);
+    if (sheet === "unlocked") news = "";
+    // what waits its turn comes up next: level ups one at a time, then a jail just unlocked
+    const waiting = levelUps.length ? "level" : news ? "unlocked" : "";
+    if (waiting) {
+      sheet = waiting;
+      if (dialog && !dialog.open) dialog.showModal();
+      return;
     }
     sheet = "";
     grabs.clear();
@@ -117,7 +122,8 @@
     cheerTimer = setTimeout(() => (cheer = ""), 2400);
   }
   // `paid` is what the sim has paid out for level ups so far, so a new one reads what it paid
-  let seen = { rank: world.rank, settled: world.settled, level: world.level, picked: world.picked.n, paid: world.took.rank };
+  const seenOf = (w: World) => ({ rank: w.rank, settled: w.settled, picked: w.picked.n, paid: w.took.rank });
+  let seen = seenOf(world);
   // music and sounds: both on unless someone turned them off, each with its own
   // switch. nothing is heard before the first touch, the browser sees to that
   const SOUND = "jailbirds:sound";
@@ -140,8 +146,13 @@
   }
   let place = $state(level().name);
   let tip = $state("");
-  let saved = $state(true);
-  let sheet = $state<"" | "about" | "camera" | "ios" | "restart" | "level">("");
+  let saved = $state(opened.saved);
+  let sheet = $state<"" | "about" | "camera" | "ios" | "restart" | "level" | "map" | "unlocked">("");
+  // the map as listed when it was opened, a jail just unlocked waiting to be told, and why a trip did not go
+  let jails = $state<Row[]>([]);
+  let news = $state("");
+  let travelNote = $state("");
+  const placeName = (id: string) => MAP.find((p) => p.id === id)?.name ?? id;
   // a level up gets its own window: the new level, the money it paid, and a big ok. it is a
   // sheet like any other, so the jail holds still behind it. two at once wait their turn
   let levelUps = $state<{ rank: number; reward: number }[]>([]);
@@ -178,6 +189,7 @@
     warden: () => (view ? view.where(world, { x: 0, y: 0, on: false }) : null),
     sound: () => sound.report(),
     pops: () => overlay?.shown() ?? null,
+    map: () => ({ active: atlas.active, unlocked: [...atlas.unlocked] }),
   };
 
   function sync() {
@@ -210,29 +222,76 @@
     sound.pace(world.boosted > 0 ? 1.12 : 1);
     // and takes on a beat that will not settle while there is a squabble
     sound.trouble(world.alert !== null);
-    if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
-    else if (world.rank > seen.rank) levelUp(seen.rank, world.rank, l.rankReward, world.took.rank - seen.paid);
+    if (world.rank > seen.rank) levelUp(seen.rank, world.rank, l.rankReward, world.took.rank - seen.paid);
     else if (world.settled > seen.settled) shout("all calm again! +money");
     // a surprise picked up says what it was
     else if (world.picked.n > seen.picked) shout(PICKED[world.picked.kind]);
-    seen = { rank: world.rank, settled: world.settled, level: world.level, picked: world.picked.n, paid: world.took.rank };
+    seen = seenOf(world);
+    // the next jail pad paid for: the jail it opens goes on the map, saved now, and she is told once
+    // any level up has had its turn. she stays here until she goes
+    const unlocked = unlockNext(atlas, LEVELS);
+    if (unlocked) {
+      news = unlocked;
+      travelNote = "";
+      save();
+      if (!sheet) sheet = "unlocked";
+    }
     place = l.name;
     tip = hintText(hint(world, l), skin.noun);
   }
   sync();
   function save() {
-    saved = writeSlot(SAVE, JSON.stringify(world));
+    saved = saveMap(store, atlas);
   }
 
-  function restart() {
-    world = create(LEVELS, 0, freshSeed());
+  /** another world is in play now: nothing seen, heard, held or drawn of the last one carries over, so
+   * no stale cheer, coin or stamp comes from it. a level up still waiting is kept for its turn */
+  function switched() {
     past.clear();
     thumb = null;
+    pointer = null;
     keys.clear();
     tapped.clear();
-    save();
+    acc = 0;
+    view?.reset();
+    overlay?.reset();
+    clearTimeout(cheerTimer);
+    cheer = "";
     before = snap(world);
+    seen = seenOf(world);
     sync();
+  }
+
+  /** start over: only the jail she is in. the map, what is unlocked and the other jails stay */
+  function restart() {
+    startOver(atlas, LEVELS, freshSeed());
+    world = atlas.world;
+    save();
+    switched();
+  }
+
+  function openMap() {
+    jails = rows(atlas, MAP);
+    travelNote = "";
+    sheet = "map";
+  }
+  /** go to another jail. the one she leaves is saved first, with the trip, in one write; if that
+   * does not stick she stays, so nothing unsaved is ever left behind */
+  function go(id: string) {
+    const next = travel(store, atlas, LEVELS, id, freshSeed());
+    if (!next) {
+      saved = false;
+      travelNote = "can't go yet: this browser is not saving your jail";
+      return;
+    }
+    atlas = next;
+    world = next.world;
+    saved = true;
+    travelNote = "";
+    news = "";
+    switched();
+    shout(`welcome to ${level().name}!`);
+    sheet = levelUps.length ? "level" : "";
   }
 
   // input: a thumb stick wherever the finger goes down, or arrows and wasd
@@ -485,6 +544,7 @@
     <p class="tip" id="tip">{#if !saved}<span class="warn">this browser is not saving your jail</span>{:else}{tip}{/if}</p>
     <nav class="nav" aria-label="jailbirds">
       <button id="about" aria-label="menu and about" onclick={() => (sheet = "about")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>menu</button>
+      <button id="map" aria-label="map of jails" onclick={openMap}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z" /><path d="M9 4v14M15 6v14" /></svg>map</button>
       <button id="camera" aria-label="adjust camera" disabled={noGl} onclick={() => (sheet = "camera")}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l1-2h6l1 2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" /><circle cx="12" cy="12" r="4" /></svg>view</button>
     </nav>
   </footer>
@@ -522,6 +582,7 @@
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop money, and so do the desks.</p>
         <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
         <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
+        <p>pay the next jail price tag to open a new jail on the map. tap map to go between your jails: each one keeps going right where you left it.</p>
         <p class="ethos">{ETHOS}</p>
         <p class="version">version {__APP_VERSION__}</p>
         <div class="row">
@@ -537,9 +598,29 @@
           <span class="mark-tail"><span aria-hidden="true" class="mark-dot">·</span>
           <a href="https://github.com/sponsors/royashbrook" target="_blank" rel="noopener">sponsor me</a></span></p>
       {:else if sheet === "restart"}
-        <h2>start over?</h2>
-        <p>your jail, your {skin.noun} and your money all go away.</p>
+        <h2>start {place} over?</h2>
+        <p>this jail, your {skin.noun} and your money here all go away. the map and your other jails stay as they are.</p>
         <button id="confirm-restart" class="big" onclick={() => { sheet = ""; restart(); }}>start over</button>
+      {:else if sheet === "map"}
+        <h2>map</h2>
+        <ul class="jails" id="jails">
+          {#each jails as j (j.id)}
+            <li class="jail" class:here={j.state === "here"} class:later={j.state === "later"} data-jail={j.id} data-state={j.state}>
+              <span class="jail-name">{j.name}</span>
+              {#if j.state === "here"}<span class="jail-note">you are here</span>
+              {:else if j.state === "open"}<button class="go" onclick={() => go(j.id)}>go</button>
+              {:else if j.state === "locked"}<span class="jail-note"><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>locked</span>
+              {:else}<span class="jail-note">coming later</span>{/if}
+            </li>
+          {/each}
+        </ul>
+        {#if travelNote}<p class="warn" role="status">{travelNote}</p>{/if}
+      {:else if sheet === "unlocked"}
+        <h2 id="unlocked-title">new jail unlocked!</h2>
+        <p>{placeName(news)} is on the map now.</p>
+        {#if travelNote}<p class="warn" role="status">{travelNote}</p>{/if}
+        <button id="go-now" class="big" onclick={() => go(news)}>go now</button>
+        <button id="later" onclick={closeSheet}>later</button>
       {:else if sheet === "ios"}
         <h2>install jailbirds</h2>
         <p>in safari, tap the <b>share</b> button, then <b>add to home screen</b>.</p>
@@ -553,7 +634,7 @@
           <button id="level-ok" class="big" autofocus onclick={closeSheet}>ok</button>
         </div>
       {/if}
-      {#if sheet !== "camera" && sheet !== "level"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
+      {#if sheet !== "camera" && sheet !== "level" && sheet !== "unlocked"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
     </div>
   </dialog>
 {/if}

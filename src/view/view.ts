@@ -265,7 +265,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const stamp = makeStamp();
   dynamic.add(stamp.stamp, stamp.sheet);
   const stampNow: StampPose = { over: 0, lift: 0, sheet: false, mark: false };
-  const stampDrawn = stampLatch();
+  let stampDrawn = stampLatch();
   let stampLift = 0;
   // the rainbow behind a boosted warden: six coloured lines along the trail
   const RAINBOW = 24;
@@ -714,6 +714,17 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     where: (w: World, out: ScreenPoint) => screen(w.agents[0].x, 14 + lift(w), w.agents[0].y, out),
     height: skin.model.height,
     lift,
+    /** another world from here on (a trip on the map, a start over): forget what was seen of the last
+     * one, kept by ids that mean someone else now, so no coin flies and no stamp lands from it */
+    reset() {
+      headings.clear();
+      lastTook.clear();
+      prevFloor.clear();
+      nowFloor.clear();
+      lastFloor = -1;
+      fly.fill(0);
+      stampDrawn = stampLatch();
+    },
     info: () => ({
       calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },

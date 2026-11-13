@@ -19,7 +19,11 @@ async function open(page, save) {
     const next = sessionStorage.getItem("jb:next") ?? (sessionStorage.getItem("jb:went") ? null : first);
     sessionStorage.setItem("jb:went", "1");
     sessionStorage.removeItem("jb:next");
-    if (next) localStorage.setItem("jailbirds:save", next);
+    // an old save, on a device with no map yet: it is moved over as the page opens
+    if (next) {
+      localStorage.removeItem("jailbirds:map");
+      localStorage.setItem("jailbirds:save", next);
+    }
   }, JSON.stringify(save));
   await page.goto("/");
   await waitFrames(page, 6);
