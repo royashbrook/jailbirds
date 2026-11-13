@@ -21,11 +21,13 @@ function watch(page) {
 }
 
 test("the next jail pad opens desert rock: later, go there, come back, and a reload keeps it all", async ({ page }) => {
-  const errors = watch(page);
   const raw = oldSave();
   // seeded once, before the game opens, the way an old device has it
   await page.goto("/manifest.json");
   await page.evaluate((v) => localStorage.setItem("jailbirds:save", v), raw);
+  // watched from the game on: webkit shows the json with a style of its own, which the live
+  // site's content policy refuses, and that is the viewer's error, not the game's
+  const errors = watch(page);
   await page.goto("/");
 
   // paid once, she is told, and she is still in pine hill
