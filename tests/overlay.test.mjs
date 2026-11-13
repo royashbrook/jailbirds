@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create } from "../src/engine/sim.ts";
+import { create, HOLD } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
 import { createOverlay } from "../src/view/overlay.ts";
 
@@ -175,6 +175,55 @@ test("a fifth ring while four are up takes the place of the one up the longest",
   assert.deepEqual(p.up("ring").map((el) => el.style.transform), [at(500, 298)]);
   p.draw(2000);
   assert.deepEqual(p.up("ring"), []);
+});
+
+test("the hold: a ring over the one held fills with the sim's own hold, stays put through a pause, and goes when it ends", () => {
+  const p = page();
+  p.draw(1000);
+  assert.deepEqual(p.up("hold"), [], "no hold, no ring");
+  const b = { ...structuredClone(p.world.agents[0]), id: 7, kind: "agent", state: "ready", x: 200, y: 300 };
+  p.world.agents.push(b);
+  p.world.grab = { id: 7, t: HOLD / 2 };
+  const before = JSON.stringify(p.world);
+  p.draw(1016);
+  const [el] = p.up("hold");
+  assert.equal(el.style.transform, at(200, 300 - HEAD - 6), "over their head");
+  assert.equal(el.dataset.fill, "50");
+  assert.equal(el.getAttribute("aria-hidden"), "true");
+  // the screen only reads: nothing in the world moved on, and a long gap with the sim paused fills nothing
+  p.draw(9000);
+  assert.equal(el.dataset.fill, "50");
+  assert.equal(JSON.stringify(p.world), before);
+  p.world.grab.t = HOLD;
+  p.draw(9016);
+  assert.equal(el.dataset.fill, "100");
+  // a resident at home has a bubble there: the ring goes above it
+  b.state = "home";
+  p.draw(9032);
+  assert.ok(el.classList.contains("up") && !el.classList.contains("side"));
+  // near the top of the screen (a phone on its side) there is no room above: beside the bubble,
+  // and the whole ring stays on screen (its top is the anchor less 34px)
+  b.y = HEAD + 6 + 20;
+  p.draw(9040);
+  assert.ok(el.classList.contains("side") && !el.classList.contains("up"), "beside, not above");
+  const y = Number(el.style.transform.match(/, (-?\d+)px, 0\)/)[1]);
+  assert.ok(y - 34 >= 0, `ring top on screen, anchor ${y}`);
+  assert.ok(!el.classList.contains("left"), "right of the bubble when there is room");
+  // near the right edge too (the screen here is 390 wide): it goes on the bubble's left, all on screen
+  b.x = 370;
+  p.draw(9044);
+  assert.ok(el.classList.contains("side") && el.classList.contains("left"), "left of the bubble at the right edge");
+  const x = Number(el.style.transform.match(/translate3d\((-?\d+)px/)[1]);
+  assert.ok(x - 52 >= 0 && x - 52 + 30 <= 390, `ring across ${x - 52}..${x - 22} on a 390 screen`);
+  b.x = 200;
+  b.y = 300;
+  p.world.grab = null;
+  p.draw(9048);
+  assert.deepEqual(p.up("hold"), [], "gone the moment the hold ends");
+  // a hold on someone no longer there shows nothing
+  p.world.grab = { id: 99, t: 0.3 };
+  p.draw(9064);
+  assert.deepEqual(p.up("hold"), []);
 });
 
 test("a squabble's burst says a new comic shout every so often, from the skin's list", async () => {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { create, step, route, player, followers, boostChoices, boostMult, pickBoost, restore, DT } from "../src/engine/sim.ts";
+import { create, step, route, player, followers, boostChoices, boostMult, pickBoost, restore, catchUp, CATCH_MIN, DT } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
 // the three surprises on the floor: skates, a unicorn to ride, and a fairy who cleans
@@ -40,16 +40,26 @@ const until = (w, done, seconds, what, levels = LEVELS) => {
 const inmates = (w) => w.agents.filter((a) => a.kind === "agent");
 const count = (w, state) => inmates(w).filter((a) => a.state === state).length;
 
+/** to a cell's door from below, clear of the other doors: the player's line moves in at the
+ * first door with a free bed it passes, so the way there must not pass one */
+function toCell(w, id) {
+  const at = station(id).at;
+  go(w, { x: at.x, y: at.y + 46 });
+  go(w, at);
+}
 /** the first busload in cells 1 and 2, full up and at home */
 function settle(seed = 7) {
   const w = create(LEVELS, 0, seed);
   until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
   go(w, desk.at);
   until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  // standing still by them takes them one at a time
   go(w, desk.out[1]);
-  go(w, station("c0").at);
+  until(w, () => followers(w, player(w)).length === 2, 2, "two to join");
+  toCell(w, "c0");
   wait(w, 1);
   go(w, desk.out[2]);
+  until(w, () => followers(w, player(w)).length === 1, 1, "the third to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   const first = inmates(w).filter((a) => a.house);
@@ -149,14 +159,15 @@ test("a follower keeps up at the speed of what the leader rides", () => {
     const w = create(LEVELS, 0, 3), p = player(w);
     w.mountKind = kind;
     w.boosted = boosted;
-    // one in line, well behind: it closes the gap at full follow speed
+    // one in line, well behind: it closes the gap at its own catch-up, faster than the leader rides
     const b = { ...structuredClone(p), id: 99, kind: "agent", state: "follow", leader: p.id, t: 0, x: p.x - 150, needs: { food: 1, wash: 1, toilet: 1 } };
     w.agents.push(b);
     assert.deepEqual(followers(w, p).map((a) => a.id), [99]);
     const x = b.x;
     step(w, LEVELS, STILL);
     const mult = boosted > 0 ? K[kind].mult : 1;
-    assert.ok(Math.abs(b.x - x - w.speed * mult * 1.15 * DT) < 1e-6, `${kind} ${boosted}: moved ${b.x - x}`);
+    assert.ok(Math.abs(b.x - x - w.speed * mult * catchUp(99, w.steps) * DT) < 1e-6, `${kind} ${boosted}: moved ${b.x - x}`);
+    assert.ok(b.x - x >= w.speed * mult * CATCH_MIN * DT - 1e-9, `${kind} ${boosted}: faster than the leader rides`);
   }
 });
 

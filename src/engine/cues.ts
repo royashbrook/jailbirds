@@ -109,9 +109,11 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
     add("clean", before.messes.filter((m) => !left.has(m) && near(m, me, CLEAN_R)).length);
   }
 
-  // the big moments. a rank up speaks for the release that earned it
-  if (w.rank > before.rank) add("rank", w.rank);
-  else add("release", w.released - before.released);
+  // the big moments. a rank up speaks for the release that earned it; any others set free
+  // in the same moment (the player sees off everyone done at once) still get their bell
+  const rankUp = w.rank > before.rank;
+  add("release", w.released - before.released - (rankUp ? 1 : 0));
+  if (rankUp) add("rank", w.rank);
   if (w.alert && !before.alert) add("fight", 1);
   add("calm", w.settled - before.settled);
   // a boost picked up, named by what the sim says it turned out to be at the moment

@@ -46,6 +46,13 @@ const inmates = (w) => w.agents.filter((a) => a.kind === "agent");
 const count = (w, state) => inmates(w).filter((a) => a.state === state).length;
 const say = (w) => hintText(hint(w, L), "birds");
 const line = (w) => followers(w, player(w));
+/** to a cell's door from below, clear of the other doors: the player's line moves in at the
+ * first door with a free bed it passes, so the way there must not pass one */
+function toCell(w, id) {
+  const at = station(id).at;
+  go(w, { x: at.x, y: at.y + 46 });
+  go(w, at);
+}
 
 /** check in the first busload, lead them to cells 1 and 2 */
 function settle(seed = 7) {
@@ -53,11 +60,13 @@ function settle(seed = 7) {
   until(w, () => count(w, "queue") === 3 && inmates(w).every((a) => a.state !== "arrive"), 20, "the first bus to queue up");
   go(w, desk.at);
   until(w, () => count(w, "ready") === 3, 5, "three check-ins");
+  // standing still by them takes them one at a time
   go(w, desk.out[1]);
-  assert.equal(line(w).length, 2);
-  go(w, station("c0").at);
+  until(w, () => line(w).length === 2, 2, "two to join");
+  toCell(w, "c0");
   wait(w, 1);
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "the third to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   const first = inmates(w).filter((a) => a.house);
@@ -78,7 +87,8 @@ function feed(w, cells) {
   until(w, () => player(w).carry === 0, 3, "the trays to go down");
   for (const c of cells) {
     go(w, station(c).at);
-    wait(w, 0.3);
+    // a hold for each one waiting there
+    wait(w, 1.3);
     go(w, station("table1").at);
     wait(w, 0.5);
   }
@@ -101,14 +111,19 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   assert.equal(w.piles.desk, 3 * desk.pay, "each check-in pays into the desk's pile");
   assert.equal(say(w), "walk up to the checked-in birds to lead them");
 
-  // the line holds two at the start; the third waits
+  // the line holds two at the start; the third waits. walking up takes nobody: standing
+  // still by them takes them, one after the other
   go(w, desk.out[1]);
+  assert.equal(line(w).length, 0, "nobody joins at a walk");
+  until(w, () => line(w).length === 2, 2, "two to join");
+  wait(w, 1);
   assert.equal(line(w).length, 2);
   assert.equal(w.lineMax, 2);
-  go(w, station("c0").at);
+  toCell(w, "c0");
   wait(w, 1);
   assert.equal(line(w).length, 0, "two beds in a cell, two in");
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "the third to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   go(w, HALL);
@@ -127,6 +142,9 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   wait(w, 5);
   assert.ok(q.every((b) => b.state === "home" || b.state === "follow"), "nobody walks to the canteen alone");
   assert.equal(w.floor.length, floor);
+  // the next bus waits at the desk, so the hint names the hungry once one of them is in line
+  go(w, station("c0").at);
+  until(w, () => line(w).length === 1, 1, "a hungry one to join");
   assert.equal(say(w), "hungry birds! walk them to the canteen");
 
   // trays out, then lead them in: they sit and eat and walk home by themselves
@@ -143,16 +161,18 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   go(w, station("c1").at);
   const banked = w.coins;
   assert.ok(banked >= 3 * desk.pay + floor, `coins ${banked}`);
-  // a shower bubble: lead them to the showers, they wash and walk home
+  // a shower bubble: lead them to the showers, they wash and walk home. standing still for each
+  // pickup takes a while, so give them their time back: someone done goes to release, not the showers
+  for (const b of q) b.served = 0;
   go(w, HALL);
   until(w, () => q.some((b) => b.state === "home" && wants(L, b, true) === "wash" && b.rest > 2), 90, "someone wanting a shower");
   const smelly = q.find((b) => wants(L, b, true) === "wash");
-  assert.equal(say(w), "smelly birds! walk them to the showers");
   go(w, station(smelly.house).at);
-  wait(w, 0.3);
-  // whoever wanted a shower on the way joined too, up to the line's size
+  wait(w, 1.3);
+  // whoever else waited at that door joined too, one hold each, up to the line's size
   const led = line(w).filter((b) => wants(L, b, true) === "wash");
   assert.ok(led.length > 0);
+  assert.equal(say(w), "smelly birds! walk them to the showers");
   // the wrong room does nothing: through the canteen, nobody who wants a shower sits down
   w.stock.table1 = 3;
   go(w, station("table1").at);
@@ -162,14 +182,19 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   wait(w, 0.5);
   assert.equal(led[0].station, "showers");
   until(w, () => led[0].needs.wash > 0.99, 10, "a shower");
-  // content again: coins
+  // content again: coins. the holds made this a longer day, long enough for the toilets to get
+  // messy and everyone to run low, so see to the rest of their needs as if it were done
+  for (const b of q) for (const n of L.needs) b.needs[n.id] = 1;
+  w.messes = [];
   until(w, () => w.floor.length >= 1, 30, "new coins on the floor");
   for (const c of new Set(w.floor.map((x) => x.house))) go(w, station(c).at);
   assert.ok(w.coins > banked, "more coins banked");
 
   // a price tag drinks its cost over about a second
-  const had = w.coins, cell3 = pad("cell3");
+  // counted once there: content residents keep dropping coins, and the way over may cross one
+  const cell3 = pad("cell3");
   go(w, cell3.at);
+  const had = w.coins;
   wait(w, 0.4);
   assert.ok(!w.bought.includes("cell3"), "not paid yet");
   wait(w, 1);
@@ -202,7 +227,7 @@ test("served their time: led to the release desk, a star, a pile, a level up wit
   wait(w, 0.1);
   assert.ok(first.every((b) => isDone(L, b)));
   go(w, station("c0").at);
-  assert.equal(line(w).length, 2);
+  until(w, () => line(w).length === 2, 2, "both to join");
   assert.equal(say(w), "lead them to the release desk to set them free");
   w.coins = 0; // nothing for a price tag on the way to drink
   go(w, station("stamp").at);
@@ -226,6 +251,7 @@ test("someone on the way to release stays in line through the canteen, even when
   for (const b of first) (b.served = L.serve), (b.needs[food] = 0.05);
   wait(w, 0.1);
   go(w, station("c0").at);
+  until(w, () => line(w).length === 2, 2, "both to join");
   const leaving = line(w);
   assert.equal(leaving.length, 2);
   assert.ok(leaving.every((b) => isDone(L, b) && wants(L, b, true) === food), "done, and hungry too");
@@ -333,9 +359,11 @@ test("a squabble raises a high alert; standing there settles it and pays", () =>
   go(w, desk.at);
   until(w, () => count(w, "ready") === 3, 5, "check-ins");
   go(w, desk.out[2]);
+  until(w, () => line(w).length === 1, 1, "one to join");
   go(w, station("c1").at);
   wait(w, 0.6);
   go(w, desk.out[0]);
+  until(w, () => line(w).length === 1, 1, "one more to join");
   go(w, station("c2").at);
   until(w, () => count(w, "home") >= 4, 15, "four at home");
   w.fightIn = 0;

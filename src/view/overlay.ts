@@ -1,9 +1,10 @@
 // the words and signs over the 3d jail, as plain html laid over the canvas:
 // need bubbles, price tags, "full!", "no beds!", the squabble burst, the arrow
 // to trouble at the screen's edge, the "+3" that floats up when coins or a star
-// come in, the ring where a pad was bought, and the thumb stick. every element is made
+// come in, the ring where a pad was bought, the ring that fills over someone the
+// warden stands still by, and the thumb stick. every element is made
 // once and reused; a frame only moves them and changes text that changed.
-import { followers, isDone, noBed, padVisible, SETTLE, wants } from "../engine/sim.ts";
+import { followers, HOLD, isDone, noBed, padVisible, SETTLE, wants } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, World } from "../engine/types.ts";
 import type { Skin } from "../skins/types.ts";
 import type { ScreenPoint } from "./view.ts";
@@ -19,6 +20,10 @@ const SPOTS = 6;
 export const SHOUT_MS = 900;
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
+/** a ring stacked over a need bubble reaches 70px up (.hold.up), plus a little room to spare */
+export const HOLD_UP_MIN = 76;
+/** how far right of its anchor a ring beside the bubble reaches (.hold.side: 22px over, 30px wide) */
+export const HOLD_SIDE_REACH = 52;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
 const PAD_HALF = 20;
 const GAP = 3;
@@ -51,6 +56,9 @@ export function createOverlay(root: HTMLElement) {
   const burst = make("burst", "<b></b>");
   const arrow = make("alert-arrow", "<i></i><b>!</b>");
   const stick = make("stick", "<i></i>");
+  // the hold: the sim says who and how far along, this only draws it
+  const hold = make("hold");
+  hold.el.setAttribute("aria-hidden", "true");
   // a "+3" is for the eyes: the coin count up top is what gets read out
   const decor = (s: Slot) => {
     s.el.setAttribute("aria-hidden", "true");
@@ -280,6 +288,29 @@ export function createOverlay(root: HTMLElement) {
       }
       show(r.slot, r.live && pt.on);
     }
+
+    // standing still by someone: a ring over their head fills as the sim's hold does, and is gone
+    // the moment it ends. it reads the sim and never times anything, so a pause holds it still
+    const g = w.grab, held = g ? w.agents.find((a) => a.id === g.id) : undefined;
+    if (g && held) {
+      view.screen(held.x, view.height + 6, held.y, pt);
+      const fill = String(Math.round(Math.min(1, g.t / HOLD) * 100));
+      // a resident at home has a need bubble there already: the ring sits above it, or
+      // beside it when above would run off the top of the screen
+      const home = held.state === "home";
+      const up = home && pt.y >= HOLD_UP_MIN, side = home && !up;
+      // beside goes to the right of the bubble, or to its left near the right edge
+      const left = side && pt.x + HOLD_SIDE_REACH > cssW;
+      move(hold, pt.x, Math.max(pt.y, TOP));
+      label(hold, `${fill}:${up}:${side}:${left}`, () => {
+        hold.el.style.setProperty("--fill", `${fill}%`);
+        hold.el.dataset.fill = fill;
+        hold.el.classList.toggle("up", up);
+        hold.el.classList.toggle("side", side);
+        hold.el.classList.toggle("left", left);
+      });
+    }
+    show(hold, !!(g && held) && pt.on);
 
     // trouble: a burst over the squabble, an arrow pointing to it from the edge
     const al = w.alert;

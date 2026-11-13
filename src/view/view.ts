@@ -12,8 +12,9 @@ import {
   Object3D, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, Vector3, WebGLRenderer, DynamicDrawUsage, Euler, Quaternion,
   type Material,
 } from "three";
+import { walls } from "../engine/geom.ts";
 import { isDone, isOpen, mood, padVisible } from "../engine/sim.ts";
-import type { Agent, AnyStation, Coin, LevelDef, World } from "../engine/types.ts";
+import type { Agent, AnyStation, Coin, LevelDef, Rect, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
 import { buildScene, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
@@ -33,6 +34,35 @@ export const remember = (w: World, into: Past): Past => {
 export function forget(w: World, kept: Map<number, unknown>) {
   if (kept.size <= w.agents.length) return;
   for (const id of kept.keys()) if (!w.agents.some((a) => a.id === id)) kept.delete(id);
+}
+
+/** how far a follower of the warden sways side to side as it goes, in world units: a waddle, not a step */
+export const SWAY = 1.2;
+/** the sim's body radius: within this of a wall the sway is gone */
+const BODY = 10;
+/** a follower's own feel, by id: where it starts in its idle and sway cycles, how fast they run, and how
+ * quickly it turns. steps of the golden ratio spread ids apart, so any two in a line are out of step */
+export function feel(id: number) {
+  const u = (id * 0.6180339887) % 1, v = (id * 0.7548776662) % 1;
+  return { phase: u * Math.PI * 2, rate: 0.85 + 0.3 * v, turn: 0.7 + 0.6 * u };
+}
+/** room from a point to the nearest wall piece */
+export function clearance(x: number, y: number, ws: Rect[]) {
+  let best = Infinity;
+  for (const r of ws) {
+    const dx = Math.max(r.x - x, 0, x - (r.x + r.w)), dy = Math.max(r.y - y, 0, y - (r.y + r.h));
+    best = Math.min(best, Math.hypot(dx, dy));
+  }
+  return best;
+}
+/** a follower's sideways sway at time `t`, as an offset across its heading. it fades out as a wall comes
+ * within a body's width, so a narrow door or a corner never draws anyone into the wall. drawing only:
+ * the sim never sees it */
+export function sway(id: number, t: number, x: number, y: number, heading: number, ws: Rect[]) {
+  const f = feel(id);
+  const room = Math.max(0, Math.min(1, (clearance(x, y, ws) - BODY) / 8));
+  const s = Math.sin(t * 2.4 * f.rate + f.phase) * SWAY * room;
+  return { x: Math.cos(heading) * s, y: -Math.sin(heading) * s };
 }
 
 const MAX_CHARS = 64;
@@ -68,6 +98,8 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   let pal: Palette = skin.palette(false);
   let built: Built | null = null;
   let builtLevel = "", builtBought = -1, builtPal: Palette | null = null;
+  // the walls as residents meet them, for the followers' sway; they change only when the scene is rebuilt
+  let wallsNow: Rect[] = [];
   const dynamic = new Group();
   scene.add(dynamic);
 
@@ -281,6 +313,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         built.dispose();
       }
       built = buildScene(l, w, pal);
+      wallsNow = walls(l, (r) => isOpen(w, r.locked), true);
       scene.add(built.group);
       builtLevel = l.id;
       builtBought = w.bought.length;
@@ -301,6 +334,9 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     for (const a of w.agents) {
       const p = past?.get(a.id);
       let x = p ? p.x + (a.x - p.x) * alpha : a.x, z = p ? p.y + (a.y - p.y) * alpha : a.y;
+      // the warden's line: each its own sway, idle and turn, so they do not move as one
+      const led = a.kind === "agent" && a.state === "follow" && a.leader === me.id;
+      const own = led ? feel(a.id) : null;
       const walk = p ? p.walk + (a.walk - p.walk) * alpha : a.walk;
       // on the unicorn the warden sits, up on her saddle
       const mounted = a.kind === "player" && onUnicorn;
@@ -312,7 +348,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         const want = Math.atan2(a.x - p.x, a.y - p.y);
         let d = want - heading;
         d = Math.atan2(Math.sin(d), Math.cos(d));
-        heading += d * Math.min(1, dt * 14);
+        heading += d * Math.min(1, dt * 14 * (own?.turn ?? 1));
       }
       if (action === "sleep") heading = Math.PI;
       if (action === "fight" && w.alert) {
@@ -329,12 +365,17 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         if (st?.kind === "sink") heading = st.seats[a.seat].at.y < st.prop.y ? 0 : Math.PI;
       }
       headings.set(a.id, heading);
+      if (own) {
+        const off = sway(a.id, t, x, z, heading, wallsNow);
+        x += off.x;
+        z += off.y;
+      }
       if (a.kind === "player") (meHeading = heading), (meWalk = walk);
 
       pose.kind = a.kind;
       pose.action = action;
       pose.walk = walk;
-      pose.t = t + a.id * 0.37;
+      pose.t = own ? t * own.rate + own.phase : t + a.id * 0.37;
       pose.look = a.look;
       pose.uniform = a.tags.includes("uniform");
       pose.carry = a.kind === "agent" ? 0 : a.carry;

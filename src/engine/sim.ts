@@ -21,6 +21,13 @@ export const FOLLOW_GAP = 18;
 export const HELPER_LINE = 2;
 export const HELPER_CARRY = 4;
 export const CLEAN_TIME = 0.4;
+/** how long the player stands still by someone before they join the line, in seconds.
+ * helpers still pick people up the moment they get there */
+export const HOLD = 0.6;
+/** how much faster than their leader the player's followers catch up: each a little
+ * different, by id and a slow swing over time, never down to the leader's own speed */
+export const CATCH_MIN = 1.1;
+export const CATCH_MAX = 1.3;
 const BODY = 10;
 const PAD_R = 24;
 /** how long to stand still on a pad before it starts taking coins, in seconds. walking
@@ -53,7 +60,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
     alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
-    boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" }, took: noneTaken(),
+    boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" }, took: noneTaken(), grab: null,
   };
 }
 const noneTaken = (): Took => ({ n: 0, floor: 0, rank: 0, piles: {} });
@@ -311,7 +318,14 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
     }
 
   arrivals(w, l);
-  for (const a of w.agents.filter(isActor)) act(w, l, a, live);
+  // a hold needs the stick let go and the player not moving at all
+  const still = len <= 0.05 && !p.moving;
+  for (const a of w.agents.filter(isActor)) act(w, l, a, live, still);
+  // a helper who took the one being held this same step ends the hold now, not a step late
+  if (w.grab) {
+    const b = w.agents.find((x) => x.id === w.grab!.id);
+    if (!b || b.state === "follow") w.grab = null;
+  }
 
   // only the player picks up coins, piles and boosts, pays pads and settles squabbles.
   // each pickup is written down here, where it happens, for the screen to read
@@ -382,12 +396,21 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
     const speed = a.kind === "player" ? w.speed * boostMult(w, l) : HELPER_SPEED;
     followers(w, a).forEach((b, i) => {
       const target = alongTrail(a, (i + 1) * FOLLOW_GAP);
-      if (!near(b, target, 1.5)) walkTo(b, target, speed * 1.15);
+      const k = a.kind === "player" ? catchUp(b.id, w.steps) : 1.15;
+      if (!near(b, target, 1.5)) walkTo(b, target, speed * k);
     });
   }
 
   residents(w, l);
   for (const k of Object.keys(w.clock)) if (!live.has(k)) delete w.clock[k];
+}
+
+/** how much faster than the player one of its followers walks to catch up: its own share by id,
+ * and a slow swing by step so the line stretches and bunches. always between CATCH_MIN and CATCH_MAX */
+export function catchUp(id: number, steps: number) {
+  const own = (id * 0.6180339887) % 1;
+  const swing = 0.5 + 0.5 * Math.sin(steps * DT * 1.7 + own * 6.283);
+  return CATCH_MIN + (CATCH_MAX - CATCH_MIN) * (0.6 * own + 0.4 * swing);
 }
 
 function alongTrail(a: Agent, d: number): Pt {
@@ -402,7 +425,7 @@ function alongTrail(a: Agent, d: number): Pt {
 }
 
 /** what an actor (the player or a helper) does by standing where it stands */
-function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
+function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean) {
   const line = followers(w, a);
   const leads = a.kind === "player" || a.kind === "escort";
   const cap = a.kind === "player" ? w.lineMax : HELPER_LINE;
@@ -415,12 +438,16 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
     line.push(b);
   };
 
-  // pick up whoever checked in, or residents waiting at their door to be led somewhere
+  // pick up whoever checked in, or residents waiting at their door to be led somewhere.
+  // a helper takes them all at once; the player stands still by them one at a time
   if (leads) {
-    for (const b of w.agents) if (b.state === "ready" && near(b, a, PICKUP_RADIUS)) join(b);
+    const can: Agent[] = [];
+    for (const b of w.agents) if (b.state === "ready" && near(b, a, PICKUP_RADIUS)) can.push(b);
     for (const h of all(l, "house"))
       if (isOpen(w, h.locked) && near(a, h.at, h.r))
-        for (const b of w.agents) if (b.house === h.id && waiting(l, b)) join(b);
+        for (const b of w.agents) if (b.house === h.id && waiting(l, b)) can.push(b);
+    if (a.kind === "player") hold(w, can, still && line.length < cap, join);
+    else for (const b of can) join(b);
   }
 
   for (const st of l.stations) {
@@ -437,17 +464,31 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
         w.piles[st.id] = (w.piles[st.id] ?? 0) + st.pay;
       }
     } else if (st.kind === "house" && leads && isOpen(w, st.locked) && near(a, st.at, st.r)) {
-      // newcomers move in while there is a bed; residents with nothing to do go back in
-      const taken = w.agents.filter((b) => b.house === st.id).map((b) => b.slot);
-      const slot = st.seats.findIndex((_, i) => !taken.includes(i));
-      const fresh = line.find((b) => !b.house && (!st.requires || b.tags.includes(st.requires)));
-      if (fresh && slot >= 0 && tick(w, key, 0.25, live)) {
-        fresh.house = st.id;
-        fresh.slot = slot;
-        fresh.state = "enter";
-        fresh.leader = -1;
-        fresh.served = 0;
-        fresh.path = route(w, l, fresh, st.seats[slot].at);
+      // newcomers move in while there is a bed; residents with nothing to do go back in.
+      // a helper hands them over one every quarter second, the player all that fit at once
+      const freeSlot = () => {
+        const taken = w.agents.filter((b) => b.house === st.id).map((b) => b.slot);
+        return st.seats.findIndex((_, i) => !taken.includes(i));
+      };
+      const isFresh = (b: Agent) => !b.house && (!st.requires || b.tags.includes(st.requires));
+      const moveIn = (b: Agent, slot: number) => {
+        b.house = st.id;
+        b.slot = slot;
+        b.state = "enter";
+        b.leader = -1;
+        b.served = 0;
+        b.path = route(w, l, b, st.seats[slot].at);
+      };
+      if (a.kind === "player") {
+        for (const b of line) {
+          const slot = freeSlot();
+          if (slot < 0) break;
+          if (b.state === "follow" && isFresh(b)) moveIn(b, slot);
+        }
+      } else {
+        const slot = freeSlot();
+        const fresh = line.find(isFresh);
+        if (fresh && slot >= 0 && tick(w, key, 0.25, live)) moveIn(fresh, slot);
       }
       for (const b of line) if (b.house === st.id && !isDone(l, b) && !wants(l, b, true)) goHome(w, l, b);
     } else if ((st.kind === "sink" || (st.kind === "facility" && st.zone)) && leads && inside(a, st.kind === "sink" ? st.zone : st.zone!)) {
@@ -459,8 +500,13 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
         if (seat >= 0) sendTo(w, l, b, st, seat);
       }
     } else if (st.kind === "release" && leads && near(a, st.at, st.r)) {
-      const done = line.find((b) => isDone(l, b));
-      if (done && tick(w, key, st.every, live)) release(w, l, done, st);
+      // a helper hands over one each `every` seconds; the player sees off everyone done at once
+      if (a.kind === "player") {
+        for (const b of line) if (b.state === "follow" && isDone(l, b)) release(w, l, b, st);
+      } else {
+        const done = line.find((b) => isDone(l, b));
+        if (done && tick(w, key, st.every, live)) release(w, l, done, st);
+      }
     }
     // carriers: fill up at a source, put down at a sink
     if (a.kind === "player" || a.kind === "carrier") {
@@ -483,6 +529,26 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>) {
       if (m.clean >= CLEAN_TIME) cleanUp(w, m);
     }
   }
+}
+
+/** the player's pickup: standing still by someone who may join fills a hold, and when it is full they
+ * join. one at a time, the lowest id first, and the same one until they join or the hold breaks:
+ * moving, a full line, or them no longer there to take ends it, and none of it goes to the next one */
+function hold(w: World, can: Agent[], ok: boolean, join: (b: Agent) => void) {
+  let b = w.grab ? can.find((x) => x.id === w.grab!.id) : undefined;
+  if (!ok || !b) w.grab = null;
+  if (!ok) return;
+  if (!b) {
+    b = can.reduce<Agent | undefined>((m, x) => (!m || x.id < m.id ? x : m), undefined);
+    if (!b) return;
+    w.grab = { id: b.id, t: 0 };
+  }
+  const g = w.grab!;
+  g.t += DT;
+  // a little slack so 36 steps of 1/60 make the 0.6, whatever the rounding
+  if (g.t < HOLD - 1e-9) return;
+  w.grab = null;
+  join(b);
 }
 
 function release(w: World, l: LevelDef, b: Agent, st: ReleaseDef) {
@@ -807,6 +873,8 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
     const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;
     back.picked = { n: typeof pk?.n === "number" && Number.isFinite(pk.n) && pk.n >= 0 ? pk.n : 0, kind: kind(pk?.kind) };
     back.took = tookFrom((w as Partial<Record<"took", unknown>>).took);
+    // a hold half done when the game was put away starts over: nobody joins off a stale timer
+    back.grab = null;
     // a collector's coins are put in the safe on the way back in, so a reload never loses or doubles them
     const safe = all(levels[w.level], "safe")[0];
     for (const a of back.agents) {

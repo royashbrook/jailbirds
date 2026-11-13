@@ -229,6 +229,10 @@ export interface World {
    * guesses from a pile going down (a collector empties piles too): how many pickups, coins off
    * the floor, coins for a rank, and coins off each pile by its station id */
   took: Took;
+  /** the player standing still by someone to lead them: who, and seconds held so far. it lives only
+   * while the player keeps still beside them; a reload or a new level starts with none */
+  grab: Grab | null;
 }
+export interface Grab { id: number; t: number }
 export interface Took { n: number; floor: number; rank: number; piles: Record<string, number> }
 export type Stick = { x: number; y: number };
