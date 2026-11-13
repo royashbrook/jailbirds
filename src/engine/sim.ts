@@ -8,7 +8,7 @@
 // drop coins. after their time is served they wait to be led to the release desk,
 // which pays and earns a star; stars raise the rank, and the rank opens price pads.
 import { roll } from "./rng.ts";
-import { collide, dist, inside, nav, near, route as navRoute, walls, type Nav } from "./geom.ts";
+import { collide, dist, inside, nav, near, route as navRoute, walls, WALL, type Nav } from "./geom.ts";
 import type {
   Agent, AgentKind, AnyStation, BoostKind, Fairy, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
 } from "./types.ts";
@@ -49,14 +49,41 @@ export const SETTLE = 2;
  * and how far into that the stamp comes down on them */
 export const STAMP_HOLD = 0.8;
 export const STAMP_AT = 0.4;
-/** how far apart people stand side by side at the release desk, and how many places there are */
+/** how far apart people stand while they wait at the release desk */
 const STAMP_GAP = 16;
-const STAMP_SPOTS = 4;
 /** where the stamp comes down on the release desk: three quarters along it */
 export const stampAt = (st: ReleaseDef): Pt => ({ x: st.prop.x + st.prop.w * 0.75, y: st.prop.y + st.prop.h / 2 });
-/** where someone set free stands for their papers: by the stamp, on the side of the desk the actor stands,
- * the next one along beside them */
-export const stampSpot = (st: ReleaseDef, place: number): Pt => ({ x: stampAt(st).x + (place % STAMP_SPOTS) * STAMP_GAP, y: st.at.y });
+/** the places to stand for the papers, nearest the stamp first: a grid STAMP_GAP apart over the room
+ * the desk is in, clear of its walls, out of the desk and off the actor's own spot. made once a desk */
+const spotsKept = new Map<string, Pt[]>();
+function stampSpots(l: LevelDef, st: ReleaseDef): Pt[] {
+  const key = `${l.id}:${st.id}`;
+  const kept = spotsKept.get(key);
+  if (kept) return kept;
+  const base = { x: stampAt(st).x, y: st.at.y };
+  const room = l.rooms.find((r) => inside(st.at, r.rect))?.rect;
+  const edge = WALL / 2 + BODY, p = st.prop;
+  const out: Pt[] = [];
+  for (let i = -16; i <= 16; i++)
+    for (let j = -16; j <= 16; j++) {
+      const s = { x: base.x + i * STAMP_GAP, y: base.y + j * STAMP_GAP };
+      if (room && (s.x < room.x + edge || s.x > room.x + room.w - edge || s.y < room.y + edge || s.y > room.y + room.h - edge)) continue;
+      if (!room && Math.abs(j) > 0) continue;
+      if (s.x > p.x - BODY && s.x < p.x + p.w + BODY && s.y > p.y - BODY && s.y < p.y + p.h + BODY) continue;
+      if (dist(s, st.at) < STAMP_GAP) continue;
+      out.push(s);
+    }
+  out.sort((a, b) => dist(a, base) - dist(b, base) || b.x - a.x || a.y - b.y);
+  if (!out.length) out.push(base);
+  spotsKept.set(key, out);
+  return out;
+}
+/** where someone set free stands for their papers: by the stamp on the side of the desk the actor
+ * stands, the next one along beside them, and so on out. everyone at the desk at once has their own */
+export const stampSpot = (l: LevelDef, st: ReleaseDef, place: number): Pt => {
+  const spots = stampSpots(l, st);
+  return spots[place % spots.length];
+};
 /** someone at the release desk whose papers have been stamped, or on the way out after */
 export const stamped = (a: Agent) => a.state === "leave" || (a.state === "stamp" && a.t >= STAMP_AT - 1e-9);
 
@@ -578,7 +605,7 @@ function release(w: World, l: LevelDef, b: Agent, st: ReleaseDef) {
   b.station = st.id;
   b.seat = place;
   b.t = 0;
-  b.path = route(w, l, b, stampSpot(st, place));
+  b.path = route(w, l, b, stampSpot(l, st, place));
   w.piles[st.id] = (w.piles[st.id] ?? 0) + st.pay;
   w.released++;
   addStar(w, l);

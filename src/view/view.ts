@@ -72,6 +72,8 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
  * does, sits there a moment, then goes back. written into `out`, so nothing is made per frame */
 export interface StampPose { over: number; lift: number; sheet: boolean; mark: boolean }
 export const STAMP_UP = 18;
+/** seconds the stamp stays pressed down on the papers after it lands */
+export const STAMP_PRESS = 0.12;
 export function stampPose(t: number, out: StampPose): StampPose {
   out.over = out.lift = 0;
   out.sheet = t >= 0;
@@ -85,22 +87,26 @@ export function stampPose(t: number, out: StampPose): StampPose {
     out.lift = k < 0.75 ? STAMP_UP * ease(k / 0.75) : STAMP_UP * (1 - ((k - 0.75) / 0.25) ** 2);
   } else {
     // a moment pressed down, then a little hop back to the pad
-    const k = Math.min(1, Math.max(0, (t - STAMP_AT - 0.12) / (STAMP_HOLD - STAMP_AT - 0.12)));
+    const k = Math.min(1, Math.max(0, (t - STAMP_AT - STAMP_PRESS) / (STAMP_HOLD - STAMP_AT - STAMP_PRESS)));
     out.over = 1 - ease(k);
     out.lift = Math.sin(k * Math.PI) * 8;
   }
   return out;
 }
-/** whose stamp is shown when more than one stands at the desk: the next one due to come down, or
- * when all are stamped, the one stamped last. -1 for nobody standing there */
+/** whose stamp is shown when more than one stands at the desk. a stamp just come down holds the
+ * picture for its press, so every thunk is seen landing on its own marked papers; then the next one
+ * due to come down; when all are stamped, the one stamped last. -1 for nobody standing there */
 export function stampTime(w: World, st: string) {
-  let next = -1, last = Infinity;
+  let pressed = Infinity, next = -1, last = Infinity;
   for (const a of w.agents) {
     if (a.state !== "stamp" || a.station !== st || a.path.length) continue;
     if (!stamped(a)) next = Math.max(next, a.t);
-    else last = Math.min(last, a.t);
+    else {
+      last = Math.min(last, a.t);
+      if (a.t < STAMP_AT + STAMP_PRESS) pressed = Math.min(pressed, a.t);
+    }
   }
-  return next >= 0 ? next : last < Infinity ? last : -1;
+  return pressed < Infinity ? pressed : next >= 0 ? next : last < Infinity ? last : -1;
 }
 
 const MAX_CHARS = 64;

@@ -76,7 +76,7 @@ test("set free once at the desk, then up to the stamp, stood there for the stamp
   assert.equal(b.state, "stamp");
   assert.equal(b.leader, -1);
   assert.equal(b.house, "", "their bed is free now");
-  const spot = stampSpot(desk, b.seat);
+  const spot = stampSpot(L, desk, b.seat);
   assert.equal(spot.y, desk.at.y, "in front of the desk, where the warden stands");
   assert.ok(dist(spot, { x: stampAt(desk).x, y: desk.at.y }) < 1, "the first right by the stamp");
   assert.ok(dist(b, spot) > 10, "and they have a little way to walk to it");
@@ -260,16 +260,87 @@ test("the stamp drawn: on its pad, up and over, down just as the sim stamps, the
   const end = at(STAMP_HOLD);
   assert.ok(end.over === 0 && Math.abs(end.lift) < 1e-9 && end.mark, "back on the pad as they go");
 
-  // whose stamp: the next one due to come down, else the last one stamped, else nobody
+  // whose stamp: one just come down and still pressed, else the next one due to come down, else
+  // the last one stamped, else nobody
   const w = { agents: [
     { state: "stamp", station: "stamp", path: [], t: 0.1 },
     { state: "stamp", station: "stamp", path: [], t: 0.3 },
     { state: "stamp", station: "stamp", path: [{ x: 0, y: 0 }], t: 0 },
+    { state: "stamp", station: "stamp", path: [], t: 0.7 },
     { state: "stamp", station: "stamp", path: [], t: 0.6 },
-    { state: "stamp", station: "stamp", path: [], t: 0.5 },
+    { state: "stamp", station: "stamp", path: [], t: STAMP_AT + 0.05 },
   ] };
-  assert.equal(stampTime(w, "stamp"), 0.3);
-  assert.equal(stampTime({ agents: w.agents.slice(2) }, "stamp"), 0.5);
+  assert.equal(stampTime(w, "stamp"), STAMP_AT + 0.05, "a landing holds the picture for its press");
+  assert.equal(stampTime({ agents: w.agents.slice(0, 5) }, "stamp"), 0.3, "then the next one due");
+  assert.equal(stampTime({ agents: w.agents.slice(2, 5) }, "stamp"), 0.6, "then the last one stamped");
   assert.equal(stampTime({ agents: w.agents.slice(2, 3) }, "stamp"), -1, "still walking up is nobody there yet");
   assert.equal(stampTime(w, "elsewhere"), -1);
+});
+
+test("two who reach the desk close together: every thunk lands with the drawn stamp down on marked papers", () => {
+  // the second one stands at the desk before the first one's stamp has come down. whatever the gap,
+  // the stamp drawn at each thunk is the one coming down, never the next one still going up
+  let overlapped = 0;
+  for (const behind of [[722, 740], [722, 730], [710, 760], [740, 722], [722, 790]]) {
+    const w = create(LEVELS, 0, 7);
+    w.ride.t = w.fightIn = w.boost.t = 9999;
+    const p = player(w);
+    Object.assign(p, { x: desk.at.x, y: desk.at.y });
+    const two = behind.map((y, k) => Object.assign(done(w, p, k), { x: desk.at.x, y }));
+    const e = ear(w);
+    const arrived = new Map();
+    for (let i = 0; i < 60 * 10 && two.some((b) => w.agents.includes(b)); i++) {
+      const heard = e.heard.length;
+      e.step();
+      for (const b of two) if (!arrived.has(b.id) && b.state === "stamp" && !b.path.length) arrived.set(b.id, w.steps);
+      const now = thunks(e.heard.slice(heard));
+      if (!now.length) continue;
+      const pose = { ...stampPose(stampTime(w, desk.id), { over: 0, lift: 0, sheet: false, mark: false }) };
+      assert.ok(pose.over === 1 && Math.abs(pose.lift) < 1e-9 && pose.mark, `${behind}: step ${w.steps}, the thunk drawn as ${JSON.stringify(pose)}`);
+    }
+    assert.equal(sum(thunks(e.heard)), 2, `${behind}: two thunks`);
+    const [a, b] = [...arrived.values()];
+    if (Math.abs(a - b) > 0 && Math.abs(a - b) < STAMP_AT / DT) overlapped++;
+  }
+  assert.ok(overlapped >= 2, `the gaps really are shorter than the stamp's way down (${overlapped})`);
+});
+
+test("a full line and every guard at the desk at once: each stands in a place of their own and holds there", () => {
+  const w = create(LEVELS, 0, 7);
+  w.ride.t = w.fightIn = w.boost.t = 9999;
+  w.rank = 6;
+  w.bought.push("line1", "line2", "line3", "cell3", "guard", "guard2", "guard3");
+  w.lineMax = 5;
+  const p = player(w);
+  Object.assign(p, { x: desk.at.x, y: desk.at.y });
+  const freed = [];
+  [{ x: 570, y: 704 }, { x: 580, y: 720 }, { x: 590, y: 740 }, { x: 610, y: 760 }, { x: 600, y: 740 }].forEach((at, k) => freed.push(Object.assign(done(w, p, k), at)));
+  for (let g = 0; g < 3; g++) {
+    const guard = { ...structuredClone(p), id: w.nextId++, kind: "escort", state: "idle", x: desk.at.x - 10 + g * 10, y: desk.at.y, trail: [], path: [] };
+    w.agents.push(guard);
+    for (let k = 0; k < 2; k++) freed.push(done(w, guard, k));
+  }
+  const room = L.rooms.find((r) => r.id === "release").rect;
+  const held = new Map();
+  let most = 0;
+  for (let i = 0; i < 60 * 30 && freed.some((b) => w.agents.includes(b)); i++) {
+    step(w, LEVELS, STILL);
+    const going = w.agents.filter((a) => a.state === "stamp");
+    most = Math.max(most, going.length);
+    // where each is standing, or headed to stand
+    const spots = going.map((a) => (a.path.length ? a.path[a.path.length - 1] : { x: a.x, y: a.y }));
+    for (let x = 0; x < spots.length; x++)
+      for (let y = x + 1; y < spots.length; y++)
+        assert.ok(dist(spots[x], spots[y]) >= 12, `step ${w.steps}: ${going[x].id} and ${going[y].id} both at ${JSON.stringify(spots[x])}`);
+    for (const s of spots) {
+      assert.ok(s.x > room.x + 10 && s.x < room.x + room.w - 10 && s.y > room.y + 10 && s.y < room.y + room.h - 10, `inside the release room: ${JSON.stringify(s)}`);
+      const pr = desk.prop;
+      assert.ok(!(s.x > pr.x - 10 && s.x < pr.x + pr.w + 10 && s.y > pr.y - 10 && s.y < pr.y + pr.h + 10), `not in the desk: ${JSON.stringify(s)}`);
+    }
+    for (const a of going) if (!a.path.length) held.set(a.id, (held.get(a.id) ?? 0) + 1);
+  }
+  assert.ok(freed.every((b) => !w.agents.includes(b)), "all out in the end");
+  assert.equal(w.released, freed.length, "each set free once");
+  assert.ok(most >= 6, `a real crowd at the desk at once (${most})`);
+  for (const b of freed) assert.equal(held.get(b.id), HOLD_STEPS - 1, `${b.id} held at their own place for the stamp`);
 });
