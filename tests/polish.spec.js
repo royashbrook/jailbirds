@@ -19,6 +19,15 @@ function watch() {
     return bill ? "bill" : "other";
   };
   const log = (window.__pops = []), jumps = (window.__jumps = { coins: 0, stars: 0 });
+  // the timestamp every animation frame callback gets, the game's included. this one asks
+  // first, before the game has loaded, so in each frame it runs ahead of the game's.
+  // document.timeline is not that clock in webkit: it read 8 to 13ms short
+  let frame = 0;
+  const tick = (t) => {
+    frame = t;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
   new MutationObserver((list) => {
     for (const { target: el, addedNodes } of list) {
       for (const node of addedNodes) {
@@ -31,7 +40,10 @@ function watch() {
       const box = part.getBoundingClientRect(), root = el.parentElement.getBoundingClientRect();
       log.push({
         what: ring ? "ring" : el.classList.contains("star") ? "star" : "coin",
-        shown: !el.hidden, text: el.textContent, at: performance.now(),
+        // the frame's own clock, the one the overlay times a pop and a ring by. the time this
+        // runs is later in the frame by however long the frame worked, so a busy frame that
+        // shows one and a quick one that hides it read short on the wall clock (#44)
+        shown: !el.hidden, text: el.textContent, at: frame,
         x: box.x + box.width / 2 - root.x, y: box.y + box.height / 2 - root.y,
         display: getComputedStyle(part).display, motion: getComputedStyle(part, ring ? "::before" : null).animationName,
         quiet: el.getAttribute("aria-hidden"),
@@ -95,7 +107,7 @@ test("coins picked up float a +7 off the warden and the count jumps, each time",
   expect(up.y).toBeLessThan(up.warden.y);
   expect(up.y).toBeGreaterThan(up.warden.y - 120);
   expect(down).toMatchObject({ what: "coin", shown: false, text: "+7" });
-  expect(down.at - up.at).toBeGreaterThan(850);
+  expect(down.at - up.at).toBeGreaterThanOrEqual(900);
 
   // one more coin, and the count jumps again
   await walkTo(page, LOOSE, 12);
@@ -173,7 +185,7 @@ test("a pad bought opens a ring on the pad, and paying for it floats nothing", a
   expect(Math.abs(up.x - up.warden.x)).toBeGreaterThan(4);
   expect(Math.hypot(up.x - up.warden.x, up.y - up.warden.y)).toBeLessThan(60);
   expect(down).toMatchObject({ what: "ring", shown: false });
-  expect(down.at - up.at).toBeGreaterThan(550);
+  expect(down.at - up.at).toBeGreaterThanOrEqual(600);
 });
 
 test("with less motion a +7 shows and goes without floating, counts do not jump and no ring opens", async ({ page }) => {
@@ -192,7 +204,7 @@ test("with less motion a +7 shows and goes without floating, counts do not jump 
   expect(up).toMatchObject({ what: "coin", shown: true, text: "+7", display: "flex", motion: "none" });
   expect(Math.abs(up.x - up.warden.x)).toBeLessThan(3);
   expect(up.y).toBeLessThan(up.warden.y);
-  expect(down.at - up.at).toBeGreaterThan(850);
+  expect(down.at - up.at).toBeGreaterThanOrEqual(900);
 
   await reopen(page, world, { coins: 50, warden: { x: CELL3.x + 18, y: CELL3.y } });
   await untilSim(page, (s) => s.bought.includes("cell3"), 5, "the cell to be bought");
