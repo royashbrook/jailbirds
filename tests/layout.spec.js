@@ -31,7 +31,7 @@ for (const size of SIZES)
     expect(fit.h).toBeLessThanOrEqual(size.height);
     // the house checker finds about by name: the menu button says it opens about too
     await expect(page.getByRole("button", { name: /about/i }).first()).toBeVisible();
-    for (const id of ["#about", "#restart"]) {
+    for (const id of ["#about", "#camera"]) {
       const box = await b(id);
       expect(Math.min(box.width, box.height), id).toBeGreaterThanOrEqual(44);
     }
