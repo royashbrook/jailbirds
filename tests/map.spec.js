@@ -79,6 +79,53 @@ test("the next jail pad opens desert rock: later, go there, come back, and a rel
   expect((await state(page)).coins).toBe(60);
   await expect(page.locator("#unlocked-title")).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("jailbirds:save"))).toBe(raw);
+
+  // start over in desert rock: only desert rock. pine hill stays in the record as she left it
+  await page.click("#map");
+  await page.click('[data-jail="jail2"] .go');
+  await expect(page.locator("#place")).toHaveText("desert rock");
+  await page.click("#about");
+  await page.click("#restart");
+  await expect(page.locator(".card")).toContainText("the map and your other jails stay");
+  await page.click("#confirm-restart");
+  await expect
+    .poll(async () => {
+      const r = JSON.parse(await page.evaluate(() => localStorage.getItem("jailbirds:map")));
+      return { active: r.active, unlocked: r.unlocked, here: r.worlds.jail2.steps < 600, home: r.worlds.jail1.coins, bought: r.worlds.jail1.bought.includes("next") };
+    })
+    .toEqual({ active: "jail2", unlocked: ["jail1", "jail2"], here: true, home: 60, bought: true });
+  expect(await page.evaluate(() => localStorage.getItem("jailbirds:save"))).toBe(raw);
+  expect(errors).toEqual([]);
+});
+
+test("two tabs: once the other tab saves the map, this one stops saving and says so", async ({ page, context }) => {
+  const errors = watch(page);
+  const record = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("jailbirds:map")));
+  await page.goto("/");
+  // tab a writes its record, then holds still behind a sheet, with nothing new to write
+  await expect.poll(() => record(page), { timeout: 20000 }).not.toBeNull();
+  await page.click("#about");
+  const a = await state(page);
+  // tab b opens the same map, plays on past where a stands, and saves
+  const b = await context.newPage();
+  await b.goto("/");
+  await expect.poll(async () => (await record(b)).worlds.jail1.steps, { timeout: 20000 }).toBeGreaterThan(a.steps + 60);
+  await b.click("#about");
+  // a has stopped saving and says so
+  await expect(page.locator("#elsewhere-title")).toHaveText("your jail is open somewhere else");
+  const held = JSON.stringify(await record(page));
+  // every save path a has: hiding the page, leaving it. none of them writes
+  await page.evaluate(() => {
+    dispatchEvent(new Event("pagehide"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(JSON.stringify(await record(page))).toBe(held);
+  expect(JSON.parse(held).worlds.jail1.steps).toBeGreaterThan(a.steps);
+  // play here loads b's jail
+  await page.click("#play-here");
+  await expect(page.locator("#elsewhere-title")).toHaveCount(0);
+  expect((await state(page)).steps).toBeGreaterThanOrEqual(JSON.parse(held).worlds.jail1.steps);
+  await b.close();
   expect(errors).toEqual([]);
 });
 

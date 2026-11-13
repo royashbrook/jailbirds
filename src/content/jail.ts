@@ -13,7 +13,7 @@ const CELL_Y = 28;
 const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + by * 2, h: r.h + by * 2 });
 const cellLock = (i: number) => (i >= 2 ? `cell${i + 1}` : undefined);
 
-function jail(n: number, name: string, scale: number, next: boolean): LevelDef {
+function jail(n: number, name: string, scale: number, next?: string): LevelDef {
   const cost = (c: number) => Math.round(c * scale);
   const rooms: RoomDef[] = [
     { id: "block", look: "block", rect: { x: 20, y: 20, w: 680, h: 250 }, doors: [{ side: "s", at: 300, width: 80 }], label: "cells" },
@@ -98,8 +98,8 @@ function jail(n: number, name: string, scale: number, next: boolean): LevelDef {
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
     { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
   ];
-  // paid once, it opens the next jail on the map. she stays where she is until she goes
-  if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: true }, label: "next jail" });
+  // paid once, it opens the jail it names on the map. she stays where she is until she goes
+  if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: next }, label: "next jail" });
   return {
     id: `jail${n}`, name, size: { w: 720, h: 900 }, rooms, stations, pads,
     needs: [
@@ -125,7 +125,7 @@ function jail(n: number, name: string, scale: number, next: boolean): LevelDef {
 }
 
 // the ids are what saves are kept by, so they never change. the names are only for the screen
-export const LEVELS: LevelDef[] = [jail(1, "pine hill", 1, true), jail(2, "desert rock", 2, false)];
+export const LEVELS: LevelDef[] = [jail(1, "pine hill", 1, "jail2"), jail(2, "desert rock", 2)];
 
 /** a place on the map. one with no jail behind it yet is shown as coming later and is never sold */
 export interface Place { id: string; name: string; later?: true }

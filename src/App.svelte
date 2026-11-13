@@ -9,8 +9,8 @@
   import { createView, remember, type Past } from "./view/view.ts";
   import { createOverlay, type Thumb } from "./view/overlay.ts";
   import { CAMERA_CONTROLS, DEFAULT_CAMERA, cameraDrag, cameraPinch, cameraSettings, cameraStick, cameraWheel, type CameraSettings } from "./view/camera.ts";
-  import { readJson, readSlot, writeJson, writeSlot } from "./lib/storage.ts";
-  import { load, rows, save as saveMap, startOver, travel, unlockNext, type Atlas, type Row } from "./lib/map.ts";
+  import { readJson, tryReadSlot, writeJson, writeSlot } from "./lib/storage.ts";
+  import { MAP_KEY, load, rows, save as saveMap, startOver, travel, unlockNext, type Atlas, type Row } from "./lib/map.ts";
   import { createSound } from "./lib/sound.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
@@ -20,7 +20,7 @@
   const ETHOS =
     "no ads, no lives, no timers, nothing to buy, no accounts, no cookies, nothing sold or shared.";
   // every jail on the map is one saved record (lib/map.ts): a blocked store just means "not saving"
-  const store = { read: readSlot, write: writeSlot };
+  const store = { read: tryReadSlot, write: writeSlot };
   const freshSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
   const opened = load(store, LEVELS, freshSeed());
   let atlas: Atlas = opened.atlas;
@@ -47,7 +47,8 @@
     if (sheet === "level") levelUps = levelUps.slice(1);
     if (sheet === "unlocked") news = "";
     // what waits its turn comes up next: level ups one at a time, then a jail just unlocked
-    const waiting = levelUps.length ? "level" : news ? "unlocked" : "";
+    // and a tab that has stopped saving keeps saying so: nothing goes on here until play here
+    const waiting = elsewhere ? "elsewhere" : levelUps.length ? "level" : news ? "unlocked" : "";
     if (waiting) {
       sheet = waiting;
       if (dialog && !dialog.open) dialog.showModal();
@@ -147,7 +148,9 @@
   let place = $state(level().name);
   let tip = $state("");
   let saved = $state(opened.saved);
-  let sheet = $state<"" | "about" | "camera" | "ios" | "restart" | "level" | "map" | "unlocked">("");
+  // this tab has stopped saving because another has the map now: it stays told until play here
+  let elsewhere = $state(false);
+  let sheet = $state<"" | "about" | "camera" | "ios" | "restart" | "level" | "map" | "unlocked" | "elsewhere">("");
   // the map as listed when it was opened, a jail just unlocked waiting to be told, and why a trip did not go
   let jails = $state<Row[]>([]);
   let news = $state("");
@@ -240,8 +243,41 @@
     tip = hintText(hint(world, l), skin.noun);
   }
   sync();
-  function save() {
+  /** save now, in this call: for pagehide and the like, where a lock could not be waited for. the
+   * write count check in lib/map.ts still stops a tab that is behind */
+  function saveNow() {
     saved = saveMap(store, atlas);
+    behind();
+  }
+  /** save under the cross-tab lock where the browser has one, so two of these saves never read, check
+   * and write at once. the synchronous ones (saveNow) take no lock and lean on the write count alone.
+   * play never waits on it, and without locks it is saveNow */
+  function save() {
+    locked(saveNow);
+  }
+  function locked(fn: () => void) {
+    if (!("locks" in navigator) || !navigator.locks) return fn();
+    let ran = false;
+    const once = () => {
+      if (ran) return;
+      ran = true;
+      fn();
+    };
+    navigator.locks.request(MAP_KEY, once).catch(once);
+  }
+  /** another tab has saved the map since this one looked, or the store answered only after this one
+   * opened blind: lib/map.ts writes nothing more from this tab. she is told, and play here loads it */
+  function behind() {
+    if (!atlas.stale || elsewhere) return;
+    elsewhere = true;
+    sheet = "elsewhere";
+  }
+  /** a write to the map from another tab: stop saving from this one at once, before any save path
+   * (the timer, hiding the page, leaving it) can put this tab's older jail over it */
+  function onStorage(e: StorageEvent) {
+    if (e.key !== MAP_KEY && e.key !== null) return;
+    atlas.stale = true;
+    behind();
   }
 
   /** another world is in play now: nothing seen, heard, held or drawn of the last one carries over, so
@@ -278,10 +314,16 @@
   /** go to another jail. the one she leaves is saved first, with the trip, in one write; if that
    * does not stick she stays, so nothing unsaved is ever left behind */
   function go(id: string) {
+    locked(() => goNow(id));
+  }
+  function goNow(id: string) {
+    // a second tap queued behind the first finds her there already
+    if (id === atlas.active) return;
     const next = travel(store, atlas, LEVELS, id, freshSeed());
     if (!next) {
       saved = false;
       travelNote = "can't go yet: this browser is not saving your jail";
+      behind();
       return;
     }
     atlas = next;
@@ -419,11 +461,11 @@
   }
   const visibility = () => {
     last = 0;
-    if (document.hidden) save();
+    if (document.hidden) saveNow();
     sound.quiet(document.hidden);
   };
   const pagehide = () => {
-    save();
+    saveNow();
     sound.quiet(true);
   };
   // back from the page cache, where pagehide left it quiet
@@ -448,7 +490,7 @@
   }
   async function applyUpdate() {
     try {
-      save();
+      saveNow();
       await updates.apply();
     } catch {
       updateNote = "the update did not finish. try again in a moment";
@@ -474,6 +516,7 @@
     addEventListener("blur", blur);
     document.addEventListener("visibilitychange", visibility);
     addEventListener("pagehide", pagehide);
+    addEventListener("storage", onStorage);
     addEventListener("pageshow", pageshow);
     for (const type of WAKES) addEventListener(type, wake, { capture: true, passive: true });
     dark = matchMedia("(prefers-color-scheme: dark)");
@@ -498,6 +541,7 @@
       removeEventListener("blur", blur);
       document.removeEventListener("visibilitychange", visibility);
       removeEventListener("pagehide", pagehide);
+      removeEventListener("storage", onStorage);
       removeEventListener("pageshow", pageshow);
       for (const type of WAKES) removeEventListener(type, wake, { capture: true });
     }
@@ -621,6 +665,10 @@
         {#if travelNote}<p class="warn" role="status">{travelNote}</p>{/if}
         <button id="go-now" class="big" onclick={() => go(news)}>go now</button>
         <button id="later" onclick={closeSheet}>later</button>
+      {:else if sheet === "elsewhere"}
+        <h2 id="elsewhere-title">your jail is open somewhere else</h2>
+        <p>this one has stopped saving, so nothing here goes over it.</p>
+        <button id="play-here" class="big" onclick={() => location.reload()}>play here</button>
       {:else if sheet === "ios"}
         <h2>install jailbirds</h2>
         <p>in safari, tap the <b>share</b> button, then <b>add to home screen</b>.</p>
@@ -634,7 +682,7 @@
           <button id="level-ok" class="big" autofocus onclick={closeSheet}>ok</button>
         </div>
       {/if}
-      {#if sheet !== "camera" && sheet !== "level" && sheet !== "unlocked"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
+      {#if sheet !== "camera" && sheet !== "level" && sheet !== "unlocked" && sheet !== "elsewhere"}<button id="close" class="big" onclick={closeSheet}>{sheet === "restart" ? "keep playing" : "back"}</button>{/if}
     </div>
   </dialog>
 {/if}

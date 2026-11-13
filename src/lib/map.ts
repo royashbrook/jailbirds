@@ -12,13 +12,14 @@ export const ASIDE_KEY = "jailbirds:map:unreadable";
 /** the old save's `level` was a place in this list, whatever order the content is in now */
 const OLD_ORDER = ["jail1", "jail2"];
 
-/** the store, as storage.ts gives it: a read that may be null, a write that says if it stuck */
+/** the store, as storage.ts gives it: a read that is null for nothing there and undefined when the
+ * store would not answer, a write that says if it stuck */
 export interface Store {
-  read(key: string): string | null;
+  read(key: string): string | null | undefined;
   write(key: string, value: string): boolean;
 }
-/** the saved record */
-export interface Saved { v: 1; active: string; unlocked: string[]; worlds: Record<string, unknown> }
+/** the saved record. `gen` counts its writes, so a tab can tell another has saved since it looked */
+export interface Saved { v: 1; gen: number; active: string; unlocked: string[]; worlds: Record<string, unknown> }
 /** the record live in memory: the open jail's world is played, the others wait as they were saved */
 export interface Atlas {
   active: string;
@@ -28,17 +29,39 @@ export interface Atlas {
   world: World;
   /** an unreadable record still to put aside before anything is written over it */
   aside: string | null;
+  /** the `gen` of the record this was loaded from or last wrote */
+  gen: number;
+  /** opened while the store would not answer: it may write only over nothing at all */
+  blind: boolean;
+  /** another tab has saved since: this one never writes again, and the page loads afresh */
+  stale: boolean;
 }
-export type From = "map" | "old" | "fresh" | "unreadable";
+export type From = "map" | "old" | "fresh" | "unreadable" | "blind";
 
 const indexOf = (levels: LevelDef[], id: string) => levels.findIndex((l) => l.id === id);
 const plain = (w: World): unknown => JSON.parse(JSON.stringify(w));
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const atlasOf = (active: string, unlocked: string[], worlds: Record<string, unknown>, world: World, gen = 0): Atlas => ({
+  active, unlocked, worlds, world, aside: null, gen, blind: false, stale: false,
+});
+const genFrom = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
+/** the write count of a stored record, 0 when there is none to read */
+function genOf(raw: string): number {
+  try {
+    const r: unknown = JSON.parse(raw);
+    return isObject(r) ? genFrom(r.gen) : 0;
+  } catch {
+    return 0;
+  }
+}
 
-/** the pad in a level that opens the next one, if it has one */
+/** the pad in a level that opens another, if it has one */
 const opener = (l: LevelDef) => l.pads.find((p) => p.unlock.level);
-/** the jail the open one's pad leads to: the next in the content, ludo's order */
-const nextOf = (levels: LevelDef[], id: string) => levels[indexOf(levels, id) + 1]?.id;
+/** the jail a jail's pad opens, by the id the pad names, when the content has it */
+function nextOf(levels: LevelDef[], id: string) {
+  const to = levels[indexOf(levels, id)] && opener(levels[indexOf(levels, id)])?.unlock.level;
+  return to && indexOf(levels, to) >= 0 ? to : undefined;
+}
 
 /** a jail's world from what was saved for it, or a fresh one the first time. `level` is set from the
  * id, so a save follows its jail wherever the content puts it. null when the save cannot be trusted */
@@ -53,8 +76,8 @@ export function worldOf(levels: LevelDef[], id: string, saved: unknown, seed: nu
 function fresh(levels: LevelDef[], id: string, seed: number, unlocked: string[]): World {
   const i = indexOf(levels, id);
   const w = create(levels, i, seed);
-  const pad = opener(levels[i]), next = nextOf(levels, id);
-  if (pad && next && unlocked.includes(next)) w.bought.push(pad.id);
+  const pad = opener(levels[i]), to = pad?.unlock.level;
+  if (pad && to && unlocked.includes(to)) w.bought.push(pad.id);
   return w;
 }
 
@@ -79,7 +102,7 @@ export function readMap(raw: string, levels: LevelDef[]): Atlas | null {
     if (indexOf(levels, id) >= 0 && !worldOf(levels, id, w, 1)) return null;
     worlds[id] = w;
   }
-  return { active: r.active, unlocked: [...r.unlocked], worlds, world, aside: null };
+  return atlasOf(r.active, [...r.unlocked], worlds, world, genFrom(r.gen));
 }
 
 /** the old one-jail save as a map: jail 1 stays jail 1; a save in jail 2 is jail 2, with jail 1
@@ -97,41 +120,67 @@ export function fromOld(raw: string | null, levels: LevelDef[]): Atlas | null {
   if (!id) return null;
   const world = worldOf(levels, id, old, 1);
   if (!world) return null;
-  return { active: id, unlocked: OLD_ORDER.slice(0, OLD_ORDER.indexOf(id) + 1), worlds: {}, world, aside: null };
+  return atlasOf(id, OLD_ORDER.slice(0, OLD_ORDER.indexOf(id) + 1), {}, world);
 }
 
 /** a map with only jail 1, fresh */
-export const newAtlas = (levels: LevelDef[], seed: number): Atlas => ({
-  active: levels[0].id, unlocked: [levels[0].id], worlds: {}, world: create(levels, 0, seed), aside: null,
-});
+export const newAtlas = (levels: LevelDef[], seed: number): Atlas => atlasOf(levels[0].id, [levels[0].id], {}, create(levels, 0, seed));
 
 /** the record as it is saved, the open jail's world in with the rest */
 export const record = (a: Atlas): Saved => ({
-  v: 1, active: a.active, unlocked: [...a.unlocked], worlds: { ...a.worlds, [a.active]: plain(a.world) },
+  v: 1, gen: a.gen, active: a.active, unlocked: [...a.unlocked], worlds: { ...a.worlds, [a.active]: plain(a.world) },
 });
 
-/** save it all in one write; true when it stuck. an unreadable record is put aside first, and nothing
- * is written over it until that has worked */
+/** save it all in one write; true when it stuck. the record is read first: when another tab has saved
+ * since this one looked, or this one opened blind over something it never loaded, it writes nothing,
+ * now or later, and is marked stale so the page can load again. an unreadable record is put aside
+ * first, and nothing is written over it until that has worked */
 export function save(store: Store, a: Atlas): boolean {
+  if (a.stale) return false;
+  const now = store.read(MAP_KEY);
+  if (now === undefined) return false;
+  if (a.blind) {
+    const under = now ?? store.read(OLD_KEY);
+    if (under === undefined) return false;
+    if (under !== null) {
+      a.stale = true;
+      return false;
+    }
+    a.blind = false;
+  }
+  const stored = now === null ? 0 : genOf(now);
+  if (stored > a.gen) {
+    a.stale = true;
+    return false;
+  }
   if (a.aside !== null) {
     if (!store.write(ASIDE_KEY, a.aside)) return false;
     a.aside = null;
   }
-  return store.write(MAP_KEY, JSON.stringify(record(a)));
+  const gen = Math.max(stored, a.gen) + 1;
+  if (!store.write(MAP_KEY, JSON.stringify({ ...record(a), gen }))) return false;
+  a.gen = gen;
+  return true;
 }
 
 /** what the game opens with, and whether that is saved. a map record if there is one. if not, the old
  * save moved over, which counts only once it is written. an unreadable record never falls back to
  * the old save: that would bring back a jail she has moved on from. she starts fresh, not saving
- * yet, and the unreadable one is put aside on the first save */
+ * yet, and the unreadable one is put aside on the first save. a store that will not answer is not an
+ * empty one: she plays fresh, not saving, and nothing is written until it answers */
 export function load(store: Store, levels: LevelDef[], seed: number): { atlas: Atlas; saved: boolean; from: From } {
+  const blind = () => ({ atlas: { ...newAtlas(levels, seed), blind: true }, saved: false, from: "blind" as const });
   const raw = store.read(MAP_KEY);
+  if (raw === undefined) return blind();
   if (raw !== null) {
     const atlas = readMap(raw, levels);
     if (atlas) return { atlas, saved: true, from: "map" };
-    return { atlas: { ...newAtlas(levels, seed), aside: raw }, saved: false, from: "unreadable" };
+    // the unreadable record's own count, so writing over it is not taken for another tab being ahead
+    return { atlas: { ...newAtlas(levels, seed), aside: raw, gen: genOf(raw) }, saved: false, from: "unreadable" };
   }
-  const old = fromOld(store.read(OLD_KEY), levels);
+  const oldRaw = store.read(OLD_KEY);
+  if (oldRaw === undefined) return blind();
+  const old = fromOld(oldRaw, levels);
   if (old) return { atlas: old, saved: save(store, old), from: "old" };
   return { atlas: newAtlas(levels, seed), saved: true, from: "fresh" };
 }
@@ -154,9 +203,10 @@ export function travel(store: Store, a: Atlas, levels: LevelDef[], id: string, s
   if (!world) return null;
   const worlds = { ...a.worlds, [a.active]: plain(a.world) };
   delete worlds[id];
-  const next: Atlas = { active: id, unlocked: [...a.unlocked], worlds, world, aside: a.aside };
+  const next: Atlas = { ...a, active: id, unlocked: [...a.unlocked], worlds, world };
   if (!save(store, next)) {
-    a.aside = next.aside;
+    // what the try learned about the store holds for the jail she stays in too
+    Object.assign(a, { aside: next.aside, blind: next.blind, stale: next.stale });
     return null;
   }
   return next;

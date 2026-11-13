@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { create, step, restore, padVisible, STAMP_AT } from "../src/engine/sim.ts";
 import { LEVELS, MAP } from "../src/content/jail.ts";
-import { readSlot, writeSlot } from "../src/lib/storage.ts";
+import { tryReadSlot, writeSlot } from "../src/lib/storage.ts";
 import {
   ASIDE_KEY, MAP_KEY, OLD_KEY, fromOld, load, newAtlas, readMap, record, rows, save, startOver, travel, unlockNext,
 } from "../src/lib/map.ts";
@@ -17,9 +17,14 @@ const STILL = { x: 0, y: 0 };
 function fakeStorage() {
   const data = new Map();
   const s = {
-    data, writes: [], full: false, blocked: false,
+    // `throwReads`: how many reads to come throw, as a store does that is there but will not answer
+    data, writes: [], removed: [], full: false, blocked: false, throwReads: 0, throwKey: null,
     getItem(k) {
-      if (s.blocked) throw new Error("SecurityError");
+      if (s.blocked || k === s.throwKey) throw new Error("SecurityError");
+      if (s.throwReads > 0) {
+        s.throwReads--;
+        throw new Error("SecurityError");
+      }
       return data.has(k) ? data.get(k) : null;
     },
     setItem(k, v) {
@@ -28,11 +33,20 @@ function fakeStorage() {
       data.set(k, String(v));
       s.writes.push(k);
     },
+    removeItem(k) {
+      s.removed.push(k);
+      data.delete(k);
+    },
   };
   Object.defineProperty(globalThis, "localStorage", { value: s, configurable: true, writable: true });
   return s;
 }
-const store = { read: readSlot, write: writeSlot };
+const store = { read: tryReadSlot, write: writeSlot };
+/** the old save is a backup: never written, never removed */
+const oldUntouched = (ls) => {
+  assert.ok(!ls.writes.includes(OLD_KEY), "the old save was written");
+  assert.deepEqual(ls.removed, [], "something was removed");
+};
 const sum = (o) => Object.values(o).reduce((n, c) => n + c, 0);
 /** every coin a world holds: wallet, piles, collectors' bags, the floor */
 const total = (w) => w.coins + sum(w.piles) + w.agents.reduce((n, a) => n + (a.cash ?? 0), 0) + w.floor.length;
@@ -332,10 +346,182 @@ test("saves follow their jail by id when the content changes order", () => {
 test("storage blocked outright: a fresh jail that plays, never saves, and needs no map", () => {
   const ls = fakeStorage();
   ls.blocked = true;
-  const { atlas, from } = load(store, LEVELS, 3);
-  assert.equal(from, "fresh");
+  const { atlas, from, saved } = load(store, LEVELS, 3);
+  // a store that will not answer is not an empty one (review, pr 47): not "fresh", not saving
+  assert.equal(from, "blind");
+  assert.equal(saved, false);
   stepN(atlas.world, 600);
   assert.ok(atlas.world.agents.some((x) => x.kind === "agent"), "the bus came");
   assert.equal(save(store, atlas), false);
   assert.equal(record(atlas).active, "jail1");
+});
+
+// review holes (pr 47): the pad names its jail, a tab that is behind never writes, a read that
+// throws is not an empty store, and the old save is never written or removed
+
+/** jail 1's world with the next jail pad bought, in whatever content it is played */
+function boughtNext(levels) {
+  const i = levels.findIndex((l) => l.id === "jail1");
+  const world = create(levels, i, 7);
+  world.bought.push("next");
+  return { active: "jail1", unlocked: ["jail1"], worlds: {}, world, aside: null };
+}
+
+test("the pad names the jail it opens: a reorder still opens jail2, and a jail put between never is", () => {
+  assert.equal(nextPad.unlock.level, "jail2");
+  // jail 2 first in the content: jail 1's pad still opens it, and a fresh jail 1 has it pre-bought
+  const swapped = [LEVELS[1], LEVELS[0]];
+  const a = boughtNext(swapped);
+  assert.equal(unlockNext(a, swapped), "jail2");
+  assert.deepEqual(a.unlocked, ["jail1", "jail2"]);
+  startOver(a, swapped, 3);
+  assert.ok(a.world.bought.includes("next"), "never paid twice");
+  // a jail put in between is not opened for free by a pad bought before it was there
+  const between = [LEVELS[0], { ...LEVELS[1], id: "jailx", name: "middle" }, LEVELS[1]];
+  const b = boughtNext(between);
+  assert.equal(unlockNext(b, between), "jail2");
+  assert.ok(!b.unlocked.includes("jailx"));
+  // a pad that names a jail the content does not have opens nothing
+  const nowhere = [{ ...LEVELS[0], pads: LEVELS[0].pads.map((p) => (p.id === "next" ? { ...p, unlock: { level: "jail9" } } : p)) }, LEVELS[1]];
+  const c = boughtNext(nowhere);
+  assert.equal(unlockNext(c, nowhere), null);
+  assert.deepEqual(c.unlocked, ["jail1"]);
+});
+
+test("a second tab that is behind never writes over the map, and is told to load again", () => {
+  const ls = fakeStorage();
+  const first = { ...newAtlas(LEVELS, 1), unlocked: ["jail1", "jail2"] };
+  first.world.coins = 5;
+  assert.equal(save(store, first), true);
+  const A = load(store, LEVELS, 1).atlas, B = load(store, LEVELS, 1).atlas;
+  const there = travel(store, A, LEVELS, "jail2", 2);
+  assert.ok(there);
+  const held = ls.data.get(MAP_KEY);
+  B.world.coins = 999;
+  assert.equal(save(store, B), false);
+  assert.equal(B.stale, true);
+  assert.equal(ls.data.get(MAP_KEY), held, "A's record stands");
+  assert.equal(travel(store, B, LEVELS, "jail2", 3), null);
+  assert.equal(B.stale, true);
+  assert.equal(ls.data.get(MAP_KEY), held);
+  // the tab that is ahead never trips on its own writes
+  for (let i = 0; i < 3; i++) assert.equal(save(store, there), true);
+  assert.equal(load(store, LEVELS, 1).atlas.active, "jail2");
+  // a tab that opened with nothing stored, beaten to the first write by another
+  const ls2 = fakeStorage();
+  const C = load(store, LEVELS, 1).atlas, D = load(store, LEVELS, 1).atlas;
+  assert.equal(save(store, C), true);
+  const won = ls2.data.get(MAP_KEY);
+  assert.equal(save(store, D), false);
+  assert.equal(D.stale, true);
+  assert.equal(ls2.data.get(MAP_KEY), won);
+  oldUntouched(ls);
+  oldUntouched(ls2);
+});
+
+test("a read that throws is not an empty store: not saving, no move over, nothing written until a read works", () => {
+  const ls = fakeStorage();
+  ls.data.set(OLD_KEY, OLD);
+  ls.throwReads = 1;
+  const got = load(store, LEVELS, 1);
+  assert.equal(got.from, "blind");
+  assert.equal(got.saved, false);
+  assert.equal(got.atlas.world.steps, 0, "fresh, in memory");
+  assert.deepEqual(ls.writes, [], "no move over claimed");
+  stepN(got.atlas.world, 30);
+  // the store answers again, and there was an old save under it: this tab writes nothing and loads again
+  assert.equal(save(store, got.atlas), false);
+  assert.equal(got.atlas.stale, true);
+  assert.deepEqual(ls.writes, []);
+  assert.equal(load(store, LEVELS, 1).from, "old");
+  oldUntouched(ls);
+  // with nothing under it, a save whose read throws writes nothing, and the first that can read goes ahead
+  const ls2 = fakeStorage();
+  ls2.throwReads = 1;
+  const g2 = load(store, LEVELS, 1);
+  assert.equal(g2.saved, false);
+  ls2.throwReads = 1;
+  assert.equal(save(store, g2.atlas), false);
+  assert.deepEqual(ls2.writes, []);
+  assert.equal(save(store, g2.atlas), true);
+  assert.deepEqual(ls2.writes, [MAP_KEY]);
+  assert.equal(g2.atlas.stale, false);
+});
+
+test("a trip is exactly one write, to the map, and the old save is never written or removed", () => {
+  const ls = fakeStorage();
+  ls.data.set(OLD_KEY, OLD);
+  const a = load(store, LEVELS, 1).atlas;
+  a.world.bought.push("next");
+  unlockNext(a, LEVELS);
+  assert.equal(save(store, a), true);
+  ls.writes.length = 0;
+  const there = travel(store, a, LEVELS, "jail2", 2);
+  assert.deepEqual(ls.writes, [MAP_KEY]);
+  startOver(there, LEVELS, 3);
+  save(store, there);
+  travel(store, there, LEVELS, "jail1", 4);
+  oldUntouched(ls);
+  assert.equal(ls.data.get(OLD_KEY), OLD);
+});
+
+test("a save that does not stick moves nothing on: a newer record written after it is still never written over", () => {
+  const ls = fakeStorage();
+  const first = { ...newAtlas(LEVELS, 1), unlocked: ["jail1", "jail2"] };
+  assert.equal(save(store, first), true);
+  const A = load(store, LEVELS, 1).atlas, B = load(store, LEVELS, 1).atlas;
+  const gen = A.gen;
+  ls.full = true;
+  for (let i = 0; i < 3; i++) assert.equal(save(store, A), false);
+  assert.equal(travel(store, A, LEVELS, "jail2", 2), null);
+  assert.equal(A.gen, gen, "the count moves only once a write sticks");
+  ls.full = false;
+  // the other tab writes once, then A, behind it, may not write over it
+  B.world.coins = 41;
+  assert.equal(save(store, B), true);
+  const held = ls.data.get(MAP_KEY);
+  A.world.coins = 7;
+  assert.equal(save(store, A), false);
+  assert.equal(A.stale, true);
+  assert.equal(ls.data.get(MAP_KEY), held);
+  assert.equal(load(store, LEVELS, 1).atlas.world.coins, 41);
+});
+
+test("a tab that has stopped saving writes nothing at all, by any path", () => {
+  const ls = fakeStorage();
+  const a = { ...newAtlas(LEVELS, 1), unlocked: ["jail1", "jail2"] };
+  assert.equal(save(store, a), true);
+  ls.writes.length = 0;
+  // as the page does when another tab writes the map
+  a.stale = true;
+  assert.equal(save(store, a), false);
+  assert.equal(travel(store, a, LEVELS, "jail2", 2), null);
+  assert.equal(a.active, "jail1");
+  assert.deepEqual(ls.writes, []);
+});
+
+test("a map record that will not read is never taken for missing: no move over from the old save, nothing written", () => {
+  // the reviewer's case: the map's read throws while the old save reads fine
+  const ls = fakeStorage();
+  ls.data.set(OLD_KEY, OLD);
+  const kept = JSON.stringify({ ...record({ ...newAtlas(LEVELS, 1), gen: 4 }), gen: 4 });
+  ls.data.set(MAP_KEY, kept);
+  ls.throwKey = MAP_KEY;
+  const got = load(store, LEVELS, 1);
+  assert.equal(got.from, "blind");
+  assert.equal(got.saved, false);
+  assert.equal(got.atlas.world.coins, 0, "not the old save's wallet");
+  for (let i = 0; i < 3; i++) assert.equal(save(store, got.atlas), false);
+  assert.deepEqual(ls.writes, []);
+  assert.equal(ls.data.get(MAP_KEY), kept);
+  oldUntouched(ls);
+  // a corrupt record is not missing either: it never brings the old save back
+  const ls2 = fakeStorage();
+  ls2.data.set(OLD_KEY, OLD);
+  ls2.data.set(MAP_KEY, "{corrupt");
+  const g2 = load(store, LEVELS, 1);
+  assert.equal(g2.from, "unreadable");
+  assert.notDeepEqual(g2.atlas.world, restore(OLD, LEVELS));
+  assert.deepEqual(ls2.writes, []);
+  oldUntouched(ls2);
 });
