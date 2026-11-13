@@ -200,7 +200,15 @@ test("the hold: a ring over the one held fills with the sim's own hold, stays pu
   // a resident at home has a bubble there: the ring goes above it
   b.state = "home";
   p.draw(9032);
-  assert.ok(el.classList.contains("up"));
+  assert.ok(el.classList.contains("up") && !el.classList.contains("side"));
+  // near the top of the screen (a phone on its side) there is no room above: beside the bubble,
+  // and the whole ring stays on screen (its top is the anchor less 34px)
+  b.y = HEAD + 6 + 20;
+  p.draw(9040);
+  assert.ok(el.classList.contains("side") && !el.classList.contains("up"), "beside, not above");
+  const y = Number(el.style.transform.match(/, (-?\d+)px, 0\)/)[1]);
+  assert.ok(y - 34 >= 0, `ring top on screen, anchor ${y}`);
+  b.y = 300;
   p.world.grab = null;
   p.draw(9048);
   assert.deepEqual(p.up("hold"), [], "gone the moment the hold ends");

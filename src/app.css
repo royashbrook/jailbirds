@@ -579,6 +579,10 @@ a {
 .hold.up {
   margin-top: -70px;
 }
+/* near the top of the screen there is no room above the bubble: sit beside it instead */
+.hold.side {
+  margin: -34px 0 0 22px;
+}
 /* a price tag stands up off its pad: the price, the thing, or a lock and a level */
 .tag {
   display: flex;

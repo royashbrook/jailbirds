@@ -18,6 +18,8 @@ type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 const SPOTS = 6;
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
+/** a ring stacked over a need bubble reaches 70px up (.hold.up), plus a little room to spare */
+export const HOLD_UP_MIN = 76;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
 const PAD_HALF = 20;
 const GAP = 3;
@@ -288,14 +290,17 @@ export function createOverlay(root: HTMLElement) {
     const g = w.grab, held = g ? w.agents.find((a) => a.id === g.id) : undefined;
     if (g && held) {
       view.screen(held.x, view.height + 6, held.y, pt);
-      move(hold, pt.x, Math.max(pt.y, TOP));
       const fill = String(Math.round(Math.min(1, g.t / HOLD) * 100));
-      // a resident at home has a need bubble there already: the ring sits above it
-      const up = held.state === "home";
-      label(hold, `${fill}:${up}`, () => {
+      // a resident at home has a need bubble there already: the ring sits above it, or
+      // beside it when above would run off the top of the screen
+      const home = held.state === "home";
+      const up = home && pt.y >= HOLD_UP_MIN, side = home && !up;
+      move(hold, pt.x, Math.max(pt.y, TOP));
+      label(hold, `${fill}:${up}:${side}`, () => {
         hold.el.style.setProperty("--fill", `${fill}%`);
         hold.el.dataset.fill = fill;
         hold.el.classList.toggle("up", up);
+        hold.el.classList.toggle("side", side);
       });
     }
     show(hold, !!(g && held) && pt.on);
