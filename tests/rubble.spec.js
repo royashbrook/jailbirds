@@ -46,7 +46,10 @@ async function seedMapOnce(page, w) {
 
 test("paying a clear cell pad opens the cell the moment it is paid: two beds, its toilet, charged once", async ({ page, browserName }) => {
   const at = { x: pad("cell3").at.x + 10, y: pad("cell3").at.y };
-  const w = world({ coins: 20, nextId: 3 }, at);
+  // five of the eight in hand, and three loose coins along the hall: the pad is paid part way and
+  // waits there, so the half-paid cell is a state to look at, not a moment to catch
+  const LOOSE = { x: at.x + 60, y: at.y + 56 };
+  const w = world({ coins: 5, nextId: 3, floor: [0, 1, 2].map((i) => ({ x: LOOSE.x + i * 2, y: LOOSE.y, house: "" })) }, at);
   w.agents.push(follower(2, { x: at.x, y: at.y + 16 }, { toilet: 0.1 }));
   await seedEveryLoad(page, w);
   await page.goto("/");
@@ -59,16 +62,28 @@ test("paying a clear cell pad opens the cell the moment it is paid: two beds, it
   await expect(crowd(page)).toHaveText(/\/4$/);
   await expect(page.locator(".tag:not([hidden])", { hasText: "clear cell" }).first()).toBeVisible();
 
-  // paid coin by coin; never paid in full and still shut, never open and short
+  // paid as far as the wallet goes: five of eight, and the cell still shut and still rubble
+  const short = await untilSim(page, (s) => s.paid.cell3 === 5, 5, "the pad to be paid part way");
+  expect(short.coins).toBe(0);
+  await waitSim(page, 1);
+  const waiting = await state(page);
+  expect(waiting.paid.cell3).toBe(5);
+  expect(waiting.bought).toEqual([]);
+  expect((await rubble(page)).rooms).toEqual(ROOMS);
+  await expect(crowd(page)).toHaveText(/\/4$/);
+
+  // the three loose coins, then back on the pad: paid in full, and open that moment
+  await walkTo(page, LOOSE, 4);
+  await untilSim(page, (s) => s.coins === 3, 2, "the loose coins to be picked up");
+  await walkTo(page, at, 4);
   const seen = [];
   const paid = await untilSim(page, (s) => {
     seen.push({ paid: s.paid.cell3 ?? 0, open: s.bought.includes("cell3"), coins: s.coins });
     return s.bought.includes("cell3");
   }, 5, "the cell to be paid for");
   for (const s of seen) expect(s.open, JSON.stringify(s)).toBe(s.paid >= 8);
-  expect(seen.some((s) => s.paid > 0 && s.paid < 8)).toBe(true);
   expect(paid.paid.cell3).toBe(8);
-  expect(paid.coins).toBe(12);
+  expect(paid.coins).toBe(0);
   expect(paid.bought).toEqual(["cell3"]);
   await expect(crowd(page)).toHaveText(/\/6$/);
 
