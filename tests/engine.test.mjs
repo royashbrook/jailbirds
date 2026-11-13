@@ -94,6 +94,12 @@ function feed(w, cells) {
   }
 }
 
+test("the words say money, never coins", () => {
+  assert.equal(hintText({ key: "coins" }, "birds"), "walk over the money to pick it up");
+  const keys = ["alert", "checkin", "nobed", "pickup", "house", "release", "done", "errand", "fetch", "drop", "clean", "coins", "pad", "rank", "idle"];
+  for (const key of keys) assert.doesNotMatch(hintText({ key, need: "food" }, "birds"), /coin/i, key);
+});
+
 test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room, coins, a pad", () => {
   const w = create(LEVELS, 0, 1);
   assert.equal(capacity(w, L), 4);

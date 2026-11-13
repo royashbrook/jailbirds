@@ -193,8 +193,8 @@
     // and takes on a beat that will not settle while there is a squabble
     sound.trouble(world.alert !== null);
     if (world.level !== seen.level) shout(`welcome to ${l.name}!`);
-    else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +${l.rankReward * world.rank} coins`);
-    else if (world.settled > seen.settled) shout("all calm again! +coins");
+    else if (world.rank > seen.rank) shout(`level up! level ${world.rank}, +$${l.rankReward * world.rank}`);
+    else if (world.settled > seen.settled) shout("all calm again! +money");
     else if (world.boosted > seen.boosted + 1) shout("speed boost!");
     seen = { rank: world.rank, settled: world.settled, level: world.level, boosted: world.boosted };
     place = l.name;
@@ -433,7 +433,7 @@
       <span class="corner"><span id="version">v{__APP_VERSION__}</span><br /><span id="place">{place}</span></span>
     </div>
     <div class="stats">
-      <div class="stat" id="coins" aria-label={`${coins} coins`}><svg class="coin-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /></svg>{#key coinJump}<b class:jump={coinJump > 0}>{coins}</b>{/key}</div>
+      <div class="stat" id="coins" aria-label={`money: $${coins}`}><svg class="money-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><ellipse cx="12" cy="12" rx="3.5" ry="3" /></svg>{#key coinJump}<b class:jump={coinJump > 0}>{coins}</b>{/key}</div>
       <div class="stat" id="line" aria-label={`leading ${lineNow} of ${lineMax}`}><span>line</span><b class:full={lineNow >= lineMax}>{lineNow}/{lineMax}</b></div>
       <div class="stat" id="crowd"><span>beds</span><b>{crowd}</b></div>
       <div class="rank" id="rank" role="img" aria-label={`level ${rank}, ${stars} of ${need} stars to the next`}>
@@ -501,7 +501,7 @@
         </div>
         <p>you are the warden. drag anywhere to walk (arrow keys work too). everything else happens when you walk onto it.</p>
         <p>new {skin.noun} come by bus and line up at intake. stand behind the desk to check them in (they get orange shirts), then walk up to them and they follow you. lead them to a cell with a free bed.</p>
-        <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop coins, and so do the desks.</p>
+        <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop money, and so do the desks.</p>
         <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
         <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
         <p class="ethos">{ETHOS}</p>
@@ -519,7 +519,7 @@
           <a href="https://github.com/sponsors/royashbrook" target="_blank" rel="noopener">sponsor me</a></span></p>
       {:else if sheet === "restart"}
         <h2>start over?</h2>
-        <p>your jail, your {skin.noun} and your coins all go away.</p>
+        <p>your jail, your {skin.noun} and your money all go away.</p>
         <button id="confirm-restart" class="big" onclick={() => { sheet = ""; restart(); }}>start over</button>
       {:else if sheet === "ios"}
         <h2>install jailbirds</h2>

@@ -16,6 +16,20 @@ test("the page and the about sheet carry the house ethos, word for word", async 
   await expect(page.locator(".maker")).toContainText("made with love by");
 });
 
+test("it is money, not coins: the about sheet, the count and its mark say so", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("meta[name=description]")).toHaveAttribute("content", /collect money/);
+  await expect(page.locator("#coins")).toHaveAttribute("aria-label", /^money: \$\d+$/);
+  // the mark by the count is a green bill, wider than it is tall, with no round coin in it
+  const mark = page.locator("#coins .money-mark");
+  await expect(mark.locator("rect")).toHaveCount(1);
+  await expect(mark.locator("circle")).toHaveCount(0);
+  expect(await mark.locator("rect").evaluate((r) => getComputedStyle(r).fill)).toBe("rgb(108, 192, 112)");
+  await page.click("#about");
+  await expect(page.locator(".card")).toContainText("drop money, and so do the desks");
+  await expect(page.locator(".card")).not.toContainText(/coin/i);
+});
+
 test("the build is on screen, and in the about sheet", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#version")).toHaveText(/^v\d+\.\d+\.\d+/);

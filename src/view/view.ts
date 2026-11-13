@@ -2,7 +2,7 @@
 // the last two fixed steps, and draws through the skin: the skin says what a
 // character is made of and how it moves, this file puts it on screen. a 3/4
 // camera orbits the warden with a saved zoom, turn and tilt. everything that comes
-// in numbers (body parts, trays, coins) is one instanced mesh. the per-character
+// in numbers (body parts, trays, bills) is one instanced mesh. the per-character
 // work reuses one set of scratch matrices, colours and a pose; a few small
 // allocations remain per frame (station lookups, closures), and the still parts
 // of the jail are rebuilt only when something is bought.
@@ -74,6 +74,11 @@ const MAX_BAGS = 8;
 const BAG = "#c8a165";
 /** how tall the safe stands in scene.ts, so its coins sit on top of it */
 const SAFE_TOP = 16;
+/** money is drawn as little flat bills, not coins: long, thin and wide */
+export const BILL = { w: 9, h: 0.6, d: 5 };
+export const billGeometry = () => new BoxGeometry(BILL.w, BILL.h, BILL.d);
+/** every other bill a shade darker, so a pile reads as a stack of bills */
+const BILL_SHADE = 0.82;
 const FOV = 34;
 const PIXEL_CAP = 2;
 /** how much higher the warden sits on the unicorn: his hips on her saddle */
@@ -124,7 +129,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   };
   const trays = pool(new BoxGeometry(18, 1.6, 12), MAX_TRAYS);
   const food = pool(new SphereGeometry(2.4, 8, 6), MAX_TRAYS * 2);
-  const coins = pool(new CylinderGeometry(3.6, 3.6, 1.4, 16), MAX_COINS);
+  const coins = pool(billGeometry(), MAX_COINS);
   const blobs = pool(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), MAX_CHARS + 8, new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.22 }));
   const lumps = pool(new SphereGeometry(1, 10, 8), MAX_MESS * 3);
   const puddles = pool(new CylinderGeometry(1, 1, 0.6, 18), MAX_MESS);
@@ -223,14 +228,18 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       food.setColorAt(fn++, tint.set(pal.food[k]));
     }
   };
-  const coin = (x: number, y: number, z: number, spin: number, s = 1) => {
+  // one bill: tipped a little as it bobs or flies, flat in a pile. `shade` 1 is the darker green,
+  // picked by the caller from something steady so a bill never flickers between the two
+  const coin = (x: number, y: number, z: number, spin: number, s = 1, tilt = Math.PI / 10, shade = 0) => {
     if (cn >= MAX_COINS) return;
     dummy.position.set(x, y, z);
-    dummy.rotation.set(Math.PI / 8, spin, 0);
+    dummy.rotation.set(tilt, spin, 0);
     dummy.scale.set(s, s, s);
     dummy.updateMatrix();
     coins.setMatrixAt(cn, dummy.matrix);
-    coins.setColorAt(cn++, tint.set(pal.coin));
+    tint.set(pal.coin);
+    if (shade) tint.multiplyScalar(BILL_SHADE);
+    coins.setColorAt(cn++, tint);
   };
   const finish = (mesh: InstancedMesh, n: number) => {
     mesh.count = n;
@@ -402,6 +411,9 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         dummy.updateMatrix();
         bags.setMatrixAt(gn, dummy.matrix);
         bags.setColorAt(gn++, tint.set(BAG));
+        // and the money in it: a bill or two poking out of the top
+        for (let k = 0; k < (a.cash > 6 ? 2 : 1); k++)
+          coin(x + Math.cos(heading) * (9 + (k ? 1.5 : -1)), 9.5 * s, z - Math.sin(heading) * (9 + (k ? 1.5 : -1)), heading + (k ? 0.5 : -0.3), 0.7, 1.2, k);
       }
     }
     for (const p of partList) {
@@ -417,12 +429,12 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       for (let k = 0; k < n; k++) tray(s.prop.x + 25 + (k % 3) * 50, 10.8, s.prop.y + (k < 3 ? 9 : 25), 0);
     }
 
-    // coins on the floor bob and spin; picked ones fly to the warden
+    // bills on the floor bob and spin; picked ones fly to the warden
     nowFloor.clear();
     for (let i = 0; i < w.floor.length; i++) {
       const c = w.floor[i];
       nowFloor.add(c);
-      coin(c.x, 4 + Math.abs(Math.sin(t * 3 + i)) * 2, c.y, t * 3 + i);
+      coin(c.x, 4 + Math.abs(Math.sin(t * 3 + i)) * 2, c.y, t * 3 + i, 1, Math.PI / 10, Math.round(c.x + c.y) & 1);
     }
     if (lastFloor >= 0 && w.took.floor > lastFloor) for (const c of prevFloor) if (!nowFloor.has(c)) launch(c.x, c.y);
     [prevFloor, nowFloor] = [nowFloor, prevFloor];
@@ -431,9 +443,13 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       const n = w.piles[s.id] ?? 0, took = w.took.piles[s.id] ?? 0, was = lastTook.get(s.id) ?? took;
       if (lastFloor >= 0 && took > was) for (let k = 0; k < Math.min(8, took - was); k++) launch(s.pileAt.x + (k % 3) * 4 - 4, s.pileAt.y);
       lastTook.set(s.id, took);
-      // the safe's coins sit on top of it, the desks' on the floor
+      // the safe's money sits on top of it, the desks' on the floor: two neat piles of bills,
+      // flat, each one turned a hair so the pile does not look like one block
       const up = s.kind === "safe" ? SAFE_TOP : 0;
-      for (let k = 0; k < Math.min(14, Math.ceil(n / 2)); k++) coin(s.pileAt.x + (k % 2 ? 6 : -6), up + 1.5 + Math.floor(k / 2) * 1.8, s.pileAt.y, k, 1);
+      for (let k = 0; k < Math.min(14, Math.ceil(n / 2)); k++) {
+        const layer = Math.floor(k / 2);
+        coin(s.pileAt.x + (k % 2 ? 5.5 : -5.5), up + 0.3 + layer * 0.75, s.pileAt.y, ((layer % 3) - 1) * 0.07, 1, 0, layer & 1);
+      }
     }
     lastFloor = w.took.floor;
     for (let i = 0; i < MAX_FLY; i++) {
