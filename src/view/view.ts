@@ -13,10 +13,10 @@ import {
   type Material,
 } from "three";
 import { walls } from "../engine/geom.ts";
-import { isDone, isOpen, mood, padVisible } from "../engine/sim.ts";
+import { isDone, isOpen, mood, padVisible, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, Rect, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
-import { buildScene, type Built } from "./scene.ts";
+import { buildScene, PAPER_TOP, STAMP_PAD, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
 
 /** where everyone stood one step ago, by id */
@@ -63,6 +63,85 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
   const room = Math.max(0, Math.min(1, (clearance(x, y, ws) - BODY) / 8));
   const s = Math.sin(t * 2.4 * f.rate + f.phase) * SWAY * room;
   return { x: Math.cos(heading) * s, y: -Math.sin(heading) * s };
+}
+
+/** the stamp at the release desk, as a time into someone's stand at the desk (the sim's own `t`, or
+ * -1 for nobody there): `over` 0 waits on the ink pad and 1 is over the papers, `lift` is how high
+ * above where it sits, `sheet` their papers lying on the stack, `mark` the red mark on them. it
+ * lifts off the pad, swings over the papers and comes down with a slam just as the sim says it
+ * does, sits there a moment, then goes back. written into `out`, so nothing is made per frame */
+export interface StampPose { over: number; lift: number; sheet: boolean; mark: boolean }
+export const STAMP_UP = 18;
+/** seconds the stamp stays pressed down on the papers after it lands */
+export const STAMP_PRESS = 0.12;
+export function stampPose(t: number, out: StampPose): StampPose {
+  out.over = out.lift = 0;
+  out.sheet = t >= 0;
+  out.mark = t >= STAMP_AT - 1e-9;
+  if (t < 0) return out;
+  const ease = (k: number) => k * k * (3 - 2 * k);
+  if (t < STAMP_AT) {
+    const k = t / STAMP_AT;
+    out.over = ease(Math.min(1, k / 0.6));
+    // up to the top by three quarters of the way, then down hard: faster and faster till it hits
+    out.lift = k < 0.75 ? STAMP_UP * ease(k / 0.75) : STAMP_UP * (1 - ((k - 0.75) / 0.25) ** 2);
+  } else {
+    // a moment pressed down, then a little hop back to the pad
+    const k = Math.min(1, Math.max(0, (t - STAMP_AT - STAMP_PRESS) / (STAMP_HOLD - STAMP_AT - STAMP_PRESS)));
+    out.over = 1 - ease(k);
+    out.lift = Math.sin(k * Math.PI) * 8;
+  }
+  return out;
+}
+/** whose stamp is shown when more than one stands at the desk. a stamp just come down holds the
+ * picture for its press, so every thunk is seen landing on its own marked papers; then the next one
+ * due to come down; when all are stamped, the one stamped last. -1 for nobody standing there */
+export function stampTime(w: World, st: string) {
+  let pressed = Infinity, next = -1, last = Infinity;
+  for (const a of w.agents) {
+    if (a.state !== "stamp" || a.station !== st || a.path.length) continue;
+    if (!stamped(a)) next = Math.max(next, a.t);
+    else {
+      last = Math.min(last, a.t);
+      if (a.t < STAMP_AT + STAMP_PRESS) pressed = Math.min(pressed, a.t);
+    }
+  }
+  return pressed < Infinity ? pressed : next >= 0 ? next : last < Infinity ? last : -1;
+}
+
+/** real seconds a landing stays drawn once the screen sees it, however many steps came in that frame */
+export const STAMP_BEAT = 0.15;
+/** the stamp as a screen draws it, frame by frame. a stamp the screen sees come down (someone at the
+ * desk stamped who was not, the last time it looked) is drawn landed on marked papers for STAMP_BEAT
+ * of real time from that frame, so the slam is on screen when its thunk plays even when a slow frame
+ * carries a quarter second of steps. otherwise it is `stampPose` of `stampTime`. `now` is real seconds.
+ * keeps only the ids of those at the desk already seen stamped, nothing made per frame */
+export function stampLatch() {
+  const seen: number[] = [];
+  let until = -Infinity, first = true;
+  return (w: World, st: string, now: number, out: StampPose): StampPose => {
+    // forget whoever has left the desk (or the world: a new game starts its ids over)
+    for (let i = seen.length - 1; i >= 0; i--) {
+      const a = w.agents.find((x) => x.id === seen[i]);
+      if (!a || a.state !== "stamp" || a.station !== st) seen.splice(i, 1);
+    }
+    let landed = false;
+    for (const a of w.agents)
+      if (a.state === "stamp" && a.station === st && stamped(a) && !seen.includes(a.id)) {
+        seen.push(a.id);
+        landed = true;
+      }
+    // one already stamped when the game is opened came down before anyone was looking
+    if (landed && !first) until = now + STAMP_BEAT;
+    first = false;
+    if (now < until) {
+      out.over = 1;
+      out.lift = 0;
+      out.sheet = out.mark = true;
+      return out;
+    }
+    return stampPose(stampTime(w, st), out);
+  };
 }
 
 const MAX_CHARS = 64;
@@ -150,6 +229,12 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const fairyAt = new Vector3();
   let fairyShown = false;
   dynamic.add(bus.group, skates, pony.group, sprite.group, mount.group, fairy.group);
+  // the rubber stamp at the release desk and the papers it comes down on, moved about, never remade
+  const stamp = makeStamp();
+  dynamic.add(stamp.stamp, stamp.sheet);
+  const stampNow: StampPose = { over: 0, lift: 0, sheet: false, mark: false };
+  const stampDrawn = stampLatch();
+  let stampLift = 0;
   // the rainbow behind a boosted warden: six coloured lines along the trail
   const RAINBOW = 24;
   const rainbow = ["#ff6b6b", "#ffb34d", "#ffe066", "#7ccf7c", "#5cb8ee", "#b79be6"].map((c) => {
@@ -530,6 +615,18 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       blob(fairyAt.x, fairyAt.z, 6);
     }
     fairyShown = flying;
+    // the stamp: on its ink pad until someone stands at the desk for their papers. it goes up as
+    // quick as it can and comes down exactly when the sim says, so the thunk and the slam agree
+    const desk = l.stations.find((s) => s.kind === "release") as S<"release"> | undefined;
+    stamp.stamp.visible = stamp.sheet.visible = !!desk;
+    if (desk) {
+      const at = stampAt(desk), pose = stampDrawn(w, desk.id, t, stampNow);
+      stampLift = pose.lift < stampLift ? pose.lift : stampLift + (pose.lift - stampLift) * (1 - Math.exp(-dt * 30));
+      stamp.stamp.position.set(at.x - STAMP_PAD * (1 - pose.over), PAPER_TOP + 0.3 + stampLift, at.y);
+      stamp.sheet.visible = pose.sheet;
+      stamp.mark.visible = pose.mark;
+      stamp.sheet.position.set(at.x, PAPER_TOP, at.y);
+    }
     const trail = me.trail, high = onUnicorn ? 10 : 0;
     rainbow.forEach((line, k) => {
       line.visible = w.boosted > 0 && trail.length > 2;
@@ -572,7 +669,10 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     where: (w: World, out: ScreenPoint) => screen(w.agents[0].x, 14 + lift(w), w.agents[0].y, out),
     height: skin.model.height,
     lift,
-    info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray() }),
+    info: () => ({
+      calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray(),
+      stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
+    }),
     dispose() {
       built?.dispose();
       renderer.dispose();
@@ -695,6 +795,28 @@ function flap(f: { wings: Group[] }, t: number) {
   const open = 0.5 + Math.sin(t * 30) * 0.5;
   f.wings[0].rotation.y = open;
   f.wings[1].rotation.y = -open;
+}
+
+/** a big rubber stamp standing on its base: a red rubber foot, a wooden stem and a round knob on top,
+ * its bottom at the group's origin. and a sheet of release papers with a red square for the mark */
+function makeStamp() {
+  const stamp = new Group();
+  const red = new MeshLambertMaterial({ color: "#e5484d" }), wood = new MeshLambertMaterial({ color: "#6b4b3a" });
+  const foot = new Mesh(new BoxGeometry(12, 4, 10), red);
+  foot.position.y = 2;
+  const stem = new Mesh(new CylinderGeometry(2, 2.4, 9, 10), wood);
+  stem.position.y = 8.5;
+  const knob = new Mesh(new SphereGeometry(4.5, 12, 10), wood);
+  knob.position.y = 15;
+  stamp.add(foot, stem, knob);
+  const sheet = new Group();
+  const page = new Mesh(new BoxGeometry(16, 0.3, 20), new MeshLambertMaterial({ color: "#ffffff" }));
+  page.position.y = 0.15;
+  const mark = new Mesh(new BoxGeometry(10, 0.2, 8), red);
+  mark.position.y = 0.4;
+  sheet.add(page, mark);
+  sheet.visible = mark.visible = false;
+  return { stamp, sheet, mark };
 }
 
 function makeSkates() {
