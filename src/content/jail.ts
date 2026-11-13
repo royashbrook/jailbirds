@@ -74,8 +74,9 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     // the commissary safe outside intake: the collector puts the desks' coins in, the player takes them out
     { id: "safe", kind: "safe", at: { x: 250, y: 785 }, r: 26, pileAt: { x: 220, y: 785 } },
   ];
+  // a cell still to open is full of rubble: paying its pad clears it
   const cellPad = (i: number, c: number, rank: number): PadDef => ({
-    id: `cell${i + 1}`, cost: cost(c), at: { x: cellMid(i), y: 184 }, rank, after: i > 2 ? `cell${i}` : undefined, unlock: { room: `c${i}` }, label: "cell",
+    id: `cell${i + 1}`, cost: cost(c), at: { x: cellMid(i), y: 184 }, rank, after: i > 2 ? `cell${i}` : undefined, unlock: { room: `c${i}` }, label: "clear cell",
   });
   const chain = (id: string, steps: [number, number, number][], at: { x: number; y: number }, label: string, key: "line" | "speed" | "carry"): PadDef[] =>
     steps.map(([c, rank, value], k) => ({

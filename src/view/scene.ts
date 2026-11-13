@@ -3,13 +3,13 @@
 // when one of those changes. everything of one shape shares one instanced mesh,
 // so the whole jail is a handful of draw calls.
 import {
-  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Group, InstancedMesh, Matrix4,
+  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DodecahedronGeometry, DoubleSide, Euler, Group, InstancedMesh, Matrix4,
   Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, type Material,
   type BufferGeometry,
 } from "three";
-import { walls } from "../engine/geom.ts";
+import { WALL, walls } from "../engine/geom.ts";
 import { isOpen, stampAt } from "../engine/sim.ts";
-import type { AnyStation, LevelDef, PadDef, World } from "../engine/types.ts";
+import type { AnyStation, LevelDef, PadDef, RoomDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
 
 export const WALL_H = 11;
@@ -86,8 +86,87 @@ function padFrame() {
   return padTexture;
 }
 
+/** the highest any rubble reaches, under a standing person's head, so the warden and the next pad
+ * stay in sight over it */
+export const RUBBLE_TOP = 19;
+/** stone colours: warm and cool greys, each pulled a little toward the palette's locked floor so
+ * the heap sits right by day and by night */
+const STONES = ["#b7a58f", "#9fa4ac", "#cdbfaa", "#8d9199", "#ab9c88"];
+const STONE_MIX = 0.2;
+
+/** one stone of a heap: where it sits, its half sizes, how it is turned, how far it reaches from its
+ * middle once turned (ex, ey, ez), and which colour */
+export interface Stone {
+  x: number; y: number; z: number; sx: number; sy: number; sz: number; rx: number; ry: number; rz: number;
+  ex: number; ey: number; ez: number; tone: number;
+}
+
+/** the rooms drawn full of rubble: shut by a pad that names the room, and that pad not bought. the
+ * same things the sim reads to keep the room shut, nothing of its own */
+export function rubbleRooms(l: LevelDef, w: World): RoomDef[] {
+  return l.rooms.filter((r) => !!r.locked && !isOpen(w, r.locked) && l.pads.some((p) => p.id === r.locked && p.unlock.room === r.id));
+}
+
+/** a stone, faceted: twelve flat faces read as rock from any side */
+export const stoneGeometry = (): BufferGeometry => new DodecahedronGeometry(1, 0);
+
+/** a little dice of the room's own, from its id, so the heap is the same every time and the jail's
+ * dice are never rolled for it */
+function roomDice(id: string) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  let s = h >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const heaps = new WeakMap<RoomDef, Stone[]>();
+/** how the rubble lies in a room: big stones over the whole floor, smaller ones heaped toward the
+ * middle, two on top. every stone stays inside the walls and under RUBBLE_TOP. worked out once a room */
+export function rubbleStones(r: RoomDef): Stone[] {
+  const kept = heaps.get(r);
+  if (kept) return kept;
+  const next = roomDice(r.id);
+  const { x, y, w, h } = r.rect, inset = WALL / 2 + 1;
+  const out: Stone[] = [];
+  const turn = new Matrix4(), euler = new Euler();
+  // u, v place it across the floor (0 to 1), `size` is about its half width, `lift` how high it rests
+  const put = (u: number, v: number, size: number, lift: number) => {
+    let sx = size * (0.9 + next() * 0.3), sy = size * (0.55 + next() * 0.25), sz = size * (0.8 + next() * 0.3);
+    const rx = (next() - 0.5) * 0.6, ry = next() * Math.PI * 2, rz = (next() - 0.5) * 0.6;
+    // how far the turned stone reaches along each axis: the stone fits in its scaled unit ball
+    const e = turn.makeRotationFromEuler(euler.set(rx, ry, rz)).elements;
+    const reach = (a: number, b: number, c: number) => Math.hypot(a * sx, b * sy, c * sz);
+    // a stone that would stand over the top is made smaller, never moved up
+    const fit = Math.min(1, (RUBBLE_TOP - lift) / (1.55 * reach(e[1], e[5], e[9])));
+    sx *= fit;
+    sy *= fit;
+    sz *= fit;
+    const ex = reach(e[0], e[4], e[8]), ey = reach(e[1], e[5], e[9]), ez = reach(e[2], e[6], e[10]);
+    // its middle kept a reach in from the walls, wherever u and v put it
+    const span = (lo: number, len: number, r: number, t: number) => lo + inset + r + Math.min(1, Math.max(0, t)) * (len - 2 * (inset + r));
+    // and sunk a little into the floor or the stones under it
+    out.push({ x: span(x, w, ex, u), y: lift + ey * 0.55, z: span(y, h, ez, v), sx, sy, sz, rx, ry, rz, ex, ey, ez, tone: Math.floor(next() * STONES.length) });
+  };
+  for (let row = 0; row < 5; row++)
+    for (let col = 0; col < 3; col++) put((col + 0.5 + (next() - 0.5) * 0.5) / 3, (row + 0.5 + (next() - 0.5) * 0.5) / 5, 9 + next() * 2.5, 0);
+  for (let k = 0; k < 6; k++) put(0.25 + next() * 0.5, 0.25 + next() * 0.5, 7 + next() * 2, 4 + next() * 2);
+  for (let k = 0; k < 2; k++) put(0.4 + next() * 0.2, 0.4 + next() * 0.2, 5.5 + next(), 9 + next());
+  heaps.set(r, out);
+  return out;
+}
+
+/** the colour a stone is drawn in, over a locked floor of the colour `floor` */
+export const stoneColour = (s: Stone, floor: Color, out: Color) => out.set(STONES[s.tone]).lerp(floor, STONE_MIX);
+
 export interface PadMesh { pad: PadDef; frame: Mesh; fill: Mesh; w: number; h: number }
-export interface Built { group: Group; pads: PadMesh[]; dispose(): void }
+/** `rubble` is the ids of the rooms drawn full of rubble, `stones` how many stones that took */
+export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; dispose(): void }
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
@@ -110,11 +189,17 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
   box(l.size.w / 2, roadY + 300, l.size.w + 2400, 640, 0.6, pal.road);
   for (let x = -600; x < l.size.w + 600; x += 32) box(x, roadY + 22, 16, 3, 0.8, pal.roadLine);
 
+  // the cells still to clear are full of rubble: nothing finished shows in them until bought
+  const rubble = rubbleRooms(l, w);
+  const buried = new Set(rubble.map((r) => r.id));
+  const roomOf = (house?: string) => (l.stations.find((s) => s.kind === "house" && s.id === house) as S<"house"> | undefined)?.room;
+
   // floors, biggest first so a cell sits on top of its block
   const rooms = [...l.rooms].sort((a, b) => b.rect.w * b.rect.h - a.rect.w * a.rect.h);
   rooms.forEach((r, k) => {
     const ok = open(r.locked);
     add("floor", r.rect.x + r.rect.w / 2, 0.2 + k * 0.05, r.rect.y + r.rect.h / 2, r.rect.w, 0.6, r.rect.h, ok ? (pal.floors[r.look] ?? pal.hall) : pal.locked);
+    if (buried.has(r.id)) return;
     if (r.look === "cell") {
       // two jail bunks: a metal frame, a thin grey mattress and a flat pillow
       for (const dy of [30, 82]) {
@@ -192,6 +277,8 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     } else if (s.kind === "facility") {
       s.seats.forEach((seat) => {
         const ok = open(seat.locked);
+        // a toilet under rubble is not drawn: it shows when its cell is cleared
+        if (!ok && buried.has(roomOf(seat.house) ?? "")) return;
         if (s.look === "toilet") {
           cyl(seat.at.x - 3, seat.at.y, 7, 6, ok ? pal.porcelain : pal.locked);
           box(seat.at.x + 7, seat.at.y, 6, 14, 12, ok ? pal.porcelain : pal.locked);
@@ -240,6 +327,26 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     disposables.push(mesh.geometry, material);
   }
 
+  // the rubble: every stone of every buried cell in one instanced mesh, made only when the scene is
+  // rebuilt (something bought), never as coins go in
+  const stones = rubble.flatMap(rubbleStones);
+  if (stones.length) {
+    const material = new MeshLambertMaterial({ flatShading: true });
+    const mesh = new InstancedMesh(stoneGeometry(), material, stones.length);
+    const floor = new Color(pal.locked);
+    stones.forEach((s, i) => {
+      dummy.position.set(s.x, s.y, s.z);
+      dummy.rotation.set(s.rx, s.ry, s.rz);
+      dummy.scale.set(s.sx, s.sy, s.sz);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      mesh.setColorAt(i, stoneColour(s, floor, tint));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+    disposables.push(mesh.geometry, material);
+  }
+
   // price pads: a tinted dashed square and a fill that grows as coins go in
   const pads: PadMesh[] = [];
   const frameGeo = new PlaneGeometry(1, 1), fillGeo = new PlaneGeometry(1, 1).applyMatrix4(new Matrix4().makeTranslation(0.5, 0, 0));
@@ -262,6 +369,8 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
   return {
     group,
     pads,
+    rubble: rubble.map((r) => r.id),
+    stones: stones.length,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };
 }
