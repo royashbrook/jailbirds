@@ -109,6 +109,41 @@ export function stampTime(w: World, st: string) {
   return pressed < Infinity ? pressed : next >= 0 ? next : last < Infinity ? last : -1;
 }
 
+/** real seconds a landing stays drawn once the screen sees it, however many steps came in that frame */
+export const STAMP_BEAT = 0.15;
+/** the stamp as a screen draws it, frame by frame. a stamp the screen sees come down (someone at the
+ * desk stamped who was not, the last time it looked) is drawn landed on marked papers for STAMP_BEAT
+ * of real time from that frame, so the slam is on screen when its thunk plays even when a slow frame
+ * carries a quarter second of steps. otherwise it is `stampPose` of `stampTime`. `now` is real seconds.
+ * keeps only the ids of those at the desk already seen stamped, nothing made per frame */
+export function stampLatch() {
+  const seen: number[] = [];
+  let until = -Infinity, first = true;
+  return (w: World, st: string, now: number, out: StampPose): StampPose => {
+    // forget whoever has left the desk (or the world: a new game starts its ids over)
+    for (let i = seen.length - 1; i >= 0; i--) {
+      const a = w.agents.find((x) => x.id === seen[i]);
+      if (!a || a.state !== "stamp" || a.station !== st) seen.splice(i, 1);
+    }
+    let landed = false;
+    for (const a of w.agents)
+      if (a.state === "stamp" && a.station === st && stamped(a) && !seen.includes(a.id)) {
+        seen.push(a.id);
+        landed = true;
+      }
+    // one already stamped when the game is opened came down before anyone was looking
+    if (landed && !first) until = now + STAMP_BEAT;
+    first = false;
+    if (now < until) {
+      out.over = 1;
+      out.lift = 0;
+      out.sheet = out.mark = true;
+      return out;
+    }
+    return stampPose(stampTime(w, st), out);
+  };
+}
+
 const MAX_CHARS = 64;
 const MAX_TRAYS = 160;
 const MAX_COINS = 320;
@@ -198,6 +233,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const stamp = makeStamp();
   dynamic.add(stamp.stamp, stamp.sheet);
   const stampNow: StampPose = { over: 0, lift: 0, sheet: false, mark: false };
+  const stampDrawn = stampLatch();
   let stampLift = 0;
   // the rainbow behind a boosted warden: six coloured lines along the trail
   const RAINBOW = 24;
@@ -584,7 +620,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     const desk = l.stations.find((s) => s.kind === "release") as S<"release"> | undefined;
     stamp.stamp.visible = stamp.sheet.visible = !!desk;
     if (desk) {
-      const at = stampAt(desk), pose = stampPose(stampTime(w, desk.id), stampNow);
+      const at = stampAt(desk), pose = stampDrawn(w, desk.id, t, stampNow);
       stampLift = pose.lift < stampLift ? pose.lift : stampLift + (pose.lift - stampLift) * (1 - Math.exp(-dt * 30));
       stamp.stamp.position.set(at.x - STAMP_PAD * (1 - pose.over), PAPER_TOP + 0.3 + stampLift, at.y);
       stamp.sheet.visible = pose.sheet;

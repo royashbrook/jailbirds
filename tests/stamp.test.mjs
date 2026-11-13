@@ -4,7 +4,7 @@ import {
   create, step, player, restore, stamped, stampAt, stampSpot, AGENT_SPEED, DT, STAMP_AT, STAMP_HOLD,
 } from "../src/engine/sim.ts";
 import { cues, snap } from "../src/engine/cues.ts";
-import { stampPose, stampTime, STAMP_UP } from "../src/view/view.ts";
+import { stampLatch, stampPose, stampTime, STAMP_BEAT, STAMP_UP } from "../src/view/view.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
 // the way out at the release desk: set free, paid and starred at once, as before. then each one
@@ -51,6 +51,11 @@ function ear(w, every = 1) {
   return e;
 }
 const thunks = (heard) => heard.filter((c) => c.kind === "stamp");
+/** what the screen draws for the stamp at real time `now` seconds, as the view picks it */
+const drawer = () => {
+  const latch = stampLatch(), out = { over: 0, lift: 0, sheet: false, mark: false };
+  return (w, now) => latch(w, desk.id, now, out);
+};
 const sum = (list) => list.reduce((n, c) => n + c.n, 0);
 
 /** watch one released person from now until gone: where they were at the end of each step */
@@ -279,30 +284,40 @@ test("the stamp drawn: on its pad, up and over, down just as the sim stamps, the
 
 test("two who reach the desk close together: every thunk lands with the drawn stamp down on marked papers", () => {
   // the second one stands at the desk before the first one's stamp has come down. whatever the gap,
-  // the stamp drawn at each thunk is the one coming down, never the next one still going up
-  let overlapped = 0;
-  for (const behind of [[722, 740], [722, 730], [710, 760], [740, 722], [722, 790]]) {
-    const w = create(LEVELS, 0, 7);
-    w.ride.t = w.fightIn = w.boost.t = 9999;
-    const p = player(w);
-    Object.assign(p, { x: desk.at.x, y: desk.at.y });
-    const two = behind.map((y, k) => Object.assign(done(w, p, k), { x: desk.at.x, y }));
-    const e = ear(w);
-    const arrived = new Map();
-    for (let i = 0; i < 60 * 10 && two.some((b) => w.agents.includes(b)); i++) {
-      const heard = e.heard.length;
-      e.step();
-      for (const b of two) if (!arrived.has(b.id) && b.state === "stamp" && !b.path.length) arrived.set(b.id, w.steps);
-      const now = thunks(e.heard.slice(heard));
-      if (!now.length) continue;
-      const pose = { ...stampPose(stampTime(w, desk.id), { over: 0, lift: 0, sheet: false, mark: false }) };
-      assert.ok(pose.over === 1 && Math.abs(pose.lift) < 1e-9 && pose.mark, `${behind}: step ${w.steps}, the thunk drawn as ${JSON.stringify(pose)}`);
+  // and however many steps a screen takes between looks (a slow one catches up a quarter second at
+  // once), the stamp drawn as each thunk is heard is down on marked papers, never the next one going up
+  for (const every of [1, 7, 15]) {
+    let overlapped = 0, landings = 0;
+    for (const behind of [[722, 740], [722, 730], [710, 760], [740, 722], [722, 790]]) {
+      const w = create(LEVELS, 0, 7);
+      w.ride.t = w.fightIn = w.boost.t = 9999;
+      const p = player(w);
+      Object.assign(p, { x: desk.at.x, y: desk.at.y });
+      const two = behind.map((y, k) => Object.assign(done(w, p, k), { x: desk.at.x, y }));
+      const draw = drawer();
+      const e = ear(w, every);
+      const arrived = new Map();
+      let clock = 0;
+      draw(w, clock);
+      for (let i = 0; i < 60 * 10 && two.some((b) => w.agents.includes(b)); i++) {
+        const heard = e.heard.length;
+        e.step();
+        for (const b of two) if (!arrived.has(b.id) && b.state === "stamp" && !b.path.length) arrived.set(b.id, w.steps);
+        if (e.n % every) continue;
+        // a frame: the screen hears what happened and draws, `every` steps of real time later
+        clock += every * DT;
+        const pose = { ...draw(w, clock) };
+        if (!thunks(e.heard.slice(heard)).length) continue;
+        landings++;
+        assert.ok(pose.over === 1 && Math.abs(pose.lift) < 1e-9 && pose.mark, `every ${every}, ${behind}: step ${w.steps}, the thunk drawn as ${JSON.stringify(pose)}`);
+      }
+      assert.equal(sum(thunks(e.heard)), 2, `every ${every}, ${behind}: two thunks`);
+      const [a, b] = [...arrived.values()];
+      if (Math.abs(a - b) > 0 && Math.abs(a - b) < STAMP_AT / DT) overlapped++;
     }
-    assert.equal(sum(thunks(e.heard)), 2, `${behind}: two thunks`);
-    const [a, b] = [...arrived.values()];
-    if (Math.abs(a - b) > 0 && Math.abs(a - b) < STAMP_AT / DT) overlapped++;
+    assert.ok(landings >= 5, `every ${every}: thunks were heard and looked at (${landings})`);
+    assert.ok(overlapped >= 2, `every ${every}: the gaps really are shorter than the stamp's way down (${overlapped})`);
   }
-  assert.ok(overlapped >= 2, `the gaps really are shorter than the stamp's way down (${overlapped})`);
 });
 
 test("a full line and every guard at the desk at once: each stands in a place of their own and holds there", () => {
@@ -343,4 +358,22 @@ test("a full line and every guard at the desk at once: each stands in a place of
   assert.equal(w.released, freed.length, "each set free once");
   assert.ok(most >= 6, `a real crowd at the desk at once (${most})`);
   for (const b of freed) assert.equal(held.get(b.id), HOLD_STEPS - 1, `${b.id} held at their own place for the stamp`);
+});
+
+test("a landing the screen sees stays drawn for a beat of real time, then the stamp goes on; one stamped before the screen looked is not a landing", () => {
+  const out = { over: 0, lift: 0, sheet: false, mark: false };
+  const at = (t, path = []) => ({ id: 2, state: "stamp", station: "stamp", path, t });
+  const next = { id: 3, state: "stamp", station: "stamp", path: [], t: 0.28 };
+  const draw = stampLatch();
+  assert.equal(draw({ agents: [at(0.3), next] }, "stamp", 10, out).mark, false, "nothing landed yet");
+  // a slow frame: a quarter second of steps at once, the first one stamped and well past its press
+  const landed = { ...draw({ agents: [at(0.55), { ...next, t: 0.53 - 0.25 }] }, "stamp", 10.25, out) };
+  assert.deepEqual(landed, { over: 1, lift: 0, sheet: true, mark: true }, "drawn landed the frame it is seen");
+  assert.equal(draw({ agents: [at(0.56), next] }, "stamp", 10.25 + STAMP_BEAT - 0.01, out).lift, 0, "and held for the beat");
+  const after = { ...draw({ agents: [at(0.6), { ...next, t: 0.3 }] }, "stamp", 10.25 + STAMP_BEAT + 0.01, out) };
+  assert.ok(after.lift > 0 && !after.mark, "then on to the next one going up");
+  // opened with someone already stamped: no landing to show, just where their stamp is
+  const fresh = stampLatch();
+  const opened = { ...fresh({ agents: [at(0.7)] }, "stamp", 0, out) };
+  assert.deepEqual(opened, { ...stampPose(0.7, { over: 0, lift: 0, sheet: false, mark: false }) });
 });
