@@ -8,11 +8,17 @@ import {
   type BufferGeometry,
 } from "three";
 import { walls } from "../engine/geom.ts";
-import { isOpen } from "../engine/sim.ts";
+import { isOpen, stampAt } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, PadDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
 
 export const WALL_H = 11;
+/** how tall the desks stand, so what sits on them sits on top */
+export const DESK_H = 13;
+/** how far along the release desk the ink pad sits from the papers, where the stamp waits */
+export const STAMP_PAD = 26;
+/** the top of the papers' stack on the release desk */
+export const PAPER_TOP = DESK_H + 1.8;
 const TILE = 40;
 
 type Shape = "box" | "cyl" | "ball" | "floor";
@@ -173,14 +179,11 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     } else if (s.kind === "release") {
       spot(s.at.x, s.at.y);
       box(s.prop.x + s.prop.w / 2, s.prop.y + s.prop.h / 2, s.prop.w, s.prop.h, 13, pal.wood);
-      // a big rubber stamp and its ink pad
-      box(s.prop.x + 24, s.prop.y + s.prop.h / 2, 20, 12, 2, "#e5484d", 13);
-      cyl(s.prop.x + 60, s.prop.y + s.prop.h / 2, 5, 6, "#e5484d", 13);
-      cyl(s.prop.x + 60, s.prop.y + s.prop.h / 2, 2, 8, "#6b4b3a", 19);
-      ball(s.prop.x + 60, 28, s.prop.y + s.prop.h / 2, 4, "#6b4b3a");
-      // the release papers, a little stack with a stamped one on top
-      for (let k = 0; k < 3; k++) box(s.prop.x + 92, s.prop.y + s.prop.h / 2, 16, 20, 0.6, "#ffffff", 13 + k * 0.6);
-      box(s.prop.x + 92, s.prop.y + s.prop.h / 2 + 3, 7, 7, 0.3, "#e5484d", 14.8);
+      // the ink pad, and the release papers where the stamp comes down: a little stack. the big
+      // rubber stamp itself moves, so it is drawn in view.ts
+      const paper = stampAt(s);
+      box(paper.x - STAMP_PAD, paper.y, 20, 12, 2, "#e5484d", 13);
+      for (let k = 0; k < 3; k++) box(paper.x, paper.y, 16, 20, 0.6, "#ffffff", 13 + k * 0.6);
     } else if (s.kind === "sink") {
       const ok = open(s.locked);
       const c = ok ? pal.wood : pal.locked;

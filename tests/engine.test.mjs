@@ -244,8 +244,8 @@ test("served their time: led to the release desk, a star, a pile, a level up wit
   assert.equal(w.stars, 0);
   assert.ok(w.coins >= L.rankReward * 2, `the level-up reward, coins ${w.coins}`);
   assert.equal(w.piles.stamp, 2 * station("stamp").pay);
-  // they walk out and are gone, and their beds are free
-  const gone = first.filter((b) => b.state === "leave");
+  // they walk out (by the stamp at the desk first) and are gone, and their beds are free
+  const gone = first.filter((b) => b.state === "stamp" || b.state === "leave");
   assert.equal(gone.length, 2);
   until(w, () => gone.every((b) => !w.agents.includes(b)), 20, "the released to leave");
   assert.equal(freeBeds(w, L) >= 3, true);

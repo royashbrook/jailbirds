@@ -3,12 +3,12 @@
 // asks `cues` what changed since. nothing here touches the world, so the game
 // plays the same with or without anyone listening.
 import { near } from "./geom.ts";
-import { followers, player } from "./sim.ts";
+import { followers, player, stamped } from "./sim.ts";
 import type { BoostKind, Coin, LevelDef, Mess, World } from "./types.ts";
 
 export type CueKind =
   | "coin" | "pile" | "pay" | "buy" | "checkin" | "follow" | "bed" | "seat" | "carry" | "drop"
-  | "clean" | "release" | "rank" | "level" | "fight" | "calm" | "skates" | "unicorn" | "fairy" | "ride";
+  | "clean" | "release" | "stamp" | "rank" | "level" | "fight" | "calm" | "skates" | "unicorn" | "fairy" | "ride";
 /** `n` is how many, or how far along: coins picked up, the line's length, the new rank.
  * `fill` is how full a price tag is now, from 0 to 1 */
 export interface Cue { kind: CueKind; n: number; fill?: number }
@@ -19,6 +19,8 @@ export interface Snap {
   level: number; steps: number; coins: number; floor: Coin[]; piles: Record<string, number>; paid: Record<string, number>;
   bought: number; queue: number[]; led: number[]; carry: number; messes: Mess[];
   released: number; rank: number; settled: number; alert: boolean; boosted: number; ride: string;
+  /** residents whose release papers are not stamped yet, by id */
+  unstamped: number[];
   /** a boost lying on the floor, and what it is */
   boost: boolean; boostKind: BoostKind; picked: number;
   /** what the player has taken so far, as the sim wrote it down: every coin in hand, and those off piles */
@@ -43,6 +45,7 @@ export function snap(w: World): Snap {
     led: followers(w, me).map((a) => a.id),
     carry: me.carry, messes: w.messes.slice(),
     released: w.released, rank: w.rank, settled: w.settled, alert: !!w.alert, boosted: w.boosted, ride: w.ride.state,
+    unstamped: w.agents.filter((a) => a.kind === "agent" && !stamped(a)).map((a) => a.id),
     boost: w.boost.here, boostKind: w.boostKind, picked: w.picked.n, took: tookAll(w), tookPiles: pileSum(w),
   };
 }
@@ -114,6 +117,14 @@ export function cues(before: Snap, w: World, l: LevelDef): Cue[] {
   const rankUp = w.rank > before.rank;
   add("release", w.released - before.released - (rankUp ? 1 : 0));
   if (rankUp) add("rank", w.rank);
+  // the stamp comes down on someone's papers at the desk, a moment after the release: a thunk
+  // each, when it happens. gone already means stamped on the way out, as only the stamped leave
+  let thunk = 0;
+  for (const id of before.unstamped) {
+    const a = w.agents.find((x) => x.id === id);
+    if (!a || stamped(a)) thunk++;
+  }
+  add("stamp", thunk);
   if (w.alert && !before.alert) add("fight", 1);
   add("calm", w.settled - before.settled);
   // a boost picked up, named by what the sim says it turned out to be at the moment

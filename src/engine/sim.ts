@@ -45,6 +45,20 @@ const ALERT_R = 40;
 const TRAIL_STEP = 3;
 /** seconds home before a resident asks to be led anywhere */
 export const SETTLE = 2;
+/** the way out of the release desk: seconds someone set free stands at the desk for their papers,
+ * and how far into that the stamp comes down on them */
+export const STAMP_HOLD = 0.8;
+export const STAMP_AT = 0.4;
+/** how far apart people stand side by side at the release desk, and how many places there are */
+const STAMP_GAP = 16;
+const STAMP_SPOTS = 4;
+/** where the stamp comes down on the release desk: three quarters along it */
+export const stampAt = (st: ReleaseDef): Pt => ({ x: st.prop.x + st.prop.w * 0.75, y: st.prop.y + st.prop.h / 2 });
+/** where someone set free stands for their papers: by the stamp, on the side of the desk the actor stands,
+ * the next one along beside them */
+export const stampSpot = (st: ReleaseDef, place: number): Pt => ({ x: stampAt(st).x + (place % STAMP_SPOTS) * STAMP_GAP, y: st.at.y });
+/** someone at the release desk whose papers have been stamped, or on the way out after */
+export const stamped = (a: Agent) => a.state === "leave" || (a.state === "stamp" && a.t >= STAMP_AT - 1e-9);
 
 type Kind = AnyStation["kind"];
 type S<K extends Kind> = Extract<AnyStation, { kind: K }>;
@@ -551,12 +565,20 @@ function hold(w: World, can: Agent[], ok: boolean, join: (b: Agent) => void) {
   join(b);
 }
 
+/** set free: paid, counted and starred here, once. what follows is only the way out: up to the
+ * desk for the stamp, then out through the exit (see residents) */
 function release(w: World, l: LevelDef, b: Agent, st: ReleaseDef) {
-  b.state = "leave";
+  const taken = w.agents.filter((a) => a.state === "stamp" && a.station === st.id).map((a) => a.seat);
+  let place = 0;
+  while (taken.includes(place)) place++;
+  b.state = "stamp";
   b.leader = -1;
   b.house = "";
   b.slot = -1;
-  b.path = st.exit.flatMap((pt, i) => (i ? [pt] : route(w, l, b, pt)));
+  b.station = st.id;
+  b.seat = place;
+  b.t = 0;
+  b.path = route(w, l, b, stampSpot(st, place));
   w.piles[st.id] = (w.piles[st.id] ?? 0) + st.pay;
   w.released++;
   addStar(w, l);
@@ -690,6 +712,17 @@ function residents(w: World, l: LevelDef) {
         a.state = "home";
         a.rest = 0;
       }
+    } else if (a.state === "stamp") {
+      // walk up to the desk, stand while the stamp comes down on the papers, then out the way
+      // everyone goes. `t` is seconds stood at the desk, nothing else, in this state
+      if (!walkPath(a, AGENT_SPEED)) continue;
+      a.t += DT;
+      if (a.t < STAMP_HOLD - 1e-9) continue;
+      const st = byId(l, a.station);
+      a.state = "leave";
+      a.station = "";
+      a.seat = -1;
+      a.path = st?.kind === "release" ? st.exit.flatMap((pt, i) => (i ? [pt] : route(w, l, a, pt))) : [];
     } else if (a.state === "leave") {
       if (walkPath(a, AGENT_SPEED)) w.agents = w.agents.filter((x) => x !== a);
     } else if (a.state === "home") {
