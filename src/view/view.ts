@@ -12,11 +12,11 @@ import {
   Object3D, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry, Vector3, WebGLRenderer, DynamicDrawUsage, Euler, Quaternion,
   type Material,
 } from "three";
-import { walls } from "../engine/geom.ts";
+import { WALL, walls } from "../engine/geom.ts";
 import { CLEAN_TIME, DIRT_MAX, dirtSpots, isDone, isOpen, mood, padVisible, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
-import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, World } from "../engine/types.ts";
+import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, RoomDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
-import { buildScene, PAPER_TOP, STAMP_PAD, type Built } from "./scene.ts";
+import { buildScene, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
 
 /** where everyone stood one step ago, by id */
@@ -169,6 +169,26 @@ export function stampLatch() {
   };
 }
 
+/** seconds the rubble of a cell just cleared takes to tumble away */
+export const REVEAL_S = 0.6;
+/** seconds a cell just cleared glows instead, with less motion */
+export const GLOW_S = 0.9;
+/** the cells to show cleared when the still parts are rebuilt: drawn as rubble last time and not now,
+ * and only when this same jail has bought more since. `was` null is a jail not drawn yet (opened,
+ * travelled to, started over): what is open there was open before anyone looked, so nothing replays */
+export function cleared(was: readonly string[] | null, now: readonly string[], grew: boolean): string[] {
+  if (!was || !grew) return [];
+  return was.filter((id) => !now.includes(id));
+}
+
+/** cells being cleared at once, at most: a cell is bought one at a time, so this is room to spare */
+const MAX_REVEALS = 6;
+const MAX_ROCKS = MAX_REVEALS * 32;
+/** puffs of dust round each cell being cleared, their colour, and the glow it gets with less motion */
+const DUST = 8;
+const DUST_COLOUR = "#ece4d6";
+const GLOW = "#fff2bf";
+
 const MAX_CHARS = 64;
 const MAX_TRAYS = 160;
 const MAX_COINS = 320;
@@ -246,6 +266,23 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const bags = pool(new SphereGeometry(4, 12, 10), MAX_BAGS);
   // three puffs of grey cloud over each upset head
   const puffs = pool(new SphereGeometry(1, 10, 8), MAX_CHARS * 3);
+  // a cell just cleared: its stones tumbling away and a puff of dust, or with less motion a soft glow
+  // on its floor. made once, drawn only while a clearing lasts
+  const rocks = pool(stoneGeometry(), MAX_ROCKS, new MeshLambertMaterial({ flatShading: true }));
+  const dust = pool(new SphereGeometry(1, 8, 6), MAX_REVEALS * DUST, new MeshLambertMaterial({ transparent: true, opacity: 0.6, depthWrite: false }));
+  const glowMaterial = new MeshBasicMaterial({ color: GLOW, transparent: true, opacity: 0, depthWrite: false });
+  const glows = pool(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), MAX_REVEALS, glowMaterial);
+  rocks.visible = dust.visible = glows.visible = false;
+  const calm = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+  // every clearing shown since the page opened, the most stones, glow and draw calls it had in a
+  // frame, and how often the still parts were built: for tests
+  interface Shown { room: string; quiet: boolean; rocks: number; glow: number; calls: number }
+  const reveals: { room: RoomDef; start: number; quiet: boolean; shown: Shown }[] = [];
+  const revealed: Shown[] = [];
+  let builds = 0;
+  // the rubble as last drawn, or null when nothing of this world has been drawn yet
+  let rubbleWas: string[] | null = null;
+  const lockedFloor = new Color();
 
   // the bus, and the surprises on the floor: one each, moved about. the unicorn the warden rides
   // and the fairy in flight are their own, bigger than the ones waiting to be picked up
@@ -426,15 +463,97 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   /** how far the warden is lifted off the floor, for anything placed over his head */
   const lift = (w: World) => (riding(w) ? SADDLE : 0);
 
+  /** start showing a cell cleared at time `t`: a tumble, or a glow with less motion */
+  function reveal(l: LevelDef, id: string, t: number) {
+    const room = l.rooms.find((r) => r.id === id);
+    if (!room) return;
+    const quiet = !!calm?.matches, shown = { room: id, quiet, rocks: 0, glow: 0, calls: 0 };
+    if (reveals.length >= MAX_REVEALS) reveals.shift();
+    reveals.push({ room, start: t, quiet, shown });
+    revealed.push(shown);
+    if (revealed.length > 32) revealed.shift();
+  }
+
+  /** cells being cleared: each stone tumbles a little out from the middle of the heap, up and over,
+   * shrinking to nothing in REVEAL_S, with dust puffing out round it, all inside the cell's walls.
+   * with less motion the cell's floor glows a moment and fades, and nothing moves */
+  function drawReveals(t: number) {
+    let rk = 0, dk = 0, hk = 0, glow = 0;
+    lockedFloor.set(pal.locked);
+    const inset = WALL / 2 + 1, inside = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    for (let i = reveals.length - 1; i >= 0; i--) {
+      const rv = reveals[i], age = t - rv.start;
+      if (age >= (rv.quiet ? GLOW_S : REVEAL_S)) {
+        reveals.splice(i, 1);
+        continue;
+      }
+      const { x, y, w: rw, h: rh } = rv.room.rect, cx = x + rw / 2, cz = y + rh / 2;
+      if (rv.quiet) {
+        glow = Math.max(glow, 1 - age / GLOW_S);
+        rv.shown.glow = Math.max(rv.shown.glow, 1 - age / GLOW_S);
+        dummy.position.set(cx, 1.2, cz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(rw - inset * 2, 1, rh - inset * 2);
+        dummy.updateMatrix();
+        glows.setMatrixAt(hk, dummy.matrix);
+        glows.setColorAt(hk++, tint.set("#ffffff"));
+        continue;
+      }
+      const k = age / REVEAL_S, ease = k * k * (3 - 2 * k), keep = 1 - ease, hop = Math.sin(k * Math.PI);
+      const from = rk;
+      for (const s of rubbleStones(rv.room)) {
+        if (rk >= MAX_ROCKS) break;
+        const dx = s.x - cx, dz = s.z - cz, d = Math.hypot(dx, dz) || 1, r = Math.max(s.sx, s.sy, s.sz) * keep;
+        dummy.position.set(
+          inside(s.x + (dx / d) * 10 * ease, x + inset + r, x + rw - inset - r),
+          s.y + hop * 8,
+          inside(s.z + (dz / d) * 10 * ease, y + inset + r, y + rh - inset - r),
+        );
+        dummy.rotation.set(s.rx + k * 4, s.ry, s.rz + k * 3);
+        dummy.scale.set(s.sx * keep, s.sy * keep, s.sz * keep);
+        dummy.updateMatrix();
+        rocks.setMatrixAt(rk, dummy.matrix);
+        rocks.setColorAt(rk++, stoneColour(s, lockedFloor, tint));
+      }
+      rv.shown.rocks = Math.max(rv.shown.rocks, rk - from);
+      for (let j = 0; j < DUST && dk < MAX_REVEALS * DUST; j++) {
+        const a = (j / DUST) * Math.PI * 2 + 0.4, spread = 8 + 20 * ease, size = (3 + 5 * k) * hop;
+        dummy.position.set(
+          inside(cx + Math.cos(a) * spread, x + inset + size, x + rw - inset - size),
+          3 + 7 * ease,
+          inside(cz + Math.sin(a) * spread * 1.4, y + inset + size, y + rh - inset - size),
+        );
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(size, size * 0.8, size);
+        dummy.updateMatrix();
+        dust.setMatrixAt(dk, dummy.matrix);
+        dust.setColorAt(dk++, tint.set(DUST_COLOUR));
+      }
+    }
+    glowMaterial.opacity = 0.45 * glow;
+    finish(rocks, rk);
+    finish(dust, dk);
+    finish(glows, hk);
+    // hidden while nothing is being cleared, so an ordinary frame does not even look at them
+    rocks.visible = rk > 0;
+    dust.visible = dk > 0;
+    glows.visible = hk > 0;
+  }
+
   function render(w: World, l: LevelDef, past: Past | null, alpha: number, now: number, dt: number, settings: CameraSettings) {
     const t = now / 1000;
     // rebuild the still parts only when the level, what is bought, or the palette changes
     if (l.id !== builtLevel || w.bought.length !== builtBought || pal !== builtPal) {
+      const grew = l.id === builtLevel && w.bought.length > builtBought;
       if (built) {
         scene.remove(built.group);
         built.dispose();
       }
       built = buildScene(l, w, pal);
+      builds++;
+      // a cell bought just now: the sim has opened it already, this only shows it being cleared
+      for (const id of cleared(rubbleWas, built.rubble, grew)) reveal(l, id, t);
+      rubbleWas = built.rubble;
       wallsNow = walls(l, (r) => isOpen(w, r.locked), true);
       scene.add(built.group);
       builtLevel = l.id;
@@ -691,6 +810,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     finish(puddles, pn);
     finish(bags, gn);
     finish(puffs, un);
+    drawReveals(t);
 
     // price pads: tinted by whether the rank allows them, filled by what is paid
     if (built)
@@ -703,6 +823,8 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       }
 
     renderer.render(scene, camera);
+    // what a frame with a clearing in it cost to draw, measured, not assumed
+    for (const rv of reveals) rv.shown.calls = Math.max(rv.shown.calls, renderer.info.render.calls);
   }
 
   return {
@@ -724,10 +846,21 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       lastFloor = -1;
       fly.fill(0);
       stampDrawn = stampLatch();
+      // nothing being cleared carries over, and the still parts are drawn afresh for this world, its
+      // open cells taken as they are: a bought cell never shows being cleared twice
+      reveals.length = 0;
+      rubbleWas = null;
+      builtLevel = "";
     },
     info: () => ({
-      calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, eye: camera.position.toArray(), target: look.toArray(),
+      calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+      geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, programs: renderer.info.programs?.length ?? 0,
+      eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
+      rubble: {
+        rooms: built ? [...built.rubble] : [], stones: built?.stones ?? 0, builds,
+        clearing: reveals.map((r) => r.room.id), revealed: revealed.map((r) => ({ ...r })),
+      },
     }),
     dispose() {
       built?.dispose();
