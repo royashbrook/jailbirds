@@ -19,15 +19,15 @@ function watch() {
     return bill ? "bill" : "other";
   };
   const log = (window.__pops = []), jumps = (window.__jumps = { coins: 0, stars: 0 });
-  // the timestamp every animation frame callback gets, the game's included. this one asks
-  // first, before the game has loaded, so in each frame it runs ahead of the game's.
+  // the timestamp the game's own frame callback is handed, kept as it is handed over. a
+  // loop of our own drifts off the game's frames when SLOW_FRAMES delays each request, and
   // document.timeline is not that clock in webkit: it read 8 to 13ms short
   let frame = 0;
-  const tick = (t) => {
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => raf((t) => {
     frame = t;
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+    cb(t);
+  });
   new MutationObserver((list) => {
     for (const { target: el, addedNodes } of list) {
       for (const node of addedNodes) {
