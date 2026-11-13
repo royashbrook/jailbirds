@@ -284,14 +284,8 @@ export function createOverlay(root: HTMLElement) {
     // trouble: a burst over the squabble, an arrow pointing to it from the edge
     const al = w.alert;
     if (al) {
-      let mx = 0, my = 0, k = 0;
-      for (const a of w.agents)
-        if (al.ids.includes(a.id)) {
-          mx += a.x;
-          my += a.y;
-          k++;
-        }
-      view.screen(k ? mx / k : al.x, view.height + 10, k ? my / k : al.y, pt);
+      // over the doorway, where the view draws the two squaring up, not over their bunks
+      view.screen(al.x, view.height + 10, al.y, pt);
       // comic shouts, a new one every so often, like a cartoon fight
       const shouts = skin.shouts?.length ? skin.shouts : [skin.squabble];
       const said = shouts[Math.floor(now / SHOUT_MS) % shouts.length];

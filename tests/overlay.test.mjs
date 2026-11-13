@@ -203,3 +203,15 @@ test("a squabble's burst says a new comic shout every so often, from the skin's 
   assert.equal(said(10), said(SHOUT_MS - 10), "one shout holds for a moment");
   assert.ok(pegs.shouts.includes("watch this!") && pegs.shouts.includes("pow!"));
 });
+
+test("the squabble burst sits over the doorway where the two are drawn, not over their bunks", () => {
+  const p = page();
+  // two fighters really in the world, in their bunks, well away from the door
+  const a = { ...p.world.agents[0], id: p.world.nextId++, kind: "agent", state: "fight", x: 40, y: 120 };
+  const b = { ...p.world.agents[0], id: p.world.nextId++, kind: "agent", state: "fight", x: 60, y: 140 };
+  p.world.agents.push(a, b);
+  p.world.alert = { x: 200, y: 300, ids: [a.id, b.id], held: 0 };
+  p.draw(1000);
+  const burst = p.made.find((el) => el.className === "burst");
+  assert.equal(burst.style.transform, at(200, 300 - HEAD - 10));
+});
