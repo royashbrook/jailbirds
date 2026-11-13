@@ -557,6 +557,28 @@ a {
 .bubble[data-need="done"] {
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Ccircle%20cx%3D%278%27%20cy%3D%2712%27%20r%3D%274.5%27%20fill%3D%27%23ffd23f%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M12%2012h9M18%2012v3M21%2012v3%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");
 }
+/* standing still by someone: a ring over their head fills up, and when it is full they join */
+.hold {
+  width: 30px;
+  height: 30px;
+  margin: -34px 0 0 -15px;
+  border-radius: 50%;
+  background: conic-gradient(#ffd23f var(--fill, 0%), rgba(255, 255, 255, 0.9) 0);
+  border: 2px solid #3a2e2b;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+}
+.hold::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #3a2e2b;
+}
+/* over a resident's need bubble, not on it */
+.hold.up {
+  margin-top: -70px;
+}
 /* a price tag stands up off its pad: the price, the thing, or a lock and a level */
 .tag {
   display: flex;
