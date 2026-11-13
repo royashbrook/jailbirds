@@ -11,6 +11,13 @@ import { queued, state, untilSim, walkTo } from "./helpers.js";
 // after, so how it is hung on the spot is read from its style. a count that jumps is
 // put in anew with its jump on it, so each jump is counted as it is put in.
 function watch() {
+  // what rides beside the "+n": a star is a picture; money is a green bill, wider than tall
+  // with its darker oval in the middle; anything else (a round coin) is neither
+  const markOf = (s) => {
+    if (s.backgroundImage.includes("svg")) return "star";
+    const bill = s.backgroundColor === "rgb(108, 192, 112)" && s.backgroundImage.startsWith("radial-gradient") && parseFloat(s.width) > parseFloat(s.height);
+    return bill ? "bill" : "other";
+  };
   const log = (window.__pops = []), jumps = (window.__jumps = { coins: 0, stars: 0 });
   new MutationObserver((list) => {
     for (const { target: el, addedNodes } of list) {
@@ -28,7 +35,7 @@ function watch() {
         x: box.x + box.width / 2 - root.x, y: box.y + box.height / 2 - root.y,
         display: getComputedStyle(part).display, motion: getComputedStyle(part, ring ? "::before" : null).animationName,
         quiet: el.getAttribute("aria-hidden"),
-        mark: ring ? "" : getComputedStyle(part, "::after").backgroundImage === "none" ? "coin" : "star",
+        mark: ring ? "" : markOf(getComputedStyle(part, "::after")),
         hung: ring ? ["left", "top", "translate"].map((key) => getComputedStyle(part, "::before")[key]) : [],
         warden: window.__jailbirds.warden(),
       });
@@ -76,10 +83,10 @@ test("coins picked up float a +7 off the warden and the count jumps, each time",
   await expect(page.locator("#rank .badge")).not.toHaveClass(/jump/);
   expect(await jumps(page)).toEqual({ coins: 1, stars: 0 });
 
-  // one "+7", with a coin and not a star, over the warden, and gone in its time
+  // one "+7", with a bill and not a star, over the warden, and gone in its time
   await expect.poll(() => log(page).then((l) => l.length)).toBe(2);
   const [up, down] = await log(page);
-  expect(up).toMatchObject({ what: "coin", mark: "coin", shown: true, text: "+7", display: "flex", motion: "pop", quiet: "true" });
+  expect(up).toMatchObject({ what: "coin", mark: "bill", shown: true, text: "+7", display: "flex", motion: "pop", quiet: "true" });
   expect(Math.abs(up.x - up.warden.x)).toBeLessThan(3);
   expect(up.y).toBeLessThan(up.warden.y);
   expect(up.y).toBeGreaterThan(up.warden.y - 120);
@@ -134,7 +141,7 @@ test("the star that levels her up shows with the coins it pays, the star a line 
   const ups = (await log(page)).filter((p) => p.shown);
   const star = ups.find((p) => p.what === "star"), coin = ups.find((p) => p.what === "coin");
   expect(star).toMatchObject({ mark: "star", text: "+1" });
-  expect(coin).toMatchObject({ mark: "coin", text: `+${after.coins}` });
+  expect(coin).toMatchObject({ mark: "bill", text: `+${after.coins}` });
   expect(Math.abs(star.x - coin.x)).toBeLessThan(3);
   expect(star.y).toBeLessThan(coin.y - 15);
 });

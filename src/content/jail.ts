@@ -146,7 +146,7 @@ export function hintText(h: Hint, noun: string): string {
     case "fetch": return "someone is waiting to eat: grab trays in the kitchen";
     case "drop": return "put the trays on the canteen table";
     case "clean": return "messy! walk over the mess to clean it";
-    case "coins": return "walk over the coins to pick them up";
+    case "coins": return "walk over the money to pick it up";
     case "pad": return "stand on a price tag to unlock it";
     case "rank": return "set more free to earn stars and level up";
     case "idle": return `keep your ${noun} happy`;

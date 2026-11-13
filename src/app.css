@@ -14,6 +14,10 @@
   --warn: #d6455d;
   --coin: #ffd23f;
   --coin-edge: #c9960f;
+  /* money is a green bill: the paper, its outline, and the darker oval in the middle */
+  --bill: #6cc070;
+  --bill-edge: #3f8a48;
+  --bill-band: #4e9e57;
   --font-ui: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -91,7 +95,7 @@ a {
   color: var(--accent-dim);
 }
 
-/* the house layout: the logo up top with the version in the corner, the coins
+/* the house layout: the logo up top with the version in the corner, the money
    under it, the jail, then the tip and the buttons along the bottom */
 /* the play area takes the whole screen on a phone or an ipad, either way up,
    inside the safe areas */
@@ -236,14 +240,18 @@ a {
   font-size: 11px;
   color: var(--ink-dim);
 }
-.coin-mark {
+/* the money count's mark: a little green bill with a darker oval in the middle */
+.money-mark {
   width: 20px;
   height: 20px;
 }
-.coin-mark circle {
-  fill: var(--coin);
-  stroke: var(--coin-edge);
+.money-mark rect {
+  fill: var(--bill);
+  stroke: var(--bill-edge);
   stroke-width: 2;
+}
+.money-mark ellipse {
+  fill: var(--bill-band);
 }
 
 /* one thumb: the whole area under the hud takes the gesture */
@@ -573,16 +581,17 @@ a {
   white-space: nowrap;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
 }
+/* the price's mark is a bill, no wider than the coin it was */
 .tag b::before {
   content: "";
   display: inline-block;
   width: 11px;
-  height: 11px;
+  height: 8px;
   margin-right: 3px;
-  border-radius: 50%;
-  background: var(--coin);
-  border: 1.5px solid var(--coin-edge);
-  vertical-align: -1px;
+  border-radius: 1.5px;
+  background: radial-gradient(ellipse 2px 1.6px, var(--bill-band) 95%, transparent) center no-repeat, var(--bill);
+  border: 1.5px solid var(--bill-edge);
+  vertical-align: 0;
 }
 .tag span {
   font-size: 10px;
@@ -629,7 +638,7 @@ a {
     scale: 1.1;
   }
 }
-/* what just came in, floating up off the warden: "+3" and a coin, "+1" and a star */
+/* what just came in, floating up off the warden: "+3" and a bill, "+1" and a star */
 .pop b {
   translate: -50% -100%;
   display: flex;
@@ -643,13 +652,13 @@ a {
 }
 .pop b::after {
   content: "";
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--coin);
+  width: 17px;
+  height: 11px;
+  border-radius: 2px;
+  background: radial-gradient(ellipse 3px 2.4px, var(--bill-band) 95%, transparent) center no-repeat, var(--bill);
   border: 2px solid #3a2e2b;
 }
-/* a star sits a line higher, so it and the coins of a level up both read */
+/* a star sits a line higher, so it and the money of a level up both read */
 .pop.star {
   margin-top: -26px;
 }

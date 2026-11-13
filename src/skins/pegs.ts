@@ -161,7 +161,8 @@ const light: Palette = {
   padLocked: "#9b95a3",
   padFill: "#5fd08a",
   label: "#7d6f5e",
-  coin: "#ffcf33",
+  // money is green bills, the name stays coin with the rest of the code
+  coin: "#6cc070",
   tray: "#e8eef4",
   food: ["#ff9f40", "#7ccf7c", "#ff6b6b"],
   poop: "#8a5a3b",
