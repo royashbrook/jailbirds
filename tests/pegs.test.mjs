@@ -73,3 +73,24 @@ test("the collector has a look of its own: green, in a cap", () => {
   const cap = parts(pose({ kind: "collector" })).filter((q) => q.part === "hat" && q.colour === hex("#1e5e2a"));
   assert.equal(cap.length, 2, "a cap and its peak");
 });
+
+test("walking stands up straight, and bodies are slim", () => {
+  for (const walk of [0, 5, 11, 17]) {
+    const all = parts(pose({ action: "walk", walk }));
+    const body = all.find((q) => q.part === "body"), head = all.find((q) => q.part === "head");
+    assert.equal(body.pitch, 0, "no lean");
+    assert.ok(Math.abs(head.z - body.z) < 1e-9, "the head sits over the body, not out in front");
+  }
+  assert.ok(model.parts.body().parameters.radius <= 4.5, "slim");
+});
+
+test("a carried tray rests on the hands: slimming kept the body's height", () => {
+  // the tray is 1.6 tall, centred at carryAt.up; its underside should meet the top of the hands
+  const under = model.carryAt.up - 0.8;
+  // the cook (carrier) holds trays all day; the warden is drawn bigger and never touched it
+  for (const kind of ["carrier"]) {
+    const hands = parts(pose({ kind, carry: 1 })).filter((q) => q.part === "dot" && q.sx === q.sy && q.sx > 1.5);
+    const top = Math.max(...hands.map((h) => h.y + h.sy));
+    assert.ok(Math.abs(under - top) < 0.6, `${kind}: tray underside ${under} vs hand top ${top.toFixed(2)}`);
+  }
+});
