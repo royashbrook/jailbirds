@@ -48,7 +48,8 @@ function pose(p: Pose, put: Put) {
   const dress = DRESS[p.kind];
   const body = dress?.body ?? (p.uniform ? ORANGE : GREY);
   const skin = HEADS[p.look % HEADS.length];
-  const head = p.mood === "cross" ? CROSS : skin;
+  // upset looks as red in the face as cross; the view adds a little grey cloud over it
+  const head = p.mood === "cross" || p.mood === "upset" ? CROSS : skin;
   const pants = dress?.pants ?? (p.uniform ? ORANGE : JEANS);
   const a = (p.walk / STRIDE) * TAU;
   const walking = p.action === "walk";

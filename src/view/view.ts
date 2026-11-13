@@ -13,8 +13,8 @@ import {
   type Material,
 } from "three";
 import { walls } from "../engine/geom.ts";
-import { isDone, isOpen, mood, padVisible, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
-import type { Agent, AnyStation, Coin, LevelDef, Rect, World } from "../engine/types.ts";
+import { CLEAN_TIME, DIRT_MAX, dirtSpots, isDone, isOpen, mood, padVisible, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
+import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
 import { buildScene, PAPER_TOP, STAMP_PAD, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
@@ -64,6 +64,31 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
   const s = Math.sin(t * 2.4 * f.rate + f.phase) * SWAY * room;
   return { x: Math.cos(heading) * s, y: -Math.sin(heading) * s };
 }
+
+/** what a character is doing, for the skin to pose. only someone ok sleeps */
+export function actionOf(w: World, l: LevelDef, a: Agent): Action {
+  if (a.state === "fight") return "fight";
+  if (a.state === "use") {
+    const st = l.stations.find((s) => s.id === a.station);
+    if (st?.kind === "sink") return a.carry ? "eat" : "sit";
+    if (st?.kind === "facility") return st.zone ? "wash" : "sit";
+  }
+  if (a.moving) return "walk";
+  if (a.kind === "agent" && a.state === "home" && a.rest > 3 && mood(l, a) === "ok" && !isDone(l, a)) return "sleep";
+  if (a.kind === "player" || a.kind === "cleaner") {
+    for (const ms of w.messes) if (ms.clean > 0 && Math.hypot(ms.x - a.x, ms.y - a.y) < 22) return "clean";
+    for (const s of dirtSpots(l)) {
+      const d = w.dirt[s.key];
+      if (d && d.level > 0 && d.clean > 0 && Math.hypot(s.at.x - a.x, s.at.y - a.y) < 22) return "clean";
+    }
+  }
+  return "stand";
+}
+/** how a character's face looks: a resident at home by the one mood judge, anyone else ok */
+export const poseMood = (l: LevelDef, a: Agent): Mood => (a.kind === "agent" && a.house ? mood(l, a) : "ok");
+/** how much of a clogged toilet is drawn, by whole levels: 0 clean, 1 brown in the bowl, and one more
+ * swirl beside it for each level past that, up to the most */
+export const dirtStage = (level: number) => (level <= 0 ? 0 : Math.min(DIRT_MAX, Math.max(1, Math.floor(level + 1e-9))));
 
 /** the stamp at the release desk, as a time into someone's stand at the desk (the sim's own `t`, or
  * -1 for nobody there): `over` 0 waits on the ink pad and 1 is over the papers, `lift` is how high
@@ -151,6 +176,11 @@ const MAX_FLY = 48;
 const MAX_MESS = 40;
 const MAX_BAGS = 8;
 const BAG = "#c8a165";
+/** the little grey cloud over someone upset */
+const CLOUD = "#9ea4ad";
+/** where the lumps of a clogged toilet sit, from the toilet, for each level past the first: out on the
+ * floor in front of it, spreading towards where it is cleaned from */
+const SPREAD = [[-8, 11], [-15, 15], [-6, 19]] as const;
 /** how tall the safe stands in scene.ts, so its coins sit on top of it */
 const SAFE_TOP = 16;
 /** money is drawn as little flat bills, not coins: long, thin and wide */
@@ -214,6 +244,8 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const puddles = pool(new CylinderGeometry(1, 1, 0.6, 18), MAX_MESS);
   // a collector's money bag, one ball per collector with coins, a little bigger the more it holds
   const bags = pool(new SphereGeometry(4, 12, 10), MAX_BAGS);
+  // three puffs of grey cloud over each upset head
+  const puffs = pool(new SphereGeometry(1, 10, 8), MAX_CHARS * 3);
 
   // the bus, and the surprises on the floor: one each, moved about. the unicorn the warden rides
   // and the fairy in flight are their own, bigger than the ones waiting to be picked up
@@ -288,7 +320,17 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const partList = [...parts.values()];
 
   // counters and placers for the pooled things, reset each frame
-  let tn = 0, fn = 0, bn = 0, cn = 0, ln = 0, pn = 0, gn = 0;
+  let tn = 0, fn = 0, bn = 0, cn = 0, ln = 0, pn = 0, gn = 0, un = 0;
+  /** one brown ball, squashed by `flat` */
+  const lump = (x: number, y: number, z: number, r: number, flat: number) => {
+    if (ln >= lumps.instanceMatrix.count) return;
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(r, r * flat, r);
+    dummy.updateMatrix();
+    lumps.setMatrixAt(ln, dummy.matrix);
+    lumps.setColorAt(ln++, tint.set(pal.poop));
+  };
   const blob = (x: number, z: number, r: number) => {
     if (bn >= blobs.instanceMatrix.count) return;
     dummy.position.set(x, 0.9, z);
@@ -384,20 +426,6 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   /** how far the warden is lifted off the floor, for anything placed over his head */
   const lift = (w: World) => (riding(w) ? SADDLE : 0);
 
-  function actionOf(w: World, l: LevelDef, a: Agent): Action {
-    if (a.state === "fight") return "fight";
-    if (a.state === "use") {
-      const st = l.stations.find((s) => s.id === a.station);
-      if (st?.kind === "sink") return a.carry ? "eat" : "sit";
-      if (st?.kind === "facility") return st.zone ? "wash" : "sit";
-    }
-    if (a.moving) return "walk";
-    if (a.kind === "agent" && a.state === "home" && a.rest > 3 && mood(l, a) === "ok" && !isDone(l, a)) return "sleep";
-    if (a.kind === "player" || a.kind === "cleaner")
-      for (const ms of w.messes) if (ms.clean > 0 && Math.hypot(ms.x - a.x, ms.y - a.y) < 22) return "clean";
-    return "stand";
-  }
-
   function render(w: World, l: LevelDef, past: Past | null, alpha: number, now: number, dt: number, settings: CameraSettings) {
     const t = now / 1000;
     // rebuild the still parts only when the level, what is bought, or the palette changes
@@ -421,7 +449,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
 
     forget(w, headings);
     for (const p of partList) p.used = 0;
-    tn = fn = bn = cn = ln = pn = gn = 0;
+    tn = fn = bn = cn = ln = pn = gn = un = 0;
     const onUnicorn = riding(w);
     let meHeading = 0, meWalk = 0;
 
@@ -473,7 +501,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       pose.look = a.look;
       pose.uniform = a.tags.includes("uniform");
       pose.carry = a.kind === "agent" ? 0 : a.carry;
-      pose.mood = a.kind === "agent" && a.house ? mood(l, a) : "ok";
+      pose.mood = poseMood(l, a);
       const r = skin.model.root(pose);
       e.set(r.pitch, heading, 0, "YXZ");
       q.setFromEuler(e);
@@ -481,6 +509,17 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       root.compose(v, q, one);
       skin.model.pose(pose, put);
       if (!mounted) blob(x, z, action === "sleep" ? 9 : 8);
+      // upset: a small grey cloud hangs over the head, drifting a little
+      if (pose.mood === "upset")
+        for (let k = 0; k < 3 && un < MAX_CHARS * 3; k++) {
+          const pr = k === 1 ? 3.4 : 2.6, drift = Math.sin(pose.t * 1.5) * 1.2;
+          dummy.position.set(x + (k - 1) * 3.6 + drift, r.lift + skin.model.height + 5 + (k === 1 ? 1.2 : 0), z);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.set(pr, pr * 0.8, pr);
+          dummy.updateMatrix();
+          puffs.setMatrixAt(un, dummy.matrix);
+          puffs.setColorAt(un++, tint.set(CLOUD));
+        }
 
       // a carried stack, held up in front
       const ca = skin.model.carryAt;
@@ -548,26 +587,31 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       coin(fly[i * 4] + (fx - fly[i * 4]) * ease, 6 + Math.sin(k * Math.PI) * 30 + ease * 14, fly[i * 4 + 1] + (fy - fly[i * 4 + 1]) * ease, age * 20, 1 + Math.sin(k * Math.PI) * 0.5);
     }
 
-    // messes: a little brown swirl, or a puddle, shrinking as they are cleaned
+    // messes on the floor: a puddle, shrinking as it is cleaned
     for (const ms of w.messes) {
-      const left = 1 - Math.min(1, ms.clean / 0.4) * 0.8;
-      if (ms.kind === "poop") {
-        for (let k = 0; k < 3 && ln < lumps.instanceMatrix.count; k++) {
-          const r = (6 - k * 1.8) * left;
-          dummy.position.set(ms.x, 1 + r * 0.6 + k * 3.2 * left, ms.y);
-          dummy.rotation.set(0, 0, 0);
-          dummy.scale.set(r, r * 0.75, r);
-          dummy.updateMatrix();
-          lumps.setMatrixAt(ln, dummy.matrix);
-          lumps.setColorAt(ln++, tint.set(pal.poop));
-        }
-      } else if (pn < MAX_MESS) {
+      const left = 1 - Math.min(1, ms.clean / CLEAN_TIME) * 0.8;
+      if (pn < MAX_MESS) {
         dummy.position.set(ms.x, 1.2, ms.y);
         dummy.rotation.set(0, 0.4, 0);
         dummy.scale.set(15 * left, 1, 9 * left);
         dummy.updateMatrix();
         puddles.setMatrixAt(pn, dummy.matrix);
         puddles.setColorAt(pn++, tint.set(pal.puddle));
+      }
+    }
+    // a clogged toilet, at the toilet: brown in the bowl from the first level, then a swirl on the floor
+    // beside it for each level past that, up to the most. drawn by whole levels; the newest swirl (or the
+    // bowl, at the first) shrinks as it is cleaned
+    for (const s of dirtSpots(l)) {
+      const d = w.dirt[s.key];
+      if (!d || d.level <= 0) continue;
+      const stage = dirtStage(d.level);
+      const wipe = 1 - Math.min(1, d.clean / CLEAN_TIME) * 0.6;
+      lump(s.seatAt.x - 3, 5.6, s.seatAt.y, 5 * (stage === 1 ? wipe : 1), 0.3);
+      for (let k = 1; k < stage; k++) {
+        const r = 4.5 * (k === stage - 1 ? wipe : 1), sx = s.seatAt.x + SPREAD[k - 1][0], sz = s.seatAt.y + SPREAD[k - 1][1];
+        lump(sx, r * 0.5, sz, r, 0.7);
+        lump(sx, r * 1.1, sz, r * 0.6, 0.8);
       }
     }
 
@@ -646,6 +690,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     finish(lumps, ln);
     finish(puddles, pn);
     finish(bags, gn);
+    finish(puffs, un);
 
     // price pads: tinted by whether the rank allows them, filled by what is paid
     if (built)

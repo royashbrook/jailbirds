@@ -189,9 +189,11 @@ test("the loop: bus, gate, queue, check-in, line, cells, a need led to its room,
   assert.equal(led[0].station, "showers");
   until(w, () => led[0].needs.wash > 0.99, 10, "a shower");
   // content again: coins. the holds made this a longer day, long enough for the toilets to get
-  // messy and everyone to run low, so see to the rest of their needs as if it were done
+  // clogged and everyone to run low and restless, so see to the rest of it as if it were done
   for (const b of q) for (const n of L.needs) b.needs[n.id] = 1;
+  for (const b of q) b.unrest = 0;
   w.messes = [];
+  w.dirt = {};
   until(w, () => w.floor.length >= 1, 30, "new coins on the floor");
   for (const c of new Set(w.floor.map((x) => x.house))) go(w, station(c).at);
   assert.ok(w.coins > banked, "more coins banked");
@@ -338,21 +340,23 @@ test("level-locked pads wait for the rank; upgrades change speed and the line", 
   assert.ok(L.pads.find((p) => p.id === "speed2").after === "speed1");
 });
 
-test("toilets in the cells make a mess that blocks the toilet until someone walks in and cleans it", () => {
+test("toilets in the cells clog, at the toilet, and stay blocked until someone walks in and cleans them", () => {
   const { w, first } = settle(11);
-  until(w, () => w.messes.some((m) => m.kind === "poop"), 240, "a messy toilet");
-  const mess = w.messes.find((m) => m.kind === "poop");
-  const cell = L.rooms.find((r) => r.id === station("toilets").seats[mess.seat].house).rect;
-  assert.ok(mess.x > cell.x && mess.x < cell.x + cell.w && mess.y > cell.y && mess.y < cell.y + cell.h, "the mess is in the cell");
-  // that toilet is off limits while the mess is there
-  const owner = first.find((b) => b.house === station("toilets").seats[mess.seat].house);
+  const toilets = station("toilets");
+  until(w, () => toilets.seats.some((_, i) => (w.dirt[`toilets:${i}`]?.level ?? 0) > 0), 240, "a clogged toilet");
+  const seat = toilets.seats.findIndex((_, i) => (w.dirt[`toilets:${i}`]?.level ?? 0) > 0);
+  const key = `toilets:${seat}`, at = toilets.seats[seat].messAt;
+  assert.ok(!w.messes.some((m) => m.station === "toilets"), "never a mess on the floor for a toilet");
+  const cell = L.rooms.find((r) => r.id === toilets.seats[seat].house).rect;
+  assert.ok(at.x > cell.x && at.x < cell.x + cell.w && at.y > cell.y && at.y < cell.y + cell.h, "cleaned from in the cell");
+  // that toilet is off limits while it is clogged
+  const owner = first.find((b) => b.house === toilets.seats[seat].house);
   for (const n of L.needs) owner.needs[n.id] = 1;
   owner.needs.toilet = 0.1;
   wait(w, 2);
   assert.notEqual(owner.state, "go");
-  go(w, mess);
-  wait(w, 0.5);
-  assert.ok(!w.messes.includes(mess), "walked in, cleaned up");
+  go(w, at);
+  until(w, () => w.dirt[key].level === 0, 5, "walked in, cleaned up");
   until(w, () => owner.station === "toilets", 3, "the toilet in use again");
 });
 
