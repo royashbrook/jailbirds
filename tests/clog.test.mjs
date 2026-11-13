@@ -4,6 +4,7 @@ import {
   create, step, route, player, followers, boostMult, boostChoices, budget, dirtSpots, hint, mood, restore, wants,
   CLEAN_TIME, DIRT_MAX, DT, SEEP, UPSET, U_CALM, U_DIRT, U_NEED,
 } from "../src/engine/sim.ts";
+import { roll } from "../src/engine/rng.ts";
 import { LEVELS } from "../src/content/jail.ts";
 import { actionOf, dirtStage, poseMood } from "../src/view/view.ts";
 import { model } from "../src/skins/pegs.ts";
@@ -124,12 +125,60 @@ test("every toilet seat, and nothing else, clogs; each is cleaned from just besi
   }
 });
 
-test("a toilet use clogs it one level, never a mess on the floor; it seeps to the most and stops there", () => {
+/** a world whose dice next roll a value that passes `ok`, found by stepping the generator itself */
+function dice(w, ok) {
+  for (let s = 1; s < 10000; s++)
+    if (ok(roll(s)[0])) {
+      w.rng = s;
+      return roll(s)[0];
+    }
+  assert.fail("no such roll");
+}
+/** the c1 resident on the toilet, one step from done, with nothing else in the jail rolling dice */
+function onTheToilet() {
   const { w, first } = settle();
   const b = first.find((x) => x.house === "c1");
-  b.needs.toilet = 0.1;
-  until(w, () => b.state === "use", 10, "a toilet visit");
-  until(w, () => b.state !== "use", 5, "done");
+  w.agents = w.agents.filter((a) => a.kind !== "agent" || first.includes(a));
+  w.ride = { state: "away", x: -100, t: 9999 };
+  w.boost.t = 9999;
+  w.fightIn = 9999;
+  // nobody else drops money this step (its place is a roll too)
+  for (const a of first) a.t = 0;
+  Object.assign(b, { state: "use", station: "toilets", seat: 1, t: T.use - DT / 2, x: T.seats[1].at.x, y: T.seats[1].at.y, path: [] });
+  return { w, first, b };
+}
+
+test("a toilet use clogs it only when it rolls under the toilet's mess chance, drawn where the floor mess was", () => {
+  {
+    const { w, b } = onTheToilet();
+    const got = dice(w, (v) => v < T.messChance);
+    const before = w.rng;
+    step(w, LEVELS, STILL);
+    assert.notEqual(b.state, "use", "done");
+    assert.ok(got < T.messChance);
+    near(w.dirt[key(1)].level, 1, 2 * seeped(DT), "under the chance: clogged one level");
+    assert.equal(w.rng, roll(before)[1], "one roll, for the use");
+  }
+  {
+    const { w, b } = onTheToilet();
+    const got = dice(w, (v) => v >= T.messChance);
+    const before = w.rng;
+    step(w, LEVELS, STILL);
+    assert.notEqual(b.state, "use", "done");
+    assert.ok(got >= T.messChance);
+    assert.ok(!(key(1) in w.dirt), "over the chance: clean");
+    assert.equal(w.rng, roll(before)[1], "one roll, for the use");
+    // and still free: the next one in can use it
+    b.needs.toilet = 0.1;
+    until(w, () => b.station === "toilets" && b.state === "use", 10, "the toilet used again");
+  }
+  assert.equal(T.messChance, 0.35);
+});
+
+test("a clogged toilet is never a mess on the floor, is refused, and seeps to the most and stops there", () => {
+  const { w, first, b } = onTheToilet();
+  dice(w, (v) => v < T.messChance);
+  step(w, LEVELS, STILL);
   near(w.dirt[key(1)].level, 1, 2 * seeped(DT), "one level, from one use");
   assert.equal(w.dirt[key(1)].removed, 0);
   assert.ok(!w.messes.some((m) => m.station === "toilets"), "no floor mess");
@@ -234,15 +283,17 @@ test("a clogged toilet asks to be cleaned, and the fairy may come for it", () =>
 
 // --- the fairy: what she captured, and only that
 
-test("the fairy takes what was there when she came and leaves what seeped in after", () => {
+test("the fairy takes what was there when she came, and polishes off the bit under a level that seeped in since", () => {
   const w = create(LEVELS, 0, 3);
-  dirt(w, 0, 2);
+  dirt(w, 0, 2, 0.1);
   drop(w, "fairy");
   assert.deepEqual(w.fairy.target, { key: key(0), amount: 2, removedAt: 0 });
   watchFairy(w);
   assert.equal(w.fairy.visits, 1);
-  assert.equal(w.dirt[key(0)].removed, 2, "exactly what she captured");
-  near(w.dirt[key(0)].level, seeped(K.fairy.visit), 2 * seeped(DT), "the seep since she came is left");
+  assert.deepEqual(w.dirt[key(0)], { level: 0, clean: 0, removed: w.dirt[key(0)].removed }, "exactly clean, its clean under way gone with it");
+  // what came off is all of it: her two, and the polished bit, counted as taken off
+  near(w.dirt[key(0)].removed, 2 + seeped(K.fairy.visit), 2 * seeped(DT), "her two and the seep since she came");
+  assert.ok(w.dirt[key(0)].removed > 2);
 
   // full up, nothing seeps: she takes it all, and a clean under way goes with it
   const v = create(LEVELS, 0, 3);
@@ -293,6 +344,39 @@ test("counterexample: cleaned to zero and clogged again before she lands: none o
   assert.ok(w.dirt[key(0)].level >= 2, "the new dirt stays");
 });
 
+test("with nothing of hers left, a toilet is untouched, however small the bit on it", () => {
+  // she flies to a puddle first; meanwhile the player cleans the toilet past all she captured,
+  // and a little seeps back in
+  const w = create(LEVELS, 0, 3), p = player(w);
+  dirt(w, 0, 0.5);
+  w.messes.push({ id: w.nextId++, kind: "puddle", x: p.x + 30, y: p.y, station: "showers", seat: 0, clean: 0 });
+  drop(w, "fairy");
+  stand(w, spot(0));
+  until(w, () => w.dirt[key(0)].level === 0, 1, "the player to clean it");
+  stand(w, HALL);
+  assert.equal(budget(w, w.fairy.todo[0]), 0, "her budget is spent");
+  w.dirt[key(0)].level = 0.3;
+  const players = w.dirt[key(0)].removed;
+  watchFairy(w);
+  assert.equal(w.fairy.visits, 1, "only the puddle");
+  assert.equal(w.dirt[key(0)].removed, players, "not polished");
+  assert.ok(w.dirt[key(0)].level >= 0.3, "the bit stays");
+});
+
+test("a level or more of new dirt past her budget is left: only her budget comes off, nothing polished", () => {
+  const w = create(LEVELS, 0, 3);
+  dirt(w, 0, 2, 0.15);
+  drop(w, "fairy");
+  // a use and a half of new dirt after she came
+  seepBy(w, 0, 1.5);
+  const before = w.dirt[key(0)].level;
+  watchFairy(w);
+  assert.equal(w.dirt[key(0)].removed, 2, "her two, and not a bit more");
+  near(w.dirt[key(0)].level, before - 2, 0.1, "the new level and a half stays");
+  assert.ok(w.dirt[key(0)].level >= 1);
+  assert.equal(w.dirt[key(0)].clean, 0.15, "and the clean under way on it is kept");
+});
+
 test("a toilet clogged after she came is not hers, and the list ends", () => {
   const w = create(LEVELS, 0, 3);
   dirt(w, 0, 2);
@@ -308,15 +392,16 @@ test("fractions: her visit counts only dirt, never a clean under way, and keeps 
   const w = create(LEVELS, 0, 3);
   dirt(w, 0, 2);
   drop(w, "fairy");
-  // the player cleans a quarter of a layer while she flies, then steps off
+  // the player cleans a quarter of a layer while she flies, then steps off; then a use and a half seeps in
   stand(w, spot(0));
   wait(w, 0.25);
   stand(w, HALL);
+  seepBy(w, 0, 1.5);
   const part = w.dirt[key(0)].clean;
   near(part, 0.25, DT, "a clean under way");
   watchFairy(w);
   assert.equal(w.dirt[key(0)].removed, 2, "her two, and not a bit for the clean under way");
-  assert.ok(w.dirt[key(0)].level > 0, "what seeped in since she came");
+  assert.ok(w.dirt[key(0)].level >= 1, "the new dirt since she came");
   assert.equal(w.dirt[key(0)].clean, part, "the clean under way on what she left is kept");
 });
 
@@ -424,8 +509,8 @@ test("an old fairy in flight: her poop target and queued poop become the seats s
   watchFairy(back);
   watchFairy(again);
   assert.equal(back.fairy.visits, 4);
-  assert.equal(back.dirt[key(0)].removed, 1, "her one level");
-  assert.ok(back.dirt[key(0)].level < 0.1, "only what seeped in since is left");
+  assert.equal(back.dirt[key(0)].level, 0, "her one level, and the bit that seeped in since polished off");
+  assert.ok(back.dirt[key(0)].removed > 1 && back.dirt[key(0)].removed < 1.1, `took off ${back.dirt[key(0)].removed}`);
   assert.equal(back.dirt[key(1)].removed, 0, "never captured, never hers");
   assert.ok(back.dirt[key(1)].level >= 1);
   assert.deepEqual(back.messes, []);

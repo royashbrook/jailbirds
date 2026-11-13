@@ -59,7 +59,7 @@ export type StationDef =
       look: string; prop: Rect; locked?: string;
     }
   /** agents use a seat to meet a need; a use may leave a mess that blocks the seat until cleaned.
-   * a seat that belongs to one house clogs with every use instead, and gets dirtier until cleaned.
+   * at a seat that belongs to one house that mess clogs the seat instead, and it gets dirtier until cleaned.
    * with a zone, residents are led there; without one, they walk to it themselves */
   | { id: string; kind: "facility"; seats: Seat[]; need: string; use: number; mess: string; messChance: number; look: string; zone?: Rect };
   /** an actor standing at `at` sends a finished follower out through `exit`: it pays, and earns a star */

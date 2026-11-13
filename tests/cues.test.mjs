@@ -401,11 +401,15 @@ test("hired help working alone is silent: only what the player does is heard", (
   go(w, HALL);
   take(w);
   const released = w.released, ids = (state) => inmates(w).filter((a) => a.state === state).map((a) => a.id);
-  let wiped = 0, checked = 0, sat = 0, messes = new Set(w.messes), queue = ids("queue");
+  // wiped: a mess gone off the floor, or a layer off a clogged toilet
+  const scrubbed = () => Object.values(w.dirt).reduce((n, d) => n + d.removed, 0);
+  let wiped = 0, checked = 0, sat = 0, messes = new Set(w.messes), off = scrubbed(), queue = ids("queue");
   for (let i = 0; i < 60 * 300 && !(wiped && checked && sat && w.released > released); i++) {
     tick(w, { x: 0, y: 0 });
     for (const m of messes) if (!w.messes.includes(m)) wiped++;
     messes = new Set(w.messes);
+    if (scrubbed() > off) wiped++;
+    off = scrubbed();
     const now = ids("queue");
     checked += queue.filter((id) => !now.includes(id)).length;
     queue = now;

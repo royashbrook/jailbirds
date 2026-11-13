@@ -325,7 +325,8 @@ function fairyNext(w: World, l: LevelDef) {
 }
 
 /** the fairy flies to a job, does it, and on to the next nearest on her list, until the list is done.
- * a mess she cleans away; at a clogged seat she takes off what she still owes it, and no more */
+ * a mess she cleans away; at a clogged seat she takes off what she still owes it, and a last bit
+ * under a level, never a level of new dirt */
 function fairy(w: World, l: LevelDef) {
   const f = w.fairy;
   if (f.target === null) return;
@@ -344,8 +345,14 @@ function fairy(w: World, l: LevelDef) {
   f.y = at.y;
   const j = f.target!;
   if (typeof j === "number") cleanUp(w, at as Mess);
-  // a whole level or a bit of one, it is only dirt off: a clean under way on what she leaves is kept
-  else scrub(w.dirt[j.key], owed(w, j));
+  else {
+    // a whole level or a bit of one, it is only dirt off: a clean under way on what she leaves is kept.
+    // with some of her own to take, she also polishes off a last bit under a level that seeped in
+    // since, so the seat is left usable; a level or more of new dirt she leaves
+    const d = w.dirt[j.key], had = budget(w, j);
+    scrub(d, Math.min(had, d.level));
+    if (had > 0 && d.level > 0 && d.level < 1) scrub(d, d.level);
+  }
   f.visits++;
   fairyNext(w, l);
 }
@@ -847,13 +854,15 @@ function residents(w: World, l: LevelDef) {
       if (a.t >= st.use) {
         a.needs[st.need] = 1;
         a.carry = 0;
-        // a home's own seat clogs with every use; any other may leave a mess on the floor
-        if (st.kind === "facility" && st.seats[a.seat].house) {
-          const d = dirtOf(w, `${st.id}:${a.seat}`);
-          d.level = Math.min(DIRT_MAX, d.level + 1);
-        } else if (st.kind === "facility" && rand(w) < st.messChance) {
-          const at = st.seats[a.seat].messAt ?? st.seats[a.seat].at;
-          w.messes.push({ id: w.nextId++, kind: st.mess, x: at.x, y: at.y, station: st.id, seat: a.seat, clean: 0 });
+        // a use may leave a mess: at a home's own seat it clogs it a level, anywhere else it is on the floor
+        if (st.kind === "facility" && rand(w) < st.messChance) {
+          if (st.seats[a.seat].house) {
+            const d = dirtOf(w, `${st.id}:${a.seat}`);
+            d.level = Math.min(DIRT_MAX, d.level + 1);
+          } else {
+            const at = st.seats[a.seat].messAt ?? st.seats[a.seat].at;
+            w.messes.push({ id: w.nextId++, kind: st.mess, x: at.x, y: at.y, station: st.id, seat: a.seat, clean: 0 });
+          }
         }
         goHome(w, l, a);
       }
