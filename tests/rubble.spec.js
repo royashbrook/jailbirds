@@ -141,6 +141,9 @@ test("a cell cleared stays cleared and never shows clearing again: leaving mid-c
   await page.addInitScript(() => {
     const watch = () => {
       const api = window.__jailbirds;
+      // the first frame seen in desert rock, before any clearing could have run out on its own
+      const left = window.__left;
+      if (left?.atGo && !left.there && api.map().active === "jail2") left.there = api.drawn().rubble.clearing;
       if (!window.__left && api?.drawn().rubble?.clearing.includes("c2")) {
         const s = api.state();
         window.__left = { clearing: api.drawn().rubble.clearing, coins: s.coins, bought: s.bought.includes("cell3") };
@@ -158,8 +161,9 @@ test("a cell cleared stays cleared and never shows clearing again: leaving mid-c
   // the trip goes on its own, so the wait is for desert rock: c2 was bought and still clearing
   // at the map click and at go
   await expect(page.locator("#place")).toHaveText("desert rock", { timeout: 20000 });
+  await page.waitForFunction(() => window.__left.there);
   const paid = await page.evaluate(() => window.__left);
-  expect(paid).toMatchObject({ clearing: ["c2"], atGo: ["c2"], bought: true });
+  expect(paid).toMatchObject({ clearing: ["c2"], atGo: ["c2"], bought: true, there: [] });
   await waitFrames(page, 3);
   const there = await rubble(page);
   expect(there.clearing).toEqual([]);
