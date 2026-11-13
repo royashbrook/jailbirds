@@ -15,6 +15,8 @@ type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
 /** where a tag may go: above its pad, slid right or left past the warden, below, beside */
 const SPOTS = 6;
+/** how long each comic shout over a squabble stays up, in ms */
+export const SHOUT_MS = 900;
 /** how far down a bubble's anchor must be so the whole bubble shows */
 const TOP = 40;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
@@ -281,16 +283,15 @@ export function createOverlay(root: HTMLElement) {
 
     // trouble: a burst over the squabble, an arrow pointing to it from the edge
     const al = w.alert;
+    // the arrow only points the way to a squabble off the screen; one in view has its shout
+    let pointing = false;
     if (al) {
-      let mx = 0, my = 0, k = 0;
-      for (const a of w.agents)
-        if (al.ids.includes(a.id)) {
-          mx += a.x;
-          my += a.y;
-          k++;
-        }
-      view.screen(k ? mx / k : al.x, view.height + 10, k ? my / k : al.y, pt);
-      label(burst, skin.squabble, () => (burst.el.firstElementChild!.textContent = skin.squabble));
+      // over the doorway, where the view draws the two squaring up, not over their bunks
+      view.screen(al.x, view.height + 10, al.y, pt);
+      // comic shouts, a new one every so often, like a cartoon fight
+      const shouts = skin.shouts?.length ? skin.shouts : [skin.squabble];
+      const said = shouts[Math.floor(now / SHOUT_MS) % shouts.length];
+      label(burst, said, () => (burst.el.firstElementChild!.textContent = said));
       move(burst, pt.x, pt.y);
       show(burst, pt.on);
       view.screen(al.x, 0, al.y, pt);
@@ -307,8 +308,9 @@ export function createOverlay(root: HTMLElement) {
       move(arrow, ax, ay);
       const deg = String(Math.round((angle * 180) / Math.PI));
       label(arrow, deg, () => (arrow.el.style.setProperty("--turn", `${deg}deg`)));
+      pointing = !inView;
     } else show(burst, false);
-    show(arrow, !!al);
+    show(arrow, pointing);
 
     // the thumb stick where the finger went down
     if (thumb) {

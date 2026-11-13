@@ -300,7 +300,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
 
     for (const a of w.agents) {
       const p = past?.get(a.id);
-      const x = p ? p.x + (a.x - p.x) * alpha : a.x, z = p ? p.y + (a.y - p.y) * alpha : a.y;
+      let x = p ? p.x + (a.x - p.x) * alpha : a.x, z = p ? p.y + (a.y - p.y) * alpha : a.y;
       const walk = p ? p.walk + (a.walk - p.walk) * alpha : a.walk;
       // on the unicorn the warden sits, up on her saddle
       const mounted = a.kind === "player" && onUnicorn;
@@ -315,6 +315,14 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         heading += d * Math.min(1, dt * 14);
       }
       if (action === "sleep") heading = Math.PI;
+      if (action === "fight" && w.alert) {
+        // a squabble: the two come out of their bunks and square up in the doorway,
+        // face to face, so it reads as a fight and not a bad dream
+        const side = w.alert.ids.indexOf(a.id) === 0 ? -1 : 1;
+        x = w.alert.x + side * 9;
+        z = w.alert.y;
+        heading = side * -Math.PI / 2;
+      }
       if (action === "sit" || action === "eat") {
         // at a table, face it
         const st = l.stations.find((s) => s.id === a.station);

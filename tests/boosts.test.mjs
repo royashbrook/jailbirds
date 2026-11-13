@@ -137,10 +137,11 @@ test("the unicorn: a longer, faster ride than the skates", () => {
     step(w, LEVELS, { x: 1, y: 0 });
     assert.ok(Math.abs(p.x - back - w.speed * DT) < 1e-6, "back to a walk");
   }
-  assert.equal(K.unicorn.time, 15);
-  assert.equal(K.unicorn.mult, 2.6);
-  assert.equal(K.skates.time, 12);
-  assert.equal(K.skates.mult, 2.2);
+  // a minute each, and not too fast: the unicorn a little quicker than skates
+  assert.equal(K.unicorn.time, 60);
+  assert.equal(K.skates.time, 60);
+  assert.equal(K.skates.mult, 1.4);
+  assert.equal(K.unicorn.mult, 1.6);
 });
 
 test("a follower keeps up at the speed of what the leader rides", () => {
