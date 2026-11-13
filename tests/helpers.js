@@ -32,8 +32,9 @@ export async function waitFrames(page, n) {
 }
 
 /** walk the warden to a point in a straight line with the thumb stick, pushing less
- * the closer it gets, so one slow frame can never carry it past the spot */
-export async function walkTo(page, to, near = 4) {
+ * the closer it gets, so one slow frame can never carry it past the spot. `stop` ends
+ * the walk early once the game says so (something that may hold the jail still on the way) */
+export async function walkTo(page, to, near = 4, stop = () => false) {
   const box = await page.locator("#jail").boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
   const turn = await page.evaluate(() => window.__jailbirds.camera().turn);
@@ -45,7 +46,7 @@ export async function walkTo(page, to, near = 4) {
     for (;;) {
       const s = await state(page), p = s.agents[0];
       const dx = to.x - p.x, dy = to.y - p.y, d = Math.hypot(dx, dy);
-      if (d < near) return p;
+      if (d < near || stop(s)) return p;
       start ??= s.steps;
       if (s.steps - start > 60 * 30) throw new Error(`the warden never reached ${to.x},${to.y}: stuck at ${Math.round(p.x)},${Math.round(p.y)}`);
       // a frame is at most a quarter second: cover at most half the gap in one

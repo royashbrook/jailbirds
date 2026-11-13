@@ -368,6 +368,103 @@ a {
   margin: 0;
   line-height: 1.4;
 }
+/* a level up: big stars, the new level, the money it paid, and confetti falling behind */
+.card.level-card {
+  width: min(340px, 100%);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+.level-up {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.level-up > :not(.confetti) {
+  position: relative;
+}
+.level-stars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.level-stars svg {
+  width: 40px;
+  height: 40px;
+  fill: var(--coin);
+  stroke: var(--coin-edge);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  animation: level-star 0.9s ease-in-out calc(var(--k) * 0.15s) infinite alternate;
+}
+.level-stars svg:nth-child(2) {
+  width: 56px;
+  height: 56px;
+}
+@keyframes level-star {
+  to {
+    translate: 0 -6px;
+    rotate: 8deg;
+  }
+}
+.card.level-card h2 {
+  font-size: 40px;
+}
+.level-reward {
+  font: 900 30px var(--font-display);
+  color: var(--bill-edge);
+}
+.level-up button {
+  width: 100%;
+  font-size: 24px;
+  min-height: 64px;
+}
+.confetti {
+  position: absolute;
+  inset: -20px 0 0;
+  pointer-events: none;
+}
+.confetti i {
+  position: absolute;
+  top: 0;
+  left: calc(4% + var(--i) * 6.8%);
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  background: #ff8fc8;
+  opacity: 0.85;
+  animation: confetti 1.8s linear calc(var(--i) * -0.27s) infinite;
+}
+.confetti i:nth-child(4n + 1) {
+  background: #5cb8ee;
+}
+.confetti i:nth-child(4n + 2) {
+  background: var(--coin);
+}
+.confetti i:nth-child(4n + 3) {
+  background: var(--bill);
+}
+@keyframes confetti {
+  from {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  to {
+    translate: 10px 420px;
+    rotate: 540deg;
+  }
+}
+/* less motion: the stars and the confetti hold still where they are */
+@media (prefers-reduced-motion: reduce) {
+  .level-stars svg,
+  .confetti i {
+    animation: none;
+  }
+  .confetti i {
+    top: calc(10px + var(--i) * 17px);
+  }
+}
 /* the camera controls leave the jail visible. on a short screen they sit
    beside the preview, not across the player in the middle. */
 .sheet.camera-sheet {
