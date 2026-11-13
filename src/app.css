@@ -583,6 +583,10 @@ a {
 .hold.side {
   margin: -34px 0 0 22px;
 }
+/* and on the left of the bubble when the right would run off the screen */
+.hold.side.left {
+  margin-left: -52px;
+}
 /* a price tag stands up off its pad: the price, the thing, or a lock and a level */
 .tag {
   display: flex;

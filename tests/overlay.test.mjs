@@ -208,6 +208,14 @@ test("the hold: a ring over the one held fills with the sim's own hold, stays pu
   assert.ok(el.classList.contains("side") && !el.classList.contains("up"), "beside, not above");
   const y = Number(el.style.transform.match(/, (-?\d+)px, 0\)/)[1]);
   assert.ok(y - 34 >= 0, `ring top on screen, anchor ${y}`);
+  assert.ok(!el.classList.contains("left"), "right of the bubble when there is room");
+  // near the right edge too (the screen here is 390 wide): it goes on the bubble's left, all on screen
+  b.x = 370;
+  p.draw(9044);
+  assert.ok(el.classList.contains("side") && el.classList.contains("left"), "left of the bubble at the right edge");
+  const x = Number(el.style.transform.match(/translate3d\((-?\d+)px/)[1]);
+  assert.ok(x - 52 >= 0 && x - 52 + 30 <= 390, `ring across ${x - 52}..${x - 22} on a 390 screen`);
+  b.x = 200;
   b.y = 300;
   p.world.grab = null;
   p.draw(9048);

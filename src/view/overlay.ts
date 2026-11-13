@@ -20,6 +20,8 @@ const SPOTS = 6;
 const TOP = 40;
 /** a ring stacked over a need bubble reaches 70px up (.hold.up), plus a little room to spare */
 export const HOLD_UP_MIN = 76;
+/** how far right of its anchor a ring beside the bubble reaches (.hold.side: 22px over, 30px wide) */
+export const HOLD_SIDE_REACH = 52;
 /** a pad's half depth in world units, a tag's gap off it and its clearance round the warden, in pixels */
 const PAD_HALF = 20;
 const GAP = 3;
@@ -295,12 +297,15 @@ export function createOverlay(root: HTMLElement) {
       // beside it when above would run off the top of the screen
       const home = held.state === "home";
       const up = home && pt.y >= HOLD_UP_MIN, side = home && !up;
+      // beside goes to the right of the bubble, or to its left near the right edge
+      const left = side && pt.x + HOLD_SIDE_REACH > cssW;
       move(hold, pt.x, Math.max(pt.y, TOP));
-      label(hold, `${fill}:${up}:${side}`, () => {
+      label(hold, `${fill}:${up}:${side}:${left}`, () => {
         hold.el.style.setProperty("--fill", `${fill}%`);
         hold.el.dataset.fill = fill;
         hold.el.classList.toggle("up", up);
         hold.el.classList.toggle("side", side);
+        hold.el.classList.toggle("left", left);
       });
     }
     show(hold, !!(g && held) && pt.on);
