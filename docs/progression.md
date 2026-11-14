@@ -1,143 +1,218 @@
 # jail growth and a place worth growing
 
-working feature plan for #6. this is a sequence of playable releases, not a
-claim that these systems already exist. camera and update-discovery follow-ups
-are #8 and #9.
+implementation contract for #6, #23, #34, #36 and #45. baseline: 0.1.121,
+source64a0128. this is the current sequence, not a claim that unshipped features
+exist. exact-head review and release checks apply to every slice.
 
-## what is missing now
+## direction and what is already done
 
-at source f068cab, `src/content/jail.ts` creates both jails from one layout.
-jail 2 doubles prices and increases coin frequency, then removes the next-jail
-pad. its purchases are otherwise the same cells, tables, showers and four
-one-time helpers. once they are bought, extra coins have no use. rank can keep
-increasing without opening anything new.
+build a friendly, working jail diorama: do a job, hire help, improve the room,
+then open a genuinely new place. keep the peg people, original low-poly art,
+hands-on movement, both orientations and adjustable camera. no ads, premium
+currency, paid rescue, deleted residents or progress resets.
 
-the engine already has useful building blocks: locked rooms, stations and seats;
-prerequisite purchase pads; needs; walking helpers; construction paid in coins;
-and scene rebuilding after purchases. use those before adding another system.
-the current carrier and clerk choose the first source/check-in station, so
-multiple departments need explicit targeting before they can be called automated.
-also, only the player currently collects room/desk coins and settles squabbles.
-the existing hires automate chores, not the whole economy. those missing jobs
-must be addressed before claiming a hands-off jail.
+the named map, per-jail saves, current-only reset, rubble cell reveals,
+collector, extra escort guards, hygiene/unrest, stamp, sound and feedback are
+already shipped. they are not future deliverables. pine hill and desert rock
+still share a footprint. hospital care, riots, incident guards, room tiers,
+distinct new layouts and the full environment pass remain ahead.
 
-## reference, not a shopping list
+## delivery split and order
 
-the primary reference is [Supercent's Prison Life](https://play.google.com/store/apps/details?id=io.supercent.prison),
-the walk-around arcade-idle game this project follows. its developer describes
-room upgrades, staff, kitchens, gyms, mines, visiting rooms and away earnings.
-keep that hands-on loop as the spine, with the map and distinct prisons as a
-real progression target rather than another price multiplier.
+| slice | deliverable | can start | release condition |
+|---|---|---|---|
+| A1 | walls, caps, frames, ground, trees and fence | now, on current footprint | saves and geometry unchanged, phone views/readability pass |
+| C1 | one incident model, riot warning, manual calming and free home recovery | alongside A1, engine/types/tests first | recovery works without any purchased facility |
+| C2 | care annex, two/four treatment beds and care visuals | after C1's transitions are proven | paid care is faster, never required |
+| G1 | one incident-response guard | after C1/C2 | player and guard share one hold, never double rewards |
+| A2 | taller camera-aware wall cutaways and working bars | after A1 | no visual barrier across an open collision path |
+| P1 | goal card, room tiers, staff training and measured cash pacing | after core care loop | maxed old saves have useful new targets |
+| M3 | snowy peak: a new top-entry layout and activity | after layout fixtures | real playable content before selling its unlock |
 
-[Prison Empire Tycoon](https://play.google.com/store/apps/details?hl=en_US&id=com.codigames.idle.prison.empire.manager.tycoon)
-is a secondary reference for service chains and environment details, not a
-reason to turn this into a different management game. laundry, library and
-utilities are optional later ideas, not assumed Prison Life mechanics.
-we copy no art, layout, currencies, paid boosters or waiting gates.
+keep these separate reviews. no feature branch that combines every system.
+new content uses the current engine/data model, not a second simulation or
+a renderer-owned progress ledger. care moves ahead of the wider room catalogue
+because riot recovery must exist before escalation is enabled.
 
-our direction: build a friendly little working diorama. start by doing a job,
-hire someone to own it, improve their tools, then add a new room or wing that
-makes another job worth doing. automated income funds the next visible target.
+## C1: incidents and recovery
 
-## release 1: make existing rooms worth improving
+1. `World.alert` remains the only incident authority. distinguish squabble
+   from riot and warning from active state there. use the existing `fightIn`
+   clock for scheduling/cooldown, not a second event scheduler. preserve old
+   alerts as squabbles when their new fields are absent.
+2. riots start at rank3 or higher when an incident is due and at least3
+   eligible residents in one block have unrest>=0.6. a block means its member
+   houses, not one two-bed cell. select at most4 residents, stable id order.
+   exclude followers, people in service/care/release, done residents and anyone
+   already claimed. no participant can be claimed by two jobs.
+3. warning lasts5 simulation seconds. reserve ids in the one alert, revalidate
+   before activation, and cancel without a reward if fewer than3 remain
+   eligible. ordinary services continue. pause, hidden state and inactive jails
+   do not advance warning, unrest, recovery or cooldown.
+4. current block rendezvous is (360,210), with small separated standing spots
+   along that clear corridor. people walk there on existing routes, never
+   teleport out of beds or through walls. the player can intervene while they
+   gather. the alert marker points to this reachable anchor.
+5. standing still within40 of the anchor calms a riot in3 contiguous simulation
+   seconds. reset the hold when no valid responder is present. no response
+   deadline removes residents, drains money or blocks unrelated intake/release.
+   after resolution apply a30-second riot cooldown. keep ordinary squabble
+   timing unchanged.
+6. reward is the existing6 cash, once per resolved incident. remove the alert
+   in the same simulation transition as reward/settled count. warning
+   cancellation pays nothing. restore never resolves/rewards an event itself.
+7. after a riot one remaining participant, lowest id, gets a comic bump. retain
+   home, bed slot, served progress and identity. others return home on routes.
+   clamp unrest down to at most0.3, never increase a calmer resident to0.3.
+8. use one bounded recovery-work value, initially20 and zero when healthy.
+   at home it falls by1 per simulation second, so recovery is always free.
+   no separate random illness, health bar or continuously decaying medical need.
+   a locked, absent or full hospital cannot suspend home recovery.
+9. while resting or being treated, ordinary need decay pauses and served time
+   continues once per step. preserve its prior value. a bumped resident is not
+   eligible for incidents or release until recovered. a done resident restored
+   in care can finish recovery and then follow the ordinary one-time release.
+10. default missing recovery fields to healthy on old saves. retain a valid
+    active warning/riot, its remaining time/hold and valid participants.
+    cancelling an invalid claim must release its actors safely, without reward
+    or deleting their home. no stale target on another map world.
 
-- a compact next-goal card: what can be built now, the cost and what it changes.
-  distinguish a rank requirement from a coin shortage. after buying everything
-  currently available, show the next real milestone rather than a vacant map.
-- a hired cash collector that banks room and station earnings, and guard patrol
-  training that settles squabbles. walking through cash stays satisfying before
-  choosing to buy that automation. routine collection
-  and incident response must work without the player walking every circuit.
-  buying the next improvement remains the player's deliberate choice.
-- three visible improvement stages for cells, kitchen/canteen and showers.
-  better beds and room fittings improve comfort/income; kitchen equipment and
-  serving capacity improve meal throughput; shower fittings improve capacity or
-  service time. the affected number must be visible before purchase.
-- staff training with visible equipment and real throughput/carry/speed effects.
-  hire once, then improve the job rather than buying an identical helper forever.
-- an end-of-current-content panel while the next expansion is being built.
-  do not pretend an endlessly increasing rank unlocks unimplemented rewards.
-- art in the same slice: bed frames, rounded mattresses, pillows, cupboard or
-  shelf, lamps, tiled wet rooms, kitchen counters and recognizable serving gear.
-  improve the wall caps, floor materials and room lighting at the same time.
+these are starting tuning values, not measured balance results. first release
+must include manual calming and recovery together. do not ship a riot whose
+only escape is an unimplemented or unaffordable room.
 
-acceptance: a returning maxed jail-2 save retains every purchase and coin and
-immediately has a visible new goal. each tier changes both the rendered room and
-the measured simulation outcome. automate a complete intake-to-release loop,
-then buy another useful improvement with its income without manual busywork.
-record purchase cadence from actual play; tune costs against that evidence.
-split this into small reviews: goals and missing automation first, then room
-tiers and staff equipment with their art. do not call the first slice a complete
-progression overhaul while the remaining purchases are still unimplemented.
+## C2: care annex, concrete footprint
 
-## release 2: a new prison on the map, with room to grow
+append to the east of each existing jail. preserve all existing room, station,
+seat, pad, boost, safe, mess and actor coordinates and ids. world becomes960x900.
+the existing house capacity stays4..16; treatment beds never count as home beds.
 
-- bring the site map and a genuinely different second prison forward. use clear
-  star/achievement requirements, a new look and different room opportunities.
-  preserve the current second jail as an existing site until migration is proven.
-- retain each site's cash, workers and purchases and make switching sites explicit.
-  decide and show any return-earnings calculation before introducing it. do not
-  imply that a closed site is simulated continuously when it is not.
+| item | definition |
+|---|---|
+| room/station id | `hospital`, look `care` |
+| room rectangle | x760, y310, width180, height210 |
+| entrance | west wall, gap starts70 down, width60, midpoint(760,410) |
+| delivery zone | x770, y375, width160, height70 |
+| initial treatment seats | (805,355), (895,355) |
+| extra treatment seats | (805,470), (895,470) |
+| `hospital` pad | (850,560), rank3, after `cell4`, base cost80 |
+| `carebeds` pad | same point, after `hospital`, rank5, base cost100 |
+| `riotguard` pad | (850,625), after `hospital`, rank5, base cost150 |
 
-- authored expansion slots with a preview footprint and a labelled construction
-  pad. buy a cell wing, dining extension or service annex in coins, then watch
-  the actual furniture and room assemble into the space. no construction timer.
-- keep room/station IDs stable. the slot contributes the existing room, station,
-  seat and pad definitions instead of introducing a second simulation engine.
-- helpers serve their assigned department or select an available matching job.
-  two kitchens must not send every cook to the first stove or desk in the file.
-- show how the new capacity changes the queue and earnings. the added population
-  should create the next understandable capacity decision, not a silent jam.
-- art in this slice: connecting corridors, fences, landscaping, utility fixtures,
-  doors and a short build-in animation. readable silhouettes at distant zoom.
+retain the existing per-jail cost multiplier. only the next unbought member
+appears on the care purchase point. beds3/4 require `carebeds`; the room and
+first two require `hospital`. a new locked annex can reuse the bounded rubble
+reveal. tests must distinguish the original six cell rooms from the new annex,
+not silently weaken their identity or purchase checks.
 
-acceptance: visit and resume both sites, buy two different extensions, observe
-different usable capacity, save/reload, and walk the new corridors. meals,
-cleanup, escort and release keep working with multiple departments. no stranded
-resident, unreachable station or lost balance after switching sites.
+reuse facility seat reservation and go/use/back routing. `care` is a service
+request from the recovery value, not another entry in the ordinary need-decay
+table. treatment removes recovery work at2.5 per simulation second: a full
+case takes up to8 seconds instead of20 at home. partial progress survives a
+transfer or reload. keep the original home bed reserved while the person is
+away. helpers/player revalidate and reserve a free treatment seat before
+leaving home. absent/full/locked care means remain/rest at home. losing a
+valid reservation sends the person home safely, never into an endless queue.
 
-## release 3: more things happening inside
+the new width increases the current outbound bus travel by240/180=1.33 seconds.
+that is an explicit consequence to measure in this content slice, not an
+unrecorded income nerf or a reason to reset an old bus state. preserve existing
+ride.x/t/state on restore. no unrelated price, pay or coin-frequency change.
 
-- phone room, recreation yard and work/mine area as distinct activities, followed
-  by an infirmary and visiting room. give each a recognizable purpose and action.
-- a work area that visibly produces something, with staff and an earned income
-  target, not a decorative room that only increases a multiplier.
-- an infirmary that adds a comprehensible care loop, not random punishment.
-- an earned improvement should reduce a bottleneck. introduce one service at a
-  time and keep existing residents viable while that service is being unlocked.
-- integrate activity animations and material/detail improvements with each room.
+care look: mint/cream bedding, ice pack, small original medical cabinet and
+clear rest silhouette. no blood, guns, realistic injury or punitive isolation.
+art must show the room's two/four actual seats and occupied reservations.
 
-acceptance: each new service has a distinct visible job, a staff assignment and a
-measurable benefit. a fully automated jail can cover every required service.
-no need starts depleting on an old save before its facility is reachable.
+## G1: incident automation
 
-## release 4: deeper variety after the core rooms
+one new helper kind, one purchase. helmet, shield and whistle. it calms both
+squabbles and riots, does not escort, collect money or create a second alert.
+covering ordinary squabbles as well as riots is deliberate: automation must
+remove routine incident chores, not leave the smaller version manual forever.
+use the existing idle grid and verify the additional helper fits.
 
-- add more themed sites and longer-term workshop/visitor improvements.
-- consider VIP residents, earned capacity boosts and bounded away earnings as
-  separate reviewed features. preserve the no-ads/no-paid-gates contract.
-- consider library, laundry or utilities only when they add a good new job.
-  those are proposals, not a prerequisite for recognizing the original loop.
-- distinct environment identity per site: courtyard layout, materials, surrounding
-  landscape, furniture and working activity. not the same floor at twice the cost.
+player and guard contribute an OR condition to one incident hold, at most one
+DT per step. both together cannot halve the intended hold. the guard must
+actually walk into range. revalidate targets after cancellation, resolution,
+travel and restore. no duplicate guard spawn/reward, no paid prerequisite
+for manual resolution, no endlessly recurring job after a cleared incident.
 
-acceptance: an existing player can visit both sites, resume each one's workers
-and purchases, and explain the next target without opening help. complete an
-authored sequence of upgrades and expansion before calling a site finished.
+## A1/A2: a coherent visual rebuild
 
-## rails for every slice
+1. keep the liked peg cast and its independent motions. do not restart the
+   character redesign. environment uses warm concrete/salmon wall accents,
+   lighter caps, grey service floors, mint care and green outside ground.
+   night palette needs readable separation, not translucent controls on black.
+2. A1: thicker-looking low walls, cap bands, door frames, layered floor edges,
+   original grass/tree/fence silhouettes and gate posts. retain collision and
+   coordinates. keep decoration outside routes, price pads, care slots and
+   camera-critical silhouettes. no borrowed store art or new image downloads.
+3. A2: tall back walls and camera-facing cutaways use a separate wall batch,
+   never transparency on the shared props/people material. heads and current
+   task remain readable at tilt15/zoom3 and reversed views. bars follow actual
+   doorway openness; they cannot draw shut across an open route. no new lock
+   mechanic, path wait or collision rule hidden in a visual animation.
+4. service details arrive with their working feature: beds/mattresses/shelves,
+   kitchen equipment, wet-room fittings, medical cabinet, guard equipment.
+   prefer a coherent room over unrelated decorative clutter.
+5. retain shared geometry, bounded instances and deterministic decoration
+   independent of world RNG. measure calls/triangles/resources before/after,
+   repeat theme/purchase/travel cycles, and inspect moving journeys. a desktop
+   still is not a physical-device performance result.
 
-- preserve installed saves, stable IDs and camera preferences. use captured
-  old-version fixtures plus tests for fully upgraded and partially paid saves.
-- keep visible human-sized goals after automation. no ads, premium currency,
-  energy meters, forced waiting or deliberate shortages to sell a shortcut.
-- keep original art. improve one coherent material family at a time rather than
-  scattering decorative props that do not explain a room's purpose.
-- retain shared meshes and bounded pools. compare render cost as the population
-  and room count grow. a detailed screenshot is not proof of phone performance.
-- check both orientations and the expanded camera range, including low angles.
-  clear cutaways and labels matter more than decorative geometry hiding people.
-- every release includes a before/after play journey, migration and updater proof,
-  exact-head review, hosted tests and an independent live receipt.
+## P1/M3: keep meaningful targets after automation
 
-next implementation slice: release 1. do not bundle the whole roadmap into one PR.
+next-goal card shows an actual available purchase, its cost and effect, or the
+next rank/content milestone. no promise that endless rank unlocks missing rooms.
+add visible three-stage cell, kitchen/canteen and shower improvements plus
+staff speed/carry training. each tier changes a specific measured capability,
+not just a cosmetic multiplier. preserve earned money and current purchases.
+measure an existing maxed save and a fresh run before changing income pacing.
+do not halve all earnings as part of an art patch.
+
+do not move old pine hill/desert rock residents into a redesigned layout.
+make snowy peak the first genuinely new top-entry site: bus/gate/scanner/desk
+flow downward, service branches off a clear spine, separate release route,
+and a working activity with its own visible production. its complete layout
+and route fixture are a separate content review, not implied by this contract.
+keep it unsold/coming later until that content and its unlock are playable.
+
+remaining feature queue, in order: work/mine loop; phone/recreation; visiting
+room; earned capacity/outfit/VIP variety; bounded return earnings. each needs
+its own useful action, feedback and automation before becoming mandatory.
+no new ordinary need drains on an old save before its service is available.
+closed map worlds are not silently simulated. any away-income popup needs a
+specified cap and idempotent accounting first. laundry/library/utilities stay
+optional, not assumed requirements for parity.
+
+## acceptance and save gates
+
+- C1: first warning, cancellation/revalidation, active riot, manual hold at
+  every unlock stage, one reward and recovery with no/locked/full hospital.
+- C2: initial2/upgrade4 seats, real resident arrival/use/home, simultaneous
+  reservations, partial treatment, full fallback, done-in-care and preserved
+  home/served value. both jails and current-only reset/travel/reload.
+- G1: actual response journey, player+guard in range, interrupted hold,
+  cancellation, restore, exactly one purchased responder and unchanged escorts.
+- captured old saves: full purchases, partial payments, occupied rooms,
+  two/three escorts, collector bag/safe, dirt, active fairy/mount and stamped
+  departures. preserve all value and waypoints through repeated restores.
+- route probes include collision, not just a returned endpoint: the router
+  can fall back to a direct target when no grid path exists. inspect medical
+  routes, old services and gate/release flow as actors actually walk them.
+- real phone-sized portrait/landscape contexts, both engines, low/high tilt,
+  zoom extremes, reduced motion, hidden/menu freeze and update acceptance.
+  say explicitly which checks were emulated and which used a physical device.
+- regressions must fail the relevant mutant. intermediate payment states are
+  held by fixture resources, not sampled hopefully. transient presentations
+  are observed on their own frame clock, not a later wall-time read.
+- exact reviewed head, hosted green, built-output notices/leak check and
+  independent production identity/byte/journey receipt before close-out.
+
+## references and limits
+
+[Prison Life's developer listing](https://play.google.com/store/apps/details?id=io.supercent.prison)
+confirms the rooms/staff/upgrade family. [Codigames' own guidance](https://codigames.helpshift.com/hc/en/6-prison-empire-tycoon/faq/418-tips-to-succeed-at-your-prisons/?l=en)
+is a secondary reference for distinct cell/service improvements. these inform
+the genre direction, not our exact layouts, prices or recovery rules above.
+the contract is an original design. its tuning still needs measured play.
