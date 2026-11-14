@@ -7,12 +7,13 @@ import {
   Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, type Material,
   type BufferGeometry,
 } from "three";
-import { WALL, walls } from "../engine/geom.ts";
+import { doorMid, WALL, walls } from "../engine/geom.ts";
 import { isOpen, stampAt } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, PadDef, RoomDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
 
-export const WALL_H = 11;
+export const WALL_H = 15;
+export const WALL_CAP = 1.8;
 /** how tall the desks stand, so what sits on them sits on top */
 export const DESK_H = 13;
 /** how far along the release desk the ink pad sits from the papers, where the stamp waits */
@@ -23,6 +24,37 @@ const TILE = 40;
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
+
+/** Outside the walkable rectangle: decoration cannot become a new obstacle or purchase target. */
+export function yardPieces(l: LevelDef, pal: Palette): Piece[] {
+  const pieces: Piece[] = [];
+  const add = (shape: Shape, x: number, y: number, z: number, sx: number, sy: number, sz: number, colour: string) =>
+    pieces.push({ shape, x, y, z, sx, sy, sz, ry: 0, colour });
+  const box = (x: number, z: number, w: number, d: number, h: number, colour: string, y = 0) => add("box", x, y + h / 2, z, w, h, d, colour);
+  const road = l.stations.find((s) => s.kind === "spawn") as S<"spawn"> | undefined;
+  const roadY = road?.roadY ?? l.size.h;
+  const grass = `#${new Color(pal.background).lerp(new Color("#4f7946"), 0.55).getHexString()}`;
+  const leaf = `#${new Color(pal.background).lerp(new Color("#426c3b"), 0.78).getHexString()}`;
+  const leafLight = `#${new Color(leaf).lerp(new Color(pal.pillow), 0.15).getHexString()}`;
+  box(l.size.w / 2, -160, l.size.w + 640, 300, 0.06, grass);
+  box(-170, roadY / 2 - 10, 300, roadY - 20, 0.06, grass);
+  box(l.size.w + 170, roadY / 2 - 10, 300, roadY - 20, 0.06, grass);
+
+  // Keep this first yard pass low; tall scenery needs the later camera cutaway work.
+  for (const x of [-70, l.size.w + 70]) {
+    for (const z of [90, 360, 690]) {
+      add("cyl", x, 6.5, z, 1.8, 13, 1.8, pal.wood);
+      add("ball", x, 19, z, 9, 9, 9, leaf);
+      add("ball", x - 5, 16, z + 3, 6.5, 6.5, 6.5, leaf);
+      add("ball", x + 4, 20, z - 2, 6, 6, 6, leafLight);
+    }
+    for (let z = 40; z < roadY - 40; z += 90) add("cyl", x < 0 ? -26 : l.size.w + 26, 8.5, z, 1.4, 17, 1.4, pal.metal);
+    for (const h of [7, 13]) box(x < 0 ? -26 : l.size.w + 26, roadY / 2, 1.6, roadY - 64, 1.6, pal.metal, h);
+  }
+  for (let x = -26; x <= l.size.w + 26; x += 64) add("cyl", x, 8.5, -24, 1.4, 17, 1.4, pal.metal);
+  for (const h of [7, 13]) box(l.size.w / 2, -24, l.size.w + 52, 1.6, 1.6, pal.metal, h);
+  return pieces;
+}
 
 /** lambert, with a soft tile grid drawn from where each pixel sits in the world */
 function tiled(): MeshLambertMaterial {
@@ -224,8 +256,23 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     }
   });
 
-  // low walls, with gaps for doors
-  for (const wl of walls(l, (r) => open(r.locked), true)) box(wl.x + wl.w / 2, wl.y + wl.h / 2, wl.w + 2, wl.h + 2, WALL_H, pal.wall);
+  const wall = `#${new Color(pal.wall).lerp(new Color(pal.metal), 0.45).getHexString()}`;
+  const cap = `#${new Color(wall).lerp(new Color(pal.pillow), 0.32).getHexString()}`;
+  for (const wl of walls(l, (r) => open(r.locked), true)) {
+    const x = wl.x + wl.w / 2, z = wl.y + wl.h / 2;
+    box(x, z, wl.w + 2, wl.h + 2, WALL_H, wall);
+    box(x, z, wl.w + 4, wl.h + 4, WALL_CAP, cap, WALL_H);
+    box(x, z, wl.w + 3, wl.h + 3, 2, pal.metal);
+  }
+  // Jambs sit beyond the gap, never reducing its usable width. Full-height cutaways come separately.
+  for (const room of l.rooms) if (open(room.locked)) for (const door of room.doors) {
+    const { mid, out } = doorMid(room, door);
+    for (const sign of [-1, 1]) {
+      const offset = sign * (door.width / 2 + 2);
+      box(mid.x - out.y * offset, mid.y + out.x * offset, 4, 4, WALL_H + WALL_CAP + 1, cap);
+    }
+  }
+  pieces.push(...yardPieces(l, pal));
 
   // stand-here spots and furniture
   const spot = (x: number, z: number) => add("cyl", x, 1.4, z, 17, 0.4, 11, pal.spot);
