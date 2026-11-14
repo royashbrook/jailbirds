@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create, step, player, restore, hint, AGENT_SPEED, DT, UPSET } from "../src/engine/sim.ts";
+import { create, step, player, restore, hint, isOpen, AGENT_SPEED, DT, UPSET } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
+import { inside, walls } from "../src/engine/geom.ts";
 
 // riots: one incident model on w.alert. at rank 3 and up, three or more upset residents at home in the
 // cell block gather at the corridor after a warning; standing there calms them, one gets a bump and
@@ -85,21 +86,43 @@ test("someone reserved by the warning is not sent to a service", () => {
   assert.notEqual(a.state, "use");
 });
 
-test("they walk to the anchor on routes, never jumping", () => {
-  const w = jail();
-  steps(w, 1);
-  const ids = w.alert.ids, was = new Map(ids.map((id) => [id, { ...byId(w, id) }]));
-  for (let i = 0; i < Math.round((R.warn + 2) / DT); i++) {
+/** step for a while and check every one of `ids` each step: no further than a walk, and the centre
+ * never inside a wall a resident cannot pass. each step is at most 1.4 across, so a wall (8 thick)
+ * cannot be stepped over between two samples */
+function walkClear(w, ids, seconds) {
+  const was = new Map(ids.map((id) => [id, { x: byId(w, id).x, y: byId(w, id).y }]));
+  for (let i = 0; i < Math.round(seconds / DT); i++) {
     step(w, LEVELS, STILL);
+    const ws = walls(L, (r) => isOpen(w, r.locked), true);
     for (const id of ids) {
       const a = byId(w, id), b = was.get(id);
       assert.ok(Math.hypot(a.x - b.x, a.y - b.y) <= AGENT_SPEED * DT + 1e-6, `resident ${id} jumped`);
+      const hit = ws.find((r) => inside(a, r));
+      assert.ok(!hit, `resident ${id} at ${a.x.toFixed(1)},${a.y.toFixed(1)} inside a wall ${JSON.stringify(hit)}`);
       was.set(id, { x: a.x, y: a.y });
     }
   }
+}
+
+test("they walk out of bed to the anchor on routes, through doors, never jumping", () => {
+  const w = jail();
+  steps(w, 1);
+  const ids = w.alert.ids;
+  walkClear(w, ids, R.warn + 2);
   assert.equal(w.alert?.kind, "riot");
   assert.equal(w.alert.warn, 0, "active after the warning");
   for (const id of ids) assert.ok(Math.hypot(byId(w, id).x - R.at.x, byId(w, id).y - R.at.y) < 60, `resident ${id} gathered`);
+});
+
+test("calmed, they walk back to bed through doors, never jumping", () => {
+  const w = jail();
+  steps(w, 1);
+  wait(w, R.warn + 0.1);
+  const ids = [...w.alert.ids];
+  Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
+  until(w, () => w.alert === null, R.hold + 1, "the riot calmed");
+  walkClear(w, ids, 8);
+  for (const id of ids) assert.equal(byId(w, id).state, "home", `resident ${id} home`);
 });
 
 test("a warning that loses its crowd is cancelled, pays nothing and sends them home", () => {
@@ -290,15 +313,45 @@ test("once the riot wait is over, a due incident with a crowd is a riot again", 
   assert.equal(w.alert?.kind, "riot");
 });
 
-test("old saves: an alert without the new fields is a squabble, a resident without them is well", () => {
-  const w = create(LEVELS, 0, 7);
+/** a save as the game wrote it before riots: no kind or warning on the alert, nobody hurt, no riot wait */
+function oldSave(w) {
   const raw = JSON.parse(JSON.stringify(w));
-  raw.alert = { x: 100, y: 100, ids: [], held: 0.4 };
-  const back = restore(JSON.stringify(raw), LEVELS);
-  assert.equal(back.alert.kind, "squabble");
-  assert.equal(back.alert.warn, 0);
-  assert.equal(back.alert.held, 0.4);
-  for (const a of back.agents) assert.equal(a.hurt ?? 0, 0);
+  if (raw.alert) {
+    delete raw.alert.kind;
+    delete raw.alert.warn;
+  }
+  delete raw.riotCalm;
+  for (const a of raw.agents) delete a.hurt;
+  return raw;
+}
+
+test("old saves: a squabble from before riots comes back as that squabble, everyone well", () => {
+  const w = jail({ rank: 2 });
+  steps(w, 1);
+  w.alert.held = 0.4;
+  const ids = [...w.alert.ids];
+  const back = restore(JSON.stringify(oldSave(w)), LEVELS);
+  assert.deepEqual(back.alert, { kind: "squabble", x: w.alert.x, y: w.alert.y, ids, held: 0.4, warn: 0 });
+  assert.equal(back.riotCalm, 0);
+  for (const a of back.agents) assert.equal(a.hurt, 0);
+  for (const id of ids) assert.equal(back.agents.find((a) => a.id === id).state, "fight");
+});
+
+test("old saves: a squabble naming nobody who is squabbling is dropped, and its fighters go home", () => {
+  const w = jail({ rank: 2 });
+  steps(w, 1);
+  const fighters = [...w.alert.ids];
+  const empty = oldSave(w);
+  empty.alert.ids = [];
+  let back = restore(JSON.stringify(empty), LEVELS);
+  assert.equal(back.alert, null);
+  for (const id of fighters) assert.equal(back.agents.find((a) => a.id === id).state, "home", "not left squabbling with no squabble");
+  const gone = oldSave(w);
+  gone.alert.ids = [900, 901];
+  back = restore(JSON.stringify(gone), LEVELS);
+  assert.equal(back.alert, null);
+  steps(back, 2);
+  assert.equal(reward(back), 0, "nothing paid for it");
 });
 
 test("a riot warning survives a reload with its time and crowd", () => {

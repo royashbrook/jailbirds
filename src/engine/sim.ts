@@ -1169,18 +1169,25 @@ function alertFrom(w: World, l: LevelDef): Alert | null {
   if (!raw || typeof raw !== "object" || !num(raw.x) || !num(raw.y) || !Array.isArray(raw.ids)) return null;
   const held = num(raw.held) && raw.held >= 0 ? raw.held : 0;
   const ids = raw.ids.filter(num);
-  if (raw.kind !== "riot") return { kind: "squabble", x: raw.x, y: raw.y, ids, held, warn: 0 };
+  if (raw.kind !== "riot") {
+    // a squabble is only one while somebody it names is still squabbling
+    const fighting = ids.filter((id) => w.agents.some((a) => a.id === id && a.state === "fight"));
+    return fighting.length ? { kind: "squabble", x: raw.x, y: raw.y, ids: fighting, held, warn: 0 } : null;
+  }
   const r = l.riot;
   const keep = w.agents.filter((a) => a.kind === "agent" && a.state === "riot" && ids.includes(a.id));
   if (keep.length < r.min) return null;
   const warn = num(raw.warn) ? clamp(raw.warn, 0, r.warn) : 0;
   return { kind: "riot", x: raw.x, y: raw.y, ids: keep.map((a) => a.id), held: clamp(held, 0, r.hold), warn };
 }
-/** anyone saved mid riot that the restored alert does not name goes home on foot, home and time kept */
+/** anyone saved mid incident that the restored alert does not name goes home, home and time kept: a
+ * squabbler is still in bed, so is home at once, a rioter walks */
 function looseEnds(w: World, l: LevelDef) {
-  const ids = w.alert?.kind === "riot" ? w.alert.ids : [];
+  const ids = w.alert?.ids ?? [];
   for (const a of w.agents) {
-    if (a.kind !== "agent" || a.state !== "riot" || ids.includes(a.id)) continue;
+    if (a.kind !== "agent" || ids.includes(a.id)) continue;
+    if (a.state === "fight") a.state = "home";
+    if (a.state !== "riot") continue;
     // a save is never lost over one loose end: a home that cannot be walked to is simply where it is
     const h = byId(l, a.house);
     if (h?.kind === "house" && h.seats[a.slot]) goHome(w, l, a);
