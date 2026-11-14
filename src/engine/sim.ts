@@ -10,7 +10,7 @@
 import { roll } from "./rng.ts";
 import { collide, dist, inside, nav, near, route as navRoute, walls, WALL, type Nav } from "./geom.ts";
 import type {
-  Agent, AgentKind, AnyStation, BoostKind, Claim, Dirt, Fairy, Job, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
+  Agent, AgentKind, Alert, AnyStation, BoostKind, Claim, Dirt, Fairy, Job, LevelDef, Mess, Mood, MountKind, PadDef, Pt, Rect, ReleaseDef, Stick, Took, World,
 } from "./types.ts";
 
 export const DT = 1 / 60;
@@ -114,7 +114,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     bought: [], paid: {}, stock: {}, piles: {}, messes: [], dirt: {}, floor: [],
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
-    alert: null, fightIn: l.fights.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
+    alert: null, fightIn: l.fights.every, riotCalm: 0, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
     boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" }, took: noneTaken(), grab: null,
   };
 }
@@ -125,7 +125,7 @@ function agent(id: number, kind: AgentKind, at: Pt, look: number, l: LevelDef): 
     id, kind, x: at.x, y: at.y, face: 1, moving: false, walk: 0, look, tags: [], state: kind === "agent" ? "arrive" : "idle",
     leader: -1, house: "", slot: -1, station: "", seat: -1,
     needs: kind === "agent" ? Object.fromEntries(l.needs.map((n) => [n.id, n.start])) : {},
-    unrest: 0, served: 0, rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
+    unrest: 0, served: 0, hurt: 0, rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
   };
 }
 
@@ -202,8 +202,12 @@ export function wants(l: LevelDef, a: Agent, escortOnly = false): string | null 
   return best;
 }
 export const isDone = (l: LevelDef, a: Agent) => a.kind === "agent" && !!a.house && a.served >= l.serve;
+/** resting off a bump at home: nowhere to go, in no incident, not released, until it is well */
+export const resting = (a: Agent) => (a.hurt ?? 0) > 0;
+/** at home and well: the only residents an incident, a service or a lead out can take */
+const atEase = (a: Agent) => a.state === "home" && !resting(a);
 /** a resident at home who is waiting to be led somewhere */
-const waiting = (l: LevelDef, a: Agent) => a.state === "home" && a.rest >= SETTLE && (isDone(l, a) || !!wants(l, a, true));
+const waiting = (l: LevelDef, a: Agent) => atEase(a) && a.rest >= SETTLE && (isDone(l, a) || !!wants(l, a, true));
 
 export function padVisible(w: World, p: PadDef) {
   return !w.bought.includes(p.id) && isOpen(w, p.after);
@@ -787,8 +791,20 @@ function arrivals(w: World, l: LevelDef) {
   for (const a of w.agents) if (a.state === "ready") walkPath(a, AGENT_SPEED);
 }
 
+/** an incident put right: the reward on the floor where it was, the alert gone and counted in the same
+ * step, and the ordinary wait before the next one */
+function settle(w: World, l: LevelDef, al: Alert) {
+  const f = l.fights;
+  for (let k = 0; k < f.reward; k++) w.floor.push({ x: al.x + (rand(w) - 0.5) * 40, y: al.y + (rand(w) - 0.5) * 20, house: "" });
+  w.alert = null;
+  w.settled++;
+  w.fightIn = f.every * (0.7 + 0.6 * rand(w));
+}
+
 function fights(w: World, l: LevelDef) {
   const f = l.fights;
+  if (w.riotCalm > 0) w.riotCalm = Math.max(0, w.riotCalm - DT);
+  if (w.alert?.kind === "riot") return riot(w, l, w.alert);
   if (w.alert) {
     const al = w.alert;
     if (near(player(w), al, ALERT_R)) al.held += DT;
@@ -797,15 +813,11 @@ function fights(w: World, l: LevelDef) {
         const b = w.agents.find((a) => a.id === id);
         if (b?.state === "fight") b.state = "home";
       }
-      for (let k = 0; k < f.reward; k++)
-        w.floor.push({ x: al.x + (rand(w) - 0.5) * 40, y: al.y + (rand(w) - 0.5) * 20, house: "" });
-      w.alert = null;
-      w.settled++;
-      w.fightIn = f.every * (0.7 + 0.6 * rand(w));
+      settle(w, l, al);
     }
     return;
   }
-  const home = w.agents.filter((a) => a.state === "home" && !isDone(l, a));
+  const home = w.agents.filter((a) => atEase(a) && !isDone(l, a));
   if (home.length < f.minPop) return;
   // a cross or upset resident makes a squabble come sooner
   const sooner = home.some((a) => {
@@ -814,6 +826,16 @@ function fights(w: World, l: LevelDef) {
   });
   w.fightIn -= DT * (sooner ? f.every / f.crossEvery : 1);
   if (w.fightIn > 0) return;
+  const crowd = w.rank >= l.riot.rank && w.riotCalm <= 0 ? riotCrowd(l, home) : [];
+  if (crowd.length) {
+    const r = l.riot;
+    crowd.forEach((a, i) => {
+      a.state = "riot";
+      a.path = route(w, l, a, riotSpot(l, i, crowd.length));
+    });
+    w.alert = { kind: "riot", x: r.at.x, y: r.at.y, ids: crowd.map((a) => a.id), held: 0, warn: r.warn };
+    return;
+  }
   const houses = all(l, "house").filter((h) => home.filter((a) => a.house === h.id).length >= 2);
   if (!houses.length) {
     w.fightIn = 5;
@@ -822,7 +844,63 @@ function fights(w: World, l: LevelDef) {
   const h = houses[Math.floor(rand(w) * houses.length)];
   const pair = home.filter((a) => a.house === h.id).slice(0, 2);
   for (const a of pair) a.state = "fight";
-  w.alert = { x: h.at.x, y: h.at.y, ids: pair.map((a) => a.id), held: 0 };
+  w.alert = { kind: "squabble", x: h.at.x, y: h.at.y, ids: pair.map((a) => a.id), held: 0, warn: 0 };
+}
+
+/** where each of a riot's crowd stands: side by side along the corridor, a body apart */
+const riotSpot = (l: LevelDef, i: number, n: number): Pt => ({ x: l.riot.at.x + (i - (n - 1) / 2) * 22, y: l.riot.at.y });
+/** the block a home is in: the block room whose walls hold the home's own room */
+function blockOf(l: LevelDef, house: string) {
+  const h = byId(l, house);
+  const room = h?.kind === "house" ? l.rooms.find((r) => r.id === h.room) : undefined;
+  if (!room) return undefined;
+  const r = room.rect;
+  return l.rooms.find((b) => b.look === "block" && r.x >= b.rect.x && r.y >= b.rect.y && r.x + r.w <= b.rect.x + b.rect.w && r.y + r.h <= b.rect.y + b.rect.h);
+}
+/** the first block with enough upset at home and well to riot: up to `max` of them, lowest ids first */
+function riotCrowd(l: LevelDef, home: Agent[]): Agent[] {
+  const r = l.riot;
+  const upset = home.filter((a) => a.unrest >= UPSET).sort((a, b) => a.id - b.id);
+  for (const b of l.rooms.filter((x) => x.look === "block")) {
+    const mine = upset.filter((a) => blockOf(l, a.house) === b);
+    if (mine.length >= r.min) return mine.slice(0, r.max);
+  }
+  return [];
+}
+/** a riot: they gather while the warning runs, and only those still there and still upset when it ends
+ * make it a riot. then the player standing within reach for the hold calms it. nobody is ever lost */
+function riot(w: World, l: LevelDef, al: Alert) {
+  const r = l.riot;
+  const crowd = al.ids.map((id) => w.agents.find((a) => a.id === id)).filter((a): a is Agent => a?.state === "riot");
+  for (const a of crowd) walkPath(a, AGENT_SPEED);
+  if (al.warn > 0) {
+    al.warn = Math.max(0, al.warn - DT);
+    if (al.warn > 0) return;
+    const keep = crowd.filter((a) => a.unrest >= UPSET);
+    if (keep.length < r.min) return calmDown(w, l, crowd, false);
+    for (const a of crowd) if (!keep.includes(a)) goHome(w, l, a);
+    al.ids = keep.map((a) => a.id);
+    return;
+  }
+  al.held = near(player(w), al, ALERT_R) ? al.held + DT : 0;
+  if (al.held >= r.hold - 1e-9) calmDown(w, l, crowd, true);
+}
+/** a riot over: everyone back home on their way, nobody's home or time touched. calmed, it pays, the
+ * lowest id has a bump to rest off, nobody is left more upset than 0.3, and no riot for a while.
+ * called off in its warning, it pays nothing */
+function calmDown(w: World, l: LevelDef, crowd: Agent[], calmed: boolean) {
+  const al = w.alert!;
+  for (const a of crowd) goHome(w, l, a);
+  if (!calmed) {
+    w.alert = null;
+    w.fightIn = l.fights.every * (0.7 + 0.6 * rand(w));
+    return;
+  }
+  const low = crowd.reduce<Agent | undefined>((m, a) => (!m || a.id < m.id ? a : m), undefined);
+  if (low) low.hurt = l.riot.bump;
+  for (const a of crowd) a.unrest = Math.min(a.unrest, 0.3);
+  settle(w, l, al);
+  w.riotCalm = l.riot.calm;
 }
 
 /** a home's own seat is dirty enough to be a bother */
@@ -859,6 +937,11 @@ function residents(w: World, l: LevelDef) {
       a.path = st?.kind === "release" ? st.exit.flatMap((pt, i) => (i ? [pt] : route(w, l, a, pt))) : [];
     } else if (a.state === "leave") {
       if (walkPath(a, AGENT_SPEED)) w.agents = w.agents.filter((x) => x !== a);
+    } else if (a.state === "home" && resting(a)) {
+      // resting off a bump, free and at home: needs wait, time served goes on
+      a.hurt = Math.max(0, a.hurt - DT);
+      a.served += DT;
+      a.rest += DT;
     } else if (a.state === "home") {
       for (const n of l.needs) a.needs[n.id] = Math.max(0, a.needs[n.id] - DT / n.decay);
       a.served += DT;
@@ -997,10 +1080,10 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
 
 /** what to do next, as a key the content turns into words */
 export type Hint =
-  | { key: "alert" | "checkin" | "nobed" | "pickup" | "house" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
+  | { key: "alert" | "riot" | "checkin" | "nobed" | "pickup" | "house" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
   | { key: "errand" | "fetch" | "drop"; need: string };
 export function hint(w: World, l: LevelDef): Hint {
-  if (w.alert) return { key: "alert" };
+  if (w.alert) return { key: w.alert.kind === "riot" ? "riot" : "alert" };
   const me = player(w);
   const line = followers(w, me);
   if (line.some((b) => !b.house)) return { key: "house" };
@@ -1012,8 +1095,8 @@ export function hint(w: World, l: LevelDef): Hint {
   if (emptyHanded) return { key: me.carry ? "drop" : "fetch", need: (byId(l, emptyHanded.station) as S<"sink">).need };
   if (queued(w).length) return noBed(w, l) ? { key: "nobed" } : { key: "checkin" };
   if (w.agents.some((a) => a.state === "ready")) return { key: "pickup" };
-  if (w.agents.some((a) => a.state === "home" && isDone(l, a))) return { key: "done" };
-  const errand = w.agents.map((a) => (a.state === "home" ? wants(l, a, true) : null)).find(Boolean);
+  if (w.agents.some((a) => atEase(a) && isDone(l, a))) return { key: "done" };
+  const errand = w.agents.map((a) => (atEase(a) ? wants(l, a, true) : null)).find(Boolean);
   if (errand) return { key: "errand", need: errand };
   if (messy(w, l)) return { key: "clean" };
   if (w.floor.length || Object.values(w.piles).some((n) => n > 0)) return { key: "coins" };
@@ -1052,7 +1135,14 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
     for (const a of back.agents) {
       const u = (a as Partial<Record<"unrest", unknown>>).unrest;
       a.unrest = typeof u === "number" && Number.isFinite(u) ? Math.min(1, Math.max(0, u)) : 0;
+      // saves from before riots are well
+      const h = (a as Partial<Record<"hurt", unknown>>).hurt;
+      a.hurt = num(h) ? clamp(h, 0, l.riot.bump) : 0;
     }
+    const calm = (w as Partial<Record<"riotCalm", unknown>>).riotCalm;
+    back.riotCalm = num(calm) ? clamp(calm, 0, l.riot.calm) : 0;
+    back.alert = alertFrom(back, l);
+    looseEnds(back, l);
     const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;
     back.picked = { n: typeof pk?.n === "number" && Number.isFinite(pk.n) && pk.n >= 0 ? pk.n : 0, kind: kind(pk?.kind) };
     back.took = tookFrom((w as Partial<Record<"took", unknown>>).took);
@@ -1069,6 +1159,32 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
     return back;
   } catch {
     return null;
+  }
+}
+/** the saved incident. one from before riots is a squabble, as it was. a riot keeps its time, hold and
+ * those of its crowd still here and still in it; one left with too few is called off, nobody paid, and
+ * whoever was in it goes home */
+function alertFrom(w: World, l: LevelDef): Alert | null {
+  const raw = w.alert as (Partial<Record<keyof Alert, unknown>> & object) | null;
+  if (!raw || typeof raw !== "object" || !num(raw.x) || !num(raw.y) || !Array.isArray(raw.ids)) return null;
+  const held = num(raw.held) && raw.held >= 0 ? raw.held : 0;
+  const ids = raw.ids.filter(num);
+  if (raw.kind !== "riot") return { kind: "squabble", x: raw.x, y: raw.y, ids, held, warn: 0 };
+  const r = l.riot;
+  const keep = w.agents.filter((a) => a.kind === "agent" && a.state === "riot" && ids.includes(a.id));
+  if (keep.length < r.min) return null;
+  const warn = num(raw.warn) ? clamp(raw.warn, 0, r.warn) : 0;
+  return { kind: "riot", x: raw.x, y: raw.y, ids: keep.map((a) => a.id), held: clamp(held, 0, r.hold), warn };
+}
+/** anyone saved mid riot that the restored alert does not name goes home on foot, home and time kept */
+function looseEnds(w: World, l: LevelDef) {
+  const ids = w.alert?.kind === "riot" ? w.alert.ids : [];
+  for (const a of w.agents) {
+    if (a.kind !== "agent" || a.state !== "riot" || ids.includes(a.id)) continue;
+    // a save is never lost over one loose end: a home that cannot be walked to is simply where it is
+    const h = byId(l, a.house);
+    if (h?.kind === "house" && h.seats[a.slot]) goHome(w, l, a);
+    else a.state = "home";
   }
 }
 /** a whole number of coins, none less than none */

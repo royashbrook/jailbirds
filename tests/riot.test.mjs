@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create, step, player, restore, AGENT_SPEED, DT, UPSET } from "../src/engine/sim.ts";
+import { create, step, player, restore, hint, AGENT_SPEED, DT, UPSET } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
 
 // riots: one incident model on w.alert. at rank 3 and up, three or more upset residents at home in the
@@ -23,7 +23,9 @@ function jail({ rank = 3, unrest = [0.9, 0.9, 0.9, 0.9] } = {}) {
   const w = create(LEVELS, 0, 7);
   w.rank = rank;
   w.ride = { state: "away", x: -100, t: 1e9 };
-  const homes = [["c0", 0], ["c0", 1], ["c1", 0], ["c1", 1]];
+  const homes = [["c0", 0], ["c0", 1], ["c1", 0], ["c1", 1], ["c2", 0], ["c2", 1]];
+  // a third cell when there are more than four
+  if (unrest.length > 4) w.bought.push("cell3");
   unrest.forEach((u, i) => {
     const [house, slot] = homes[i];
     const at = station(house).seats[slot].at;
@@ -122,7 +124,7 @@ test("standing at the anchor for the hold calms an active riot, pays once, remov
   wait(w, R.warn + 0.1);
   assert.equal(w.alert?.warn, 0);
   Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
-  const settled = w.settled;
+  const settled = w.settled, coins = w.coins;
   let seen = 0;
   for (let i = 0; i < Math.round((R.hold + 1) / DT); i++) {
     step(w, LEVELS, STILL);
@@ -134,7 +136,8 @@ test("standing at the anchor for the hold calms an active riot, pays once, remov
   }
   assert.equal(seen, 1, "calmed within the hold");
   assert.equal(w.settled, settled + 1, "and only once");
-  assert.equal(reward(w), L.fights.reward);
+  // standing there, some of it is already in the pocket
+  assert.equal(reward(w) + w.coins - coins, L.fights.reward, "paid once");
 });
 
 test("the hold is contiguous: stepping away starts it over", () => {
@@ -154,8 +157,11 @@ test("the hold is contiguous: stepping away starts it over", () => {
 test("after a riot: the lowest id gets a bump, unrest comes down to 0.3, nobody loses home or served", () => {
   const w = jail({ unrest: [0.9, 0.95, 0.7, 0.8] });
   steps(w, 1);
-  const ids = [...w.alert.ids];
+  const gathered = [...w.alert.ids];
   wait(w, R.warn + 0.1);
+  // the one at 0.7 calmed below upset while they gathered, full up, so it went home before it began
+  const ids = [...w.alert.ids];
+  assert.equal(ids.length, gathered.length - 1);
   const before = new Map(ids.map((id) => [id, { house: byId(w, id).house, slot: byId(w, id).slot, served: byId(w, id).served }]));
   Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
   wait(w, R.hold + 0.1);
@@ -170,6 +176,17 @@ test("after a riot: the lowest id gets a bump, unrest comes down to 0.3, nobody 
     if (id === low) assert.ok(a.hurt > R.bump - 1, "the bump");
     else assert.equal(a.hurt ?? 0, 0);
   }
+});
+
+test("a riot left a long while calms on its own unrest: calming never raises anyone to 0.3", () => {
+  const w = jail();
+  steps(w, 1);
+  wait(w, R.warn + 20);
+  const ids = [...w.alert.ids], was = new Map(ids.map((id) => [id, byId(w, id).unrest]));
+  assert.ok([...was.values()].every((u) => u < 0.3), "full up, they cooled while nobody came");
+  Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
+  until(w, () => w.alert === null, R.hold + 1, "the riot calmed");
+  for (const id of ids) assert.ok(byId(w, id).unrest <= was.get(id) + 1e-9, `resident ${id} raised`);
 });
 
 test("a bump rests off at home for free: no hospital, needs paused, served still counting", () => {
@@ -191,21 +208,86 @@ test("a bump rests off at home for free: no hospital, needs paused, served still
   assert.equal(a.hurt, 0);
 });
 
-test("a bumped resident is in no incident until it is well", () => {
+test("a bumped resident resting at home is in no incident and not let out until it is well", () => {
+  // five, so four are still about with one resting
+  const w = jail({ unrest: [0.9, 0.9, 0.9, 0.9, 0.1] });
+  steps(w, 1);
+  wait(w, R.warn + 0.1);
+  Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
+  until(w, () => w.alert === null, R.hold + 1, "the riot calmed");
+  Object.assign(player(w), { x: 330, y: 540 });
+  const a = byId(w, Math.min(...residents(w).map((r) => r.id)));
+  until(w, () => residents(w).every((r) => r.state === "home"), 20, "everyone home");
+  assert.ok(a.hurt > 0, "still resting");
+  // done with time, and lowest id: first in anything that takes residents by id
+  a.served = L.serve;
+  assert.notEqual(hint(w, L).key, "done", "nobody is told to let a resting one out");
+  w.riotCalm = 0;
+  for (const r of residents(w)) r.unrest = 0.9;
+  w.fightIn = 0;
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "riot");
+  assert.ok(!w.alert.ids.includes(a.id), "without the one resting");
+});
+
+test("standing there through the warning does not calm it early: the hold starts once it is on", () => {
+  const w = jail();
+  Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
+  steps(w, 1);
+  wait(w, R.warn - 0.2);
+  assert.equal(w.alert?.kind, "riot");
+  assert.equal(w.alert.held, 0, "nothing held while they gather");
+  wait(w, 0.2 + R.hold - 0.3);
+  assert.equal(w.alert?.kind, "riot", "not calmed before a full hold after it began");
+  wait(w, 0.5);
+  assert.equal(w.alert, null);
+  assert.equal(w.settled, 1);
+});
+
+/** a jail just after a riot was calmed, everyone home again, the player in the hall */
+function afterRiot() {
   const w = jail();
   steps(w, 1);
   wait(w, R.warn + 0.1);
   Object.assign(player(w), { x: R.at.x, y: R.at.y + 20 });
-  wait(w, R.hold + 0.1);
+  until(w, () => w.alert === null, R.hold + 1, "the riot calmed");
   Object.assign(player(w), { x: 330, y: 540 });
-  const a = byId(w, Math.min(...residents(w).map((r) => r.id)));
-  // whatever the cooldown, the next incident that comes must leave the bumped one out
-  until(w, () => {
-    for (const r of residents(w)) r.unrest = 0.9;
-    w.fightIn = Math.min(w.fightIn, 0);
-    return !!w.alert;
-  }, R.calm + 2, "the next incident");
-  assert.ok(!w.alert.ids.includes(a.id), "without the bumped one");
+  return w;
+}
+
+test("after a riot the next incident waits the ordinary time, and riots wait 30 seconds on their own", () => {
+  const w = afterRiot();
+  const f = L.fights;
+  assert.ok(w.fightIn >= f.every * 0.7 && w.fightIn <= f.every * 1.3, `ordinary wait, not ${w.fightIn}`);
+  assert.equal(w.riotCalm, R.calm);
+});
+
+test("the riot wait is simulation seconds, not sped up by anyone upset, and a squabble can still come in it", () => {
+  const w = afterRiot();
+  until(w, () => residents(w).every((a) => a.state === "home"), 20, "everyone home");
+  const left = w.riotCalm;
+  // everyone upset: the incident clock runs fast, the riot wait does not
+  for (const a of residents(w)) a.unrest = 0.9;
+  wait(w, 5);
+  assert.ok(Math.abs(w.riotCalm - (left - 5)) < 0.05, `${left} less 5 is not ${w.riotCalm}`);
+  // all four well again, so there are enough at home for an incident at all
+  for (const a of residents(w)) a.hurt = 0;
+  w.fightIn = 0;
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "squabble", "inside the wait, a due incident is a squabble");
+});
+
+test("once the riot wait is over, a due incident with a crowd is a riot again", () => {
+  const w = afterRiot();
+  until(w, () => residents(w).every((a) => a.state === "home"), 20, "everyone home");
+  wait(w, R.calm);
+  assert.equal(w.riotCalm, 0);
+  for (const a of residents(w)) a.unrest = 0.9;
+  // the bumped one sat out, three well and upset is still a crowd
+  w.fightIn = 0;
+  for (const a of residents(w)) a.hurt = 0;
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "riot");
 });
 
 test("old saves: an alert without the new fields is a squabble, a resident without them is well", () => {
