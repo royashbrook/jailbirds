@@ -38,27 +38,37 @@ because riot recovery must exist before escalation is enabled.
 
 1. `World.alert` remains the only incident authority. distinguish squabble
    from riot and warning from active state there. use the existing `fightIn`
-   clock for scheduling/cooldown, not a second event scheduler. preserve old
+   clock for scheduling, not a second event scheduler. preserve old
    alerts as squabbles when their new fields are absent.
 2. riots start at rank3 or higher when an incident is due and at least3
    eligible residents in one block have unrest>=0.6. a block means its member
-   houses, not one two-bed cell. select at most4 residents, stable id order.
+   houses, not one two-bed cell: membership is containment of the house room
+   inside the block rectangle. select at most4 residents, stable id order.
    exclude followers, people in service/care/release, done residents and anyone
    already claimed. no participant can be claimed by two jobs.
 3. warning lasts5 simulation seconds. reserve ids in the one alert, revalidate
    before activation, and cancel without a reward if fewer than3 remain
-   eligible. ordinary services continue. pause, hidden state and inactive jails
+   eligible, including the unrest threshold. cleaning that lowers unrest can
+   prevent activation; that is intended. ordinary services continue for
+   unreserved residents. pause, hidden state and inactive jails
    do not advance warning, unrest, recovery or cooldown.
 4. current block rendezvous is (360,210), with small separated standing spots
    along that clear corridor. people walk there on existing routes, never
-   teleport out of beds or through walls. the player can intervene while they
-   gather. the alert marker points to this reachable anchor.
-5. standing still within40 of the anchor calms a riot in3 contiguous simulation
-   seconds. reset the hold when no valid responder is present. no response
+   teleport out of beds or through walls. gathering starts during warning, but
+   no calming hold accrues until activation. once active the player can
+   intervene while people are still arriving. the alert marker points to this
+   reachable anchor.
+5. being within40 of the anchor calms an active riot in3 contiguous simulation
+   seconds; movement within that radius does not reset it. reset the hold when
+   no valid responder is present. no response
    deadline removes residents, drains money or blocks unrelated intake/release.
-   after resolution apply a30-second riot cooldown. keep ordinary squabble
-   timing unchanged.
-6. reward is the existing6 cash, once per resolved incident. remove the alert
+   after resolution reset `fightIn` with the ordinary squabble reset. also set
+   a30-second riot-eligibility floor that counts down at1 simulation second per
+   second, unaffected by the upset multiplier. this is a veto on riot selection,
+   not another scheduler: a due incident during the floor may still be a
+   squabble. keep ordinary squabble scheduling and reset timing unchanged.
+6. reward is the existing6 floor coins at the anchor, once per resolved
+   incident, not a direct wallet credit. remove the alert
    in the same simulation transition as reward/settled count. warning
    cancellation pays nothing. restore never resolves/rewards an event itself.
 7. after a riot one remaining participant, lowest id, gets a comic bump. retain
