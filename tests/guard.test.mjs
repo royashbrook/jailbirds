@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { create, step, player, restore, route, padVisible, isOpen, boostMult, ALERT_R, DT, HELPER_SPEED } from "../src/engine/sim.ts";
-import { LEVELS } from "../src/content/jail.ts";
+import { create, step, player, restore, route, padVisible, isOpen, boostMult, hint, ALERT_R, DT, HELPER_SPEED } from "../src/engine/sim.ts";
+import { LEVELS, hintText } from "../src/content/jail.ts";
 import { collide, inside, walls } from "../src/engine/geom.ts";
 import { worldOf } from "../src/lib/map.ts";
 import { model } from "../src/skins/pegs.ts";
@@ -493,3 +493,32 @@ test("the riot guard's look: a helmet, a small shield in one hand, a whistle on 
   assert.ok(!others.includes(bodyOf("calmer")), "a colour of its own");
 });
 const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+test("the hint says the riot guard is on it only while one is really here, for a squabble and all through a riot", () => {
+  // no guard: the old words
+  const none = jail({ rank: 2, unrest: [0.9, 0.9, 0.9, 0.9], guard: false }).w;
+  step(none, LEVELS, STILL);
+  assert.equal(none.alert?.kind, "squabble");
+  assert.equal(hint(none, lv(none)).key, "alert");
+  // the pad bought but no guard standing in the jail (as a hand-made save might have it): the old words too
+  const bare = jail({ rank: 2, guard: false }).w;
+  bare.bought.push("hospital", "riotguard");
+  step(bare, LEVELS, STILL);
+  assert.equal(hint(bare, lv(bare)).key, "alert");
+  // a guard here: a squabble, then a riot in its warning and once it is on
+  const sq = jail({ rank: 2 }).w;
+  step(sq, LEVELS, STILL);
+  assert.equal(sq.alert?.kind, "squabble");
+  assert.equal(hint(sq, lv(sq)).key, "guarded");
+  const { w } = jail();
+  step(w, LEVELS, STILL);
+  assert.equal(w.alert?.kind, "riot");
+  assert.ok(w.alert.warn > 0);
+  assert.equal(hint(w, lv(w)).key, "guarded");
+  track(w, () => w.alert?.warn === 0, 8, "the riot on");
+  if (w.alert) assert.equal(hint(w, lv(w)).key, "guarded");
+  // nothing going on: not a word about it
+  track(w, () => w.alert === null, 20, "calmed");
+  assert.notEqual(hint(w, lv(w)).key, "guarded");
+  assert.equal(hintText({ key: "guarded" }, "birds"), "your riot guard is on the way to calm it down");
+});

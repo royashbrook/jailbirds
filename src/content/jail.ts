@@ -169,6 +169,7 @@ export function hintText(h: Hint, noun: string): string {
   switch (h.key) {
     case "alert": return "uh oh, a squabble! run over and calm it down";
     case "riot": return "a riot is starting! run to the cells and calm everyone down";
+    case "guarded": return "your riot guard is on the way to calm it down";
     case "checkin": return "stand behind the intake desk to check them in";
     case "nobed": return "no free beds! unlock another cell";
     case "pickup": return `stand by the checked-in ${noun} to lead them`;

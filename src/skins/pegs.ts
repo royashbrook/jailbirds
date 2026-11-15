@@ -31,7 +31,7 @@ const CROSS = hex("#e9877a");
 const JEANS = hex("#4d6a9a");
 const METAL = hex("#c5ced8");
 const BADGE = hex("#ffcf33");
-// the riot guard's kit: a round see-through-blue shield and a bright whistle
+// the riot guard's kit: a round light-blue shield and a bright whistle
 const SHIELD = hex("#8fd0f2");
 const WHISTLE = hex("#ff5a5f");
 const DRESS: Record<string, { body: number; hat: number; pants: number }> = {

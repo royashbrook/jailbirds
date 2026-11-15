@@ -1147,9 +1147,11 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
 
 /** what to do next, as a key the content turns into words */
 export type Hint =
-  | { key: "alert" | "riot" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
+  | { key: "alert" | "riot" | "guarded" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
   | { key: "errand" | "fetch" | "drop"; need: string };
 export function hint(w: World, l: LevelDef): Hint {
+  // a riot guard that is here is on its way to it, or calming it: say so, warning or not
+  if (w.alert && w.agents.some((a) => a.kind === "calmer")) return { key: "guarded" };
   if (w.alert) return { key: w.alert.kind === "riot" ? "riot" : "alert" };
   const me = player(w);
   const line = followers(w, me);
