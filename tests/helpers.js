@@ -55,13 +55,13 @@ export async function waitFrames(page, n) {
  * the walk early once the game says so (something that may hold the jail still on the way) */
 export async function walkTo(page, to, near = 4, stop = () => false) {
   const box = await page.locator("#jail").boundingBox();
-  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const cx = Math.round(box.x + box.width / 2), cy = Math.round(box.y + box.height / 2);
   const turn = await page.evaluate(() => window.__jailbirds.camera().turn);
   const angle = turn * Math.PI / 180, c = Math.cos(angle), sn = Math.sin(angle);
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   try {
-    let start = null;
+    let start = null, previousStep = null;
     for (;;) {
       await page.mouse.move(cx, cy);
       const s = await state(page), p = s.agents[0];
@@ -69,11 +69,16 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
       if (d < near || stop(s)) return p;
       start ??= s.steps;
       if (s.steps - start > 60 * 30) throw new Error(`the warden never reached ${to.x},${to.y}: stuck at ${Math.round(p.x)},${Math.round(p.y)}`);
-      // a pulse of movement, then observe again with the stick centred
-      const push = Math.min(1, d / (s.speed * 0.25 * 2));
-      const r = Math.max(4, push * 44);
+      // Native command/reply latency can hold a pulse for over a game second. Estimate
+      // the next pulse from the previous full cycle; fast feedback keeps the old horizon.
+      const seconds = previousStep === null ? 0.5 : Math.max(0.5, (s.steps - previousStep) / 60);
+      previousStep = s.steps;
+      const push = Math.min(1, d / (s.speed * seconds));
+      // WebKit quantizes native pointer coordinates. Integer endpoints and a 3px
+      // radius keep even the rounded vector above the engine's 2.2px deadzone.
+      const r = Math.max(3, push * 44);
       // the target is in world space; the thumb gesture is in screen space
-      await page.mouse.move(cx + ((dx * c - dy * sn) / d) * r, cy + ((dx * sn + dy * c) / d) * r);
+      await page.mouse.move(Math.round(cx + ((dx * c - dy * sn) / d) * r), Math.round(cy + ((dx * sn + dy * c) / d) * r));
       await waitFrames(page, 1);
     }
   } finally {

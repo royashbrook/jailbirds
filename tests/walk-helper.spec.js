@@ -29,3 +29,38 @@ test('a delayed captured state cannot certify arrival while the stick still driv
   expect(Math.hypot(settled.x - at.x, settled.y - at.y), 'there is no unobserved run-on after arrival').toBeLessThan(0.01);
   expect(settled.moving).toBe(false);
 });
+
+for (const target of [{ x: 430, y: 290 }, { x: 374, y: 275 }, { x: 426, y: 285 }]) {
+  test(`the walk settles under slow native command delivery toward ${target.x},${target.y}`, async ({ page }) => {
+    const w = create(LEVELS, 0, 17);
+    w.bought = LEVELS[0].pads.filter(p => !p.unlock.level).map(p => p.id);
+    w.fightIn = w.boost.t = 1e9;
+    w.ride = { state: 'away', x: -100, t: 1e9 };
+    // Initial world coordinate from the failed cutaway trace in run43718046542.
+    Object.assign(w.agents[0], { x: 400, y: 290 });
+    await page.addInitScript(raw => localStorage.setItem('jailbirds:save', raw), JSON.stringify(w));
+    await page.goto('/');
+    const move = page.mouse.move.bind(page.mouse), evaluate = page.evaluate.bind(page);
+    const lag = ms => new Promise(resolve => setTimeout(resolve, ms));
+    // A controlled latency class, not a claim to replay the runner's unobserved dispatch instant.
+    // Keep actual native pointer events. Only their delivery and already-captured replies wait.
+    page.mouse.move = async (...args) => {
+      await lag(350);
+      const result = await move(...args);
+      await lag(350);
+      return result;
+    };
+    page.evaluate = async (fn, arg) => {
+      const result = await evaluate(fn, arg);
+      if (/__jailbirds\.(state|drawn)\(\)/.test(fn.toString())) await lag(180);
+      return result;
+    };
+    const at = await walkTo(page, target);
+    await waitSim(page, .1);
+    const settled = (await state(page)).agents[0];
+    expect(Math.hypot(at.x - target.x, at.y - target.y)).toBeLessThan(4);
+    expect(Math.hypot(settled.x - target.x, settled.y - target.y)).toBeLessThan(4);
+    expect(Math.hypot(settled.x - at.x, settled.y - at.y)).toBeLessThan(.01);
+    expect(settled.moving).toBe(false);
+  });
+}
