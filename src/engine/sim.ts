@@ -287,20 +287,23 @@ function walkPath(a: Agent, speed: number) {
 
 // walls and the walking grid change only when something is bought, so keep them
 const cache = new Map<string, { walls: Rect[]; nav: Nav }>();
-function grid(w: World, l: LevelDef, agents: boolean) {
-  const key = `${l.id}:${agents}:${[...w.bought].sort().join()}`;
+function grid(w: World, l: LevelDef, agents: boolean, forPlayer = false) {
+  const key = `${l.id}:${agents}:${forPlayer}:${[...w.bought].sort().join()}`;
   let got = cache.get(key);
   if (!got) {
     if (cache.size > 40) cache.clear();
     const ws = walls(l, (r) => isOpen(w, r.locked), agents);
-    got = { walls: ws, nav: nav(l, ws) };
+    // NPCs may use the road. A route driven by the player stick must stay inside its clamp.
+    const spawn = all(l, "spawn")[0];
+    const bounds = forPlayer ? { x: BODY, y: BODY, w: l.size.w - BODY * 2, h: (spawn?.roadY ?? l.size.h) - 30 - BODY } : undefined;
+    got = { walls: ws, nav: nav(l, ws, bounds) };
     cache.set(key, got);
   }
   return got;
 }
 /** the way from here to there, round the walls: agents may use residents-only doors, actors may not */
 export function route(w: World, l: LevelDef, a: Agent, to: Pt) {
-  return navRoute(grid(w, l, a.kind === "agent").nav, a, to);
+  return navRoute(grid(w, l, a.kind === "agent", a.kind === "player").nav, a, to);
 }
 function goTo(w: World, l: LevelDef, a: Agent, to: Pt) {
   const end = a.path[a.path.length - 1];
