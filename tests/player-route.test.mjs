@@ -8,14 +8,13 @@ import { LEVELS } from '../src/content/jail.ts';
 for (let level = 0; level < LEVELS.length; level++) {
   test(`jail${level + 1}: the player route from the staff corner stays above the road and is walkable`, () => {
     const l = LEVELS[level];
-    for (const start of [{ x: 850, y: 700 }, { x: 850, y: 765 }]) {
+    const maxY = l.stations.find(s => s.kind === 'spawn').roadY - 30;
+    for (const start of [{ x: 850, y: 700 }, { x: 850, y: 765 }]) for (const target of [{ x: 320, y: 785 }, { x: 320, y: maxY }]) {
       const w = create(LEVELS, level, 37), p = player(w);
       w.bought = l.pads.map(pad => pad.id);
       w.ride.t = w.fightIn = w.boost.t = 1e9;
       Object.assign(p, start);
-      const target = { x: 320, y: 785 };
       const path = route(w, l, p, target);
-      const maxY = l.stations.find(s => s.kind === 'spawn').roadY - 30;
       assert.ok(path.every(pt => pt.y <= maxY), JSON.stringify(path));
       for (let i = 0; i < 3600 && path.length; i++) {
         while (path.length && Math.hypot(p.x - path[0].x, p.y - path[0].y) < .1) path.shift();
