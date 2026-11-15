@@ -609,7 +609,7 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
         b.slot = slot;
         b.state = "enter";
         b.leader = -1;
-        b.served = 0;
+        // time served goes with them: a newcomer has none yet, someone given a new bed keeps theirs
         b.path = route(w, l, b, st.seats[slot].at);
       };
       if (a.kind === "player") {
@@ -1165,6 +1165,12 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
 /** the saved incident. one from before riots is a squabble, as it was. a riot keeps its time, hold and
  * those of its crowd still here and still in it; one left with too few is called off, nobody paid, and
  * whoever was in it goes home */
+/** a bed it can walk back to: a home that is a home here, and a place in it. only someone with one can
+ * stay in a saved incident, which sends them back to it when it ends */
+const hasBed = (l: LevelDef, a: Agent) => {
+  const h = byId(l, a.house);
+  return h?.kind === "house" && !!h.seats[a.slot];
+};
 function alertFrom(w: World, l: LevelDef): Alert | null {
   const raw = w.alert as (Partial<Record<keyof Alert, unknown>> & object) | null;
   if (!raw || typeof raw !== "object" || !num(raw.x) || !num(raw.y) || !Array.isArray(raw.ids)) return null;
@@ -1172,11 +1178,11 @@ function alertFrom(w: World, l: LevelDef): Alert | null {
   const ids = raw.ids.filter(num);
   if (raw.kind !== "riot") {
     // a squabble is only one while somebody it names is still squabbling
-    const fighting = ids.filter((id) => w.agents.some((a) => a.id === id && a.state === "fight"));
+    const fighting = ids.filter((id) => w.agents.some((a) => a.id === id && a.state === "fight" && hasBed(l, a)));
     return fighting.length ? { kind: "squabble", x: raw.x, y: raw.y, ids: fighting, held, warn: 0 } : null;
   }
   const r = l.riot;
-  const keep = w.agents.filter((a) => a.kind === "agent" && a.state === "riot" && ids.includes(a.id));
+  const keep = w.agents.filter((a) => a.kind === "agent" && a.state === "riot" && ids.includes(a.id) && hasBed(l, a));
   if (keep.length < r.min) return null;
   const warn = num(raw.warn) ? clamp(raw.warn, 0, r.warn) : 0;
   return { kind: "riot", x: raw.x, y: raw.y, ids: keep.map((a) => a.id), held: clamp(held, 0, r.hold), warn };
@@ -1187,8 +1193,7 @@ function looseEnds(w: World, l: LevelDef) {
   const ids = w.alert?.ids ?? [];
   for (const a of w.agents) {
     if (a.kind !== "agent" || ids.includes(a.id) || (a.state !== "fight" && a.state !== "riot")) continue;
-    const h = byId(l, a.house);
-    if (h?.kind === "house" && h.seats[a.slot]) {
+    if (hasBed(l, a)) {
       goHome(w, l, a);
       continue;
     }

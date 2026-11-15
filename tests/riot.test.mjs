@@ -398,6 +398,83 @@ test("a saved rioter or squabbler no alert names goes home when it has one, or b
   }
 });
 
+test("one sent to the desk for a bed keeps its time served when it is given one", () => {
+  const w = create(LEVELS, 0, 7);
+  const raw = JSON.parse(JSON.stringify(w));
+  const base = jail().agents.find((a) => a.kind === "agent");
+  raw.agents.push({ ...base, id: 60, state: "riot", house: "missing", slot: 0, served: 30 });
+  const back = restore(JSON.stringify(raw), LEVELS);
+  const a = back.agents.find((x) => x.id === 60);
+  assert.equal(a.state, "ready");
+  // the player takes it to the first cell, as anyone new is taken
+  Object.assign(a, { state: "follow", leader: 1, t: 0 });
+  const door = station("c0").at;
+  Object.assign(player(back), { x: door.x, y: door.y });
+  until(back, () => a.house === "c0", 2, "a bed");
+  assert.ok(a.served >= 30, `served kept through the move in, ${a.served}`);
+  until(back, () => a.state === "home", 10, "in bed");
+  assert.ok(a.served >= 30);
+});
+
+test("a saved squabble naming one with no bed here goes on with the other, settles once, and the jail runs on", () => {
+  const w = jail({ rank: 2 });
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "squabble");
+  const raw = oldSave(w);
+  const [bad, good] = raw.alert.ids;
+  raw.agents.find((x) => x.id === bad).house = "missing";
+  const back = restore(JSON.stringify(raw), LEVELS);
+  assert.deepEqual(back.alert?.ids, [good]);
+  assert.equal(back.agents.find((x) => x.id === bad).state, "ready");
+  Object.assign(player(back), { x: back.alert.x, y: back.alert.y + 20 });
+  until(back, () => back.alert === null, L.fights.settle + 1, "the squabble settled");
+  Object.assign(player(back), { x: 330, y: 540 });
+  wait(back, L.coinEvery * 3);
+  assert.equal(back.settled, raw.settled + 1);
+});
+
+/** a saved riot named `ids` with one of them given a home that is not here */
+function badRiot({ names = 3, active = true } = {}) {
+  const w = jail({ unrest: [0.9, 0.9, 0.9, 0.9].slice(0, Math.max(names, 3)) });
+  steps(w, 1);
+  if (active) wait(w, R.warn + 0.1);
+  assert.equal(w.alert?.kind, "riot");
+  const raw = JSON.parse(JSON.stringify(w));
+  const bad = raw.alert.ids[0];
+  raw.agents.find((x) => x.id === bad).house = "missing";
+  return { raw, bad, ids: raw.alert.ids };
+}
+
+for (const active of [false, true]) {
+  test(`a saved ${active ? "active" : "warning"} riot of three naming one with no bed here is called off: nothing paid, nobody lost`, () => {
+    const { raw, bad, ids } = badRiot({ names: 3, active });
+    assert.equal(ids.length, 3);
+    const back = restore(JSON.stringify(raw), LEVELS);
+    assert.equal(back.alert, null, "too few with a bed to go back to");
+    assert.equal(back.agents.find((x) => x.id === bad).state, "ready", "the one with no bed goes to the desk");
+    for (const id of ids.filter((x) => x !== bad)) assert.ok(["back", "home"].includes(back.agents.find((x) => x.id === id).state));
+    Object.assign(player(back), { x: R.at.x, y: R.at.y + 20 });
+    wait(back, R.hold + R.warn + 1);
+    assert.equal(back.settled, raw.settled);
+    assert.equal(reward(back) + back.coins - raw.coins, 0);
+    for (const id of ids) assert.ok(back.agents.some((x) => x.id === id), `resident ${id} still here`);
+  });
+
+  test(`a saved ${active ? "active" : "warning"} riot of four naming one with no bed here goes on with the three, calmed once`, () => {
+    const { raw, bad, ids } = badRiot({ names: 4, active });
+    assert.equal(ids.length, 4);
+    const back = restore(JSON.stringify(raw), LEVELS);
+    assert.deepEqual(back.alert?.ids, ids.filter((x) => x !== bad));
+    assert.equal(back.agents.find((x) => x.id === bad).state, "ready");
+    Object.assign(player(back), { x: R.at.x, y: R.at.y + 20 });
+    const coins = back.coins;
+    until(back, () => back.alert === null, R.warn + R.hold + 1, "the riot calmed");
+    assert.equal(back.settled, raw.settled + 1);
+    wait(back, 1);
+    assert.equal(reward(back) + back.coins - coins, L.fights.reward, "paid once");
+  });
+}
+
 /** a save as the game wrote it before riots: no kind or warning on the alert, nobody hurt, no riot wait */
 function oldSave(w) {
   const raw = JSON.parse(JSON.stringify(w));
