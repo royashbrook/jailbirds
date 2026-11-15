@@ -50,7 +50,8 @@ export async function waitFrames(page, n) {
 }
 
 /** walk the warden to a point in a straight line with the thumb stick, pushing less
- * the closer it gets, so one slow frame can never carry it past the spot. `stop` ends
+ * the closer it gets. neutralize before reading: a delayed reply is an old position,
+ * not permission to keep driving while it reaches us. `stop` ends
  * the walk early once the game says so (something that may hold the jail still on the way) */
 export async function walkTo(page, to, near = 4, stop = () => false) {
   const box = await page.locator("#jail").boundingBox();
@@ -62,17 +63,18 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
   try {
     let start = null;
     for (;;) {
+      await page.mouse.move(cx, cy);
       const s = await state(page), p = s.agents[0];
       const dx = to.x - p.x, dy = to.y - p.y, d = Math.hypot(dx, dy);
       if (d < near || stop(s)) return p;
       start ??= s.steps;
       if (s.steps - start > 60 * 30) throw new Error(`the warden never reached ${to.x},${to.y}: stuck at ${Math.round(p.x)},${Math.round(p.y)}`);
-      // a frame is at most a quarter second: cover at most half the gap in one
+      // a pulse of movement, then observe again with the stick centred
       const push = Math.min(1, d / (s.speed * 0.25 * 2));
       const r = Math.max(4, push * 44);
       // the target is in world space; the thumb gesture is in screen space
       await page.mouse.move(cx + ((dx * c - dy * sn) / d) * r, cy + ((dx * sn + dy * c) / d) * r);
-      await page.waitForTimeout(30);
+      await waitFrames(page, 1);
     }
   } finally {
     await page.mouse.up();
