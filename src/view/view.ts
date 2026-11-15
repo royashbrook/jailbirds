@@ -581,6 +581,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
     // where each character stands this frame, blended between steps
     const me = w.agents[0], mp = past?.get(me.id);
     const fx = mp ? mp.x + (me.x - mp.x) * alpha : me.x, fy = mp ? mp.y + (me.y - mp.y) * alpha : me.y;
+    built?.wallFocus.set(fx, fy);
     frame({ x: fx, y: fy, h: lift(w) }, dt, settings);
 
     forget(w, headings);
