@@ -9,7 +9,8 @@ const still={x:0,y:0};
 const lv=w=>LEVELS[w.level];
 const station=(w,id)=>lv(w).stations.find(s=>s.id===id);
 const wait=(w,n)=>{for(let i=0;i<Math.round(n/DT);i++) step(w,LEVELS,still);};
-const sample=JSON.parse(readFileSync(new URL('./fixtures/v0.1.155-maxed-pine-hill.json',import.meta.url))).agents.find(a=>a.kind==='agent');
+const saved=JSON.parse(readFileSync(new URL('./fixtures/v0.1.155-maxed-pine-hill.json',import.meta.url)));
+const sample=saved.agents.find(a=>a.kind==='agent');
 function quiet(n=0){const w=create(LEVELS,n,37);w.ride.t=w.fightIn=w.boost.t=1e9;return w;}
 function resident(w,changes={}){
  const h=station(w,'c0');
@@ -39,12 +40,26 @@ for(let level=0;level<2;level++){
    assert.equal(w.coins,0);
   });
  }
- test(`jail${level+1}: cell upgrade is future-only and care stays 1x`,()=>{
+ test(`jail${level+1}: cell upgrades leave care at 1x`,()=>{
   const w=quiet(level);w.bought=['hospital','cell1tier2','cell1tier3'];
   const s=station(w,'hospital'),a=resident(w,{state:'use',station:'hospital',seat:0,x:s.seats[0].at.x,y:s.seats[0].at.y,hurt:20});
   const back=restore(JSON.stringify(w),LEVELS),r=back.agents.find(x=>x.id===a.id);
   assert.equal(r.served,20);
   wait(back,1);assert.ok(Math.abs(r.served-21)<1e-8);assert.ok(Math.abs(r.hurt-17.5)<1e-8);
+ });
+ test(`jail${level+1}: buying comfier beds changes future increments, not past service`,()=>{
+  const w=quiet(level),pad=lv(w).pads.find(p=>p.id==='cell1tier2'),a=resident(w);
+  w.rank=4;w.coins=pad.cost;Object.assign(player(w),pad.at);
+  let ticks=0;
+  while(!w.bought.includes(pad.id)&&ticks++<180){
+   const before=a.served;step(w,LEVELS,still);
+   // The engine takes payment before advancing residents in this same step.
+   const rate=w.bought.includes(pad.id)?1.15:1;
+   assert.ok(Math.abs(a.served-before-rate*DT)<1e-8,'only this step of service changes, no retroactive jump');
+  }
+  assert.ok(w.bought.includes(pad.id));
+  const before=a.served;step(w,LEVELS,still);
+  assert.ok(Math.abs(a.served-before-1.15*DT)<1e-8,'new rate on future work');
  });
  test(`jail${level+1}: each paid room stage survives a partial-save purchase without paying its successor`,()=>{
   const l=LEVELS[level],tier=p=>/tier[23]$|^(kitchen|canteen|wash)[23]$/.test(p.id);
@@ -79,6 +94,14 @@ for(let level=0;level<2;level++){
   const w=quiet(level);w.bought=[...pads];const s=station(w,'stove');Object.assign(player(w),s.at);
   let ticks=0;while(player(w).carry<1&&ticks<60){step(w,LEVELS,still);ticks++;}
   assert.ok(ticks*DT>=every-1e-8&&ticks*DT<=every+DT+1e-8,`fill took ${ticks*DT}`);
+ });
+ for(const [pads,every] of [[[],.3],[['kitchen2'],.24],[['kitchen2','kitchen3'],.18]]) test(`jail${level+1}: hired cook fills at the same ${every}s stove rate`,()=>{
+  const w=quiet(level),st=station(w,'stove');w.bought=['cook',...pads];
+  const cook={...structuredClone(saved.agents.find(a=>a.kind==='carrier')),id:w.nextId++,x:st.at.x,y:st.at.y,carry:0,path:[],trail:[]};
+  w.agents.push(cook);
+  let ticks=0;while(cook.carry<1&&ticks<60){step(w,LEVELS,still);ticks++;}
+  assert.equal(cook.carry,1);
+  assert.ok(ticks*DT>=every-1e-8&&ticks*DT<=every+DT+1e-8,`cook fill took ${ticks*DT}`);
  });
  for(const [id,prefix,base,two,three] of [['table1','canteen',1.5,1.2,.9],['table2','canteen',1.5,1.2,.9],['showers','wash',2.5,2,1.5]]){
   for(const [pads,duration] of [[[],base],[[prefix+'2'],two],[[prefix+'2',prefix+'3'],three]]) test(`jail${level+1}: ${id} use ${duration}s frees the same seat`,()=>{
@@ -119,5 +142,19 @@ for(let level=0;level<2;level++){
    wait(w,9);assert.equal(w.settled,1);assert.equal(w.alert,null);
    assert.ok(w.coins>=100);assert.equal(w.paid[id]??0,0);assert.ok(!w.bought.includes(id));
   }
+ });
+ for(let cell=0;cell<8;cell++) test(`jail${level+1}: calming cell${cell+1}'s squabble never pays its furnishing pad`,()=>{
+  const l=LEVELS[level],w=quiet(level),h=station(w,`c${cell}`);
+  const id=`cell${cell+1}tier2`,target=l.pads.find(p=>p.id===id);
+  w.rank=10;w.coins=500;
+  w.bought=l.pads.filter(p=>!/tier[23]$|^(kitchen|canteen|wash)[23]$/.test(p.id)).map(p=>p.id);
+  const pair=[0,1].map(slot=>resident(w,{house:h.id,slot,state:'fight',x:h.at.x+slot*8,y:h.at.y}));
+  w.alert={kind:'squabble',x:h.at.x,y:h.at.y,ids:pair.map(a=>a.id),held:0,warn:0};
+  const d=dist(target.at,h.at);
+  Object.assign(player(w),{x:h.at.x+(target.at.x-h.at.x)*39.99/d,y:h.at.y+(target.at.y-h.at.y)*39.99/d});
+  wait(w,l.fights.settle+.3);
+  assert.equal(w.settled,1);assert.equal(w.alert,null);
+  assert.equal(w.paid[id]??0,0,id);assert.ok(!w.bought.includes(id),id);
+  assert.ok(w.coins>=500,'calming reward kept, no payment taken');
  });
 }

@@ -178,7 +178,6 @@ export function carePieces(l: LevelDef, s: AnyStation, open: (id?: string) => bo
   return pieces;
 }
 
-/** lambert, with a soft tile grid drawn from where each pixel sits in the world */
 /** Furnish the purchased capability inside existing bed/prop footprints. No routes or sim seats move. */
 export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
   const pieces: Piece[] = [];
@@ -236,6 +235,7 @@ export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
   return pieces;
 }
 
+/** lambert, with a soft tile grid drawn from where each pixel sits in the world */
 function tiled(): MeshLambertMaterial {
   const m = new MeshLambertMaterial();
   m.onBeforeCompile = (s) => {

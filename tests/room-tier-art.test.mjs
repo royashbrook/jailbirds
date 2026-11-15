@@ -12,12 +12,12 @@ test('room stages are deterministic shared boxes inside existing furniture footp
     const base=l.pads.filter(p=>!/tier[23]$|^(kitchen|canteen|wash)[23]$/.test(p.id)).map(p=>p.id);
     w.bought=[...base,...l.pads.filter(p=>/tier2$|^(kitchen|canteen|wash)2$/.test(p.id)).map(p=>p.id)];
     const before=JSON.stringify({w,l,pal}),middle=roomTierPieces(l,w,pal);
-    assert.ok(middle.length>60&&middle.length<150);
+    assert.equal(middle.length,84,'stage2 furnishing inventory');
     assert.deepEqual(roomTierPieces(l,w,pal),middle);
     assert.equal(JSON.stringify({w,l,pal}),before);
     w.bought=l.pads.map(p=>p.id);
     const top=roomTierPieces(l,w,pal);
-    assert.ok(top.length>middle.length&&top.length<250);
+    assert.equal(top.length,200,'stage3 furnishing inventory');
     for(const p of top){
       assert.equal(p.shape,'box');
       assert.ok([p.x,p.y,p.z,p.sx,p.sy,p.sz].every(Number.isFinite));

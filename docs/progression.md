@@ -240,6 +240,8 @@ does not gain served time. no new bed slots in the old small cell footprint.
 staff walking applies to all six hired kinds, not the warden or residents.
 escort follower speed uses the same improved leader speed. carry training
 affects the cook, not the player's stack or a collector's cash capacity.
+Kitchen fill-time improvements apply to both the player and the hired cook
+at the same stove. They do not change either one's carrying capacity.
 
 starting prices and gates for review, not a payback-duration claim:
 
@@ -264,24 +266,27 @@ a second tier ledger or derived rates. no retroactive bill, money reset,
 resident/bed relocation or progress re-scaling. old fields retain their
 meaning. unbought upgrades retain the released capability exactly.
 
-proposed payment centres, reusing each centre for its own two-stage chain:
+payment centres, reusing each centre for its own two-stage chain:
 
-- cells0..7: x67,151,235,304,416,487,571,655 at y244. the middle two shift
-  aside so neither payment radius intersects the manual riot-response area.
+- cells0..7: x67,151,235,304,416,487,571,655 at y249. the middle two shift
+  aside from the riot anchor; the row also clears every house's squabble reach.
 - kitchen(370,490), canteen(240,540), showers(735,560).
 - staff walking(850,700), cook carry(850,765).
 
-planning probe on the unchanged0.1.155 layout: both jails, each13 centres,
+geometry probe on the unchanged0.1.155 walls: both jails, each13 centres,
 actual movement from the start, body-radius wall checks on every step.
 reproduce with `node --experimental-strip-types scripts/measure-tier-footprints.mjs`.
-all26 reached. proposed payment radii do not overlap each other, any old
+all26 reached. authored room and proposed staff payment radii do not overlap each other, any old
 payment radius, existing station work circles/service rectangles or the
 manual incident radius. this is an all-open geometry projection, not a
-purchase test, native phone view or test of implemented new pads. keep its
-assertions against the real content once authored.
+purchase test or native phone view. room centres are read from the real
+content; only the two staff centres remain proposed. The original projection
+checked house work circles but missed their larger squabble calming reach.
+All16 house/jail combinations now have real active-squabble no-payment tests.
 the current payment radius is24 and calming reach40. each of the two
-middle cell centres is sqrt(56^2+34^2)=65.513 units from the anchor,
-1.513 beyond the sum64. pin no payment at the closest calming points
+middle cell centres is sqrt(56^2+39^2)=68.242 units from the anchor,
+4.242 beyond the sum64. Unshifted cells are65 from their own house point,
+1 beyond that sum. pin no payment at the closest calming points
 through real steps, so enlarging the payment radius cannot quietly erase
 that margin. the room release authors11 centres/22 purchases. the other
 two centres/four purchases wait for the staff-training slice.

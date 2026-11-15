@@ -70,7 +70,8 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
  * its feet go that far down the bed from the pillow and it is lifted onto the sheet. drawing only: the
  * seat in the sim does not move. home bunks use the same alignment, with their own mattress height */
 export const REST_HEAD = 26.08, REST_UNDER = 4.8;
-export function restIn(l: LevelDef, a: Agent): { x: number; z: number; heading: number; up: number } | null {
+export function restIn(l: LevelDef, a: Agent, action: Action): { x: number; z: number; heading: number; up: number } | null {
+  if (action !== "sleep") return null;
   if (a.state === "home") {
     const home = l.stations.find(s => s.id === a.house);
     const seat = home?.kind === "house" ? home.seats[a.slot] : undefined;
@@ -618,7 +619,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       }
       if (action === "sleep") heading = Math.PI;
       // in a care bed: laid along it, head on its pillow, on top of its sheet
-      const rest = action === "sleep" ? restIn(l, a) : null;
+      const rest = restIn(l, a, action);
       if (rest) (x = rest.x), (z = rest.z), (heading = rest.heading);
       if (action === "fight" && w.alert && w.alert.kind !== "riot") {
         // a squabble: the two come out of their bunks and square up in the doorway,

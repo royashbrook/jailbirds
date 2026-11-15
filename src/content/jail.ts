@@ -119,10 +119,10 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "riotguard", cost: cost(150), at: { x: 850, y: 625 }, rank: 5, after: "hospital", unlock: { helper: "calmer" }, label: "hire a riot guard" },
   ];
   for (let i = 0; i < CELLS; i++) {
-    const at = { x: cellMid(i) + (i === 3 ? -15 : i === 4 ? 13 : 0), y: 244 };
+    const at = { x: cellMid(i) + (i === 3 ? -15 : i === 4 ? 13 : 0), y: 249 };
     pads.push(
-      { id: `cell${i + 1}tier2`, cost: cost(40), at, rank: 4, after: cellLock(i), unlock: {}, label: `cell ${i + 1}: stays +15%` },
-      { id: `cell${i + 1}tier3`, cost: cost(80), at, rank: 7, after: `cell${i + 1}tier2`, unlock: {}, label: `cell ${i + 1}: stays +30%` },
+      { id: `cell${i + 1}tier2`, cost: cost(40), at, rank: 4, after: cellLock(i), unlock: {}, label: `cell ${i + 1}: comfier beds` },
+      { id: `cell${i + 1}tier3`, cost: cost(80), at, rank: 7, after: `cell${i + 1}tier2`, unlock: {}, label: `cell ${i + 1}: cozier beds` },
     );
   }
   pads.push(

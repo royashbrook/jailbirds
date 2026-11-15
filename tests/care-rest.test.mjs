@@ -41,7 +41,7 @@ function drawn(a, place) {
 
 for (const seat of [0, 1, 2, 3]) test(`in care bed ${seat}: head on the pillow, lying on the sheet, all of it on the bed`, () => {
   const a = resident(seat), at = care.seats[seat].at, { half, pillow, sheetTop } = CARE_BED_SHAPE;
-  const place = restIn(L, a);
+  const place = restIn(L, a, actionOf(null,L,a));
   assert.ok(place, "a care rest place");
   const { pose, out } = drawn(a, place);
   assert.equal(pose.action, "sleep");
@@ -62,7 +62,7 @@ for (const house of L.stations.filter(s => s.kind === "house")) for (const slot 
   test(`${house.id} bunk${slot}, bump${hurt}: head is on its own pillow, not beyond the foot of the mattress`, () => {
     const at=house.seats[slot].at,home={...resident(0),state:"home",house:house.id,slot,station:"",seat:-1,
       x:at.x,y:at.y,hurt,rest:10};
-    const before=JSON.stringify(home),place=restIn(L,home);
+    const before=JSON.stringify(home),place=restIn(L,home,actionOf(null,L,home));
     assert.ok(place);
     const {pose,out}=drawn(home,place),head=out.find(p=>p.part==="head").box.getCenter(new Vector3());
     assert.equal(pose.action,"sleep");
@@ -77,5 +77,12 @@ for (const house of L.stations.filter(s => s.kind === "house")) for (const slot 
   });
 
 test("an invalid home is not a fabricated bed pose", () => {
-  assert.equal(restIn(L,{...resident(0),state:"home",house:"missing"}),null);
+  assert.equal(restIn(L,{...resident(0),state:"home",house:"missing"},"sleep"),null);
+});
+
+test("an awake resident at home keeps the standing position instead of a bed transform", () => {
+  const a={...resident(0),state:"home",station:"",seat:-1,hurt:0,rest:0};
+  const action=actionOf(null,L,a);
+  assert.equal(action,"stand");
+  assert.equal(restIn(L,a,action),null);
 });
