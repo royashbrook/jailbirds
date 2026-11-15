@@ -72,6 +72,25 @@ test("paying a clear cell pad opens the cell the moment it is paid: two beds, it
   await seedEveryLoad(page, w);
   await page.goto("/");
   await started(page);
+  // Paying can send her into the toilet while the driver and clearing-view
+  // assertions are still busy. Observe that real transient state from now on.
+  await page.evaluate(() => {
+    window.firstToilet = { start: null, use: null, home: null, done: false };
+    const observe = () => {
+      const s = window.__jailbirds.state(), a = s.agents.find(a => a.id === 2), seen = window.firstToilet;
+      if (s.bought.includes("cell3")) {
+        seen.start ??= s.steps;
+        if (!seen.use && a.state === "use" && a.house === "c2" && a.station === "toilets" && a.seat === 2)
+          seen.use = { state: a.state, house: a.house, station: a.station, seat: a.seat, step: s.steps };
+        if (seen.use && a.state === "home" && a.house === "c2")
+          seen.home = { state: a.state, house: a.house, step: s.steps };
+        const deadline = seen.use ? seen.use.step + 15 * 60 : seen.start + 30 * 60;
+        seen.done = !!seen.home || s.steps > deadline;
+      }
+      if (!seen.done) requestAnimationFrame(observe);
+    };
+    observe();
+  });
   // all six still to clear, drawn as rubble, and the tag says what paying does
   const before = await rubble(page);
   expect(before.rooms).toEqual(ROOMS);
@@ -124,7 +143,16 @@ test("paying a clear cell pad opens the cell the moment it is paid: two beds, it
   // needs it, so that is the first thing she does once in) and goes back to her bed
   const given = await untilSim(page, (s) => byId(s, 2).house === "c2", 5, "the newcomer to be given a bed in c2");
   expect(byId(given, 2).slot).toBeGreaterThanOrEqual(0);
-  await untilSim(page, (s) => byId(s, 2).state === "use" && byId(s, 2).station === "toilets" && byId(s, 2).seat === 2, 30, "c2's own toilet to be used");
+  // Inspect after the first trip, not in a lucky polling window while she is using it.
+  await untilSim(page, (s) => byId(s, 2).house === "c2" && byId(s, 2).state === "home" && byId(s, 2).needs.toilet > 0.9, 30, "the first toilet trip to finish before inspecting its history");
+  const used = await page.evaluate(() => new Promise(resolve => {
+    const read = () => window.firstToilet.done ? resolve(window.firstToilet) : requestAnimationFrame(read);
+    read();
+  }));
+  expect(used.use, "c2's own toilet use was observed within 30 game seconds of the purchase").toMatchObject({ state: "use", house: "c2", station: "toilets", seat: 2 });
+  expect(used.use.step - used.start).toBeLessThanOrEqual(30 * 60);
+  expect(used.home, "return to the same home was observed within 15 game seconds of use").toMatchObject({ state: "home", house: "c2" });
+  expect(used.home.step - used.use.step).toBeLessThanOrEqual(15 * 60);
   await untilSim(page, (s) => byId(s, 2).house === "c2" && byId(s, 2).state === "home", 15, "her to be back in bed in c2");
 
   // paid once: nothing more taken for it, its pad gone, the next one not touched
