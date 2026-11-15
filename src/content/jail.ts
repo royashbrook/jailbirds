@@ -171,6 +171,7 @@ export function hintText(h: Hint, noun: string): string {
     case "nobed": return "no free beds! unlock another cell";
     case "pickup": return `stand by the checked-in ${noun} to lead them`;
     case "house": return "lead them to a cell with a free bed";
+    case "care": return "take the bumped one to the care room to get better faster";
     case "release": return "lead them to the release desk to set them free";
     case "done": return `some ${noun} served their time: fetch them from their cell`;
     case "errand": return NEEDS[h.need]?.(noun) ?? `walk the ${noun} where they want to go`;

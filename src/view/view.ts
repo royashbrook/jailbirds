@@ -13,7 +13,7 @@ import {
   type Material,
 } from "three";
 import { WALL, walls } from "../engine/geom.ts";
-import { CLEAN_TIME, DIRT_MAX, dirtSpots, isDone, isOpen, mood, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
+import { CLEAN_TIME, DIRT_MAX, dirtSpots, inCare, isDone, isOpen, mood, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, RoomDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
 import { buildScene, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
@@ -70,8 +70,8 @@ export function actionOf(w: World, l: LevelDef, a: Agent): Action {
   if (a.state === "fight") return "fight";
   // a riot's crowd walks to the corridor, then squares up where each actually stands
   if (a.state === "riot") return a.moving ? "walk" : "fight";
-  // resting off a bump, in bed
-  if (a.state === "home" && resting(a)) return "sleep";
+  // resting off a bump, in bed at home or in a care bed
+  if ((a.state === "home" && resting(a)) || inCare(l, a)) return "sleep";
   if (a.state === "use") {
     const st = l.stations.find((s) => s.id === a.station);
     if (st?.kind === "sink") return a.carry ? "eat" : "sit";
