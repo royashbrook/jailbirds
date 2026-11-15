@@ -4,7 +4,7 @@
 // so the whole jail is a handful of draw calls.
 import {
   BoxGeometry, CanvasTexture, Color, CylinderGeometry, DodecahedronGeometry, DoubleSide, Euler, Group, InstancedBufferAttribute, InstancedMesh, Matrix4,
-  Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, type Material,
+  Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, Vector2, type Material,
   type BufferGeometry,
 } from "three";
 import { doorMid, inside, WALL, walls } from "../engine/geom.ts";
@@ -78,19 +78,23 @@ export function doorBarPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
 
 /** A dedicated opaque material cuts just the upper walls, never shared furniture or people. Camera
  * uniforms already describe the frame being drawn, avoiding a second camera state or a one-frame-late
- * instance-buffer rewrite. Below 30 degrees the whole upper layer cuts away for a clear low view. */
-function upperWallBatch(pieces: UpperWallPiece[]) {
+ * instance-buffer rewrite. A far wall also cuts when the player is outside it, so a neighbouring
+ * room cannot hide the warden walking down the hall. Below 30 degrees the whole upper layer cuts. */
+function upperWallBatch(pieces: UpperWallPiece[], wallFocus: Vector2) {
   const geometry = new BoxGeometry(1, 1, 1);
   geometry.setAttribute("wallNormal", new InstancedBufferAttribute(new Float32Array(pieces.flatMap(p => [p.nx, p.nz])), 2));
   const material = new MeshLambertMaterial();
+  const focus = { value: wallFocus };
   material.onBeforeCompile = s => {
+    s.uniforms.wallFocus = focus;
     s.vertexShader = s.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute vec2 wallNormal;\nvarying float vWallCut;")
+      .replace("#include <common>", "#include <common>\nattribute vec2 wallNormal;\nuniform vec2 wallFocus;\nvarying float vWallCut;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
 vec3 wallCentre = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 vec2 wallFacing = (mat3(modelMatrix) * vec3(wallNormal.x, 0.0, wallNormal.y)).xz;
 float nearSide = step(0.0, dot(wallFacing, cameraPosition.xz - wallCentre.xz));
-vWallCut = max(nearSide, 1.0 - step(0.5, abs(viewMatrix[1][2])));`);
+float outside = step(0.0, dot(wallFacing, wallFocus - wallCentre.xz));
+vWallCut = max(max(nearSide, outside), 1.0 - step(0.5, abs(viewMatrix[1][2])));`);
     s.fragmentShader = s.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying float vWallCut;")
       .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vWallCut > 0.5) discard;");
@@ -315,7 +319,7 @@ export const stoneColour = (s: Stone, floor: Color, out: Color) => out.set(STONE
 
 export interface PadMesh { pad: PadDef; frame: Mesh; fill: Mesh; w: number; h: number }
 /** `rubble` is the ids of the rooms drawn full of rubble, `stones` how many stones that took */
-export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; dispose(): void }
+export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; wallFocus: Vector2; dispose(): void }
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
@@ -499,7 +503,8 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     disposables.push(mesh, mesh.geometry, material);
   }
 
-  const upper = upperWallBatch(upperWallPieces(l, w, pal));
+  const wallFocus = new Vector2();
+  const upper = upperWallBatch(upperWallPieces(l, w, pal), wallFocus);
   group.add(upper);
   disposables.push(upper, upper.geometry, upper.material as Material);
 
@@ -548,6 +553,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     rubble: rubble.map((r) => r.id),
     stones: stones.length,
     care,
+    wallFocus,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };
 }

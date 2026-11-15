@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js';
 import { create } from '../src/engine/sim.ts';
 import { LEVELS } from '../src/content/jail.ts';
-import { waitFrames } from './helpers.js';
+import { waitFrames, walkTo } from './helpers.js';
 import { Matrix4, Vector3 } from 'three';
 import { upperWallPieces } from '../src/view/scene.ts';
 import { pegs } from '../src/skins/pegs.ts';
@@ -97,6 +97,81 @@ for (const tilt of [35, 15]) test(`at tilt ${tilt}, actual wall pixels cut away 
     expect(delta[0], 'the far upper wall really paints pixels').toBeGreaterThan(15);
     expect(delta[1], 'the near sample ray adds no upper-wall pixels').toBeLessThanOrEqual(2);
   }
+});
+
+for (const at of [{ x: 330, y: 540 }, { x: 400, y: 290 }]) for (const turn of [30, -150])
+test(`upper walls leave the warden visible outside rooms at ${at.x},${at.y}, turn ${turn}`, async ({ page, browserName }, info) => {
+  const w = create(LEVELS, 0, 17);
+  w.bought = LEVELS[0].pads.filter(p => !p.unlock.level).map(p => p.id);
+  w.fightIn = w.boost.t = 1e9;
+  w.ride = { state: 'away', x: -100, t: 1e9 };
+  Object.assign(w.agents[0], at);
+  await page.addInitScript(instrumentUpper, JSON.stringify(w));
+  // Compare the same pose, not two moments of the warden's breathing animation.
+  await page.addInitScript(() => {
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = cb => raf(now => cb(window.__stillFrame ?? now));
+  });
+  await page.addInitScript(turn => localStorage.setItem('jailbirds:camera', JSON.stringify({ zoom: 2, turn, tilt: 35 })), turn);
+  await page.goto('/');
+  await page.waitForFunction(() => window.__upperDraws > 0);
+  await waitFrames(page, 10);
+  await page.evaluate(() => { window.__stillFrame = performance.now(); });
+  await waitFrames(page, 3);
+  const m = await page.evaluate(() => {
+    const gl = window.__upperGL, p = window.__upperProgram;
+    return { w: gl.drawingBufferWidth, h: gl.drawingBufferHeight,
+      view: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'modelViewMatrix'))),
+      projection: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'projectionMatrix'))) };
+  });
+  const view = new Matrix4().fromArray(m.view), projection = new Matrix4().fromArray(m.projection);
+  // Sample the actual lower body, torso and head, not an empty bit of hallway beside the actor.
+  const samples = [6, 14, 24].map(height => {
+    const p = new Vector3(at.x, height, at.y).applyMatrix4(view).applyMatrix4(projection);
+    return { x: Math.floor((p.x * 0.5 + 0.5) * m.w), y: Math.floor((p.y * 0.5 + 0.5) * m.h) };
+  });
+  const read = () => page.evaluate(samples => new Promise(resolve => requestAnimationFrame(() => {
+    const gl = window.__upperGL;
+    resolve(samples.map(({ x, y }) => {
+      const p = new Uint8Array(3 * 3 * 4);
+      gl.readPixels(x - 1, y - 1, 3, 3, gl.RGBA, gl.UNSIGNED_BYTE, p);
+      return Array.from(p);
+    }));
+  })), samples);
+  await page.screenshot({ path: info.outputPath(`hall-${browserName}.png`) });
+  const normal = await read();
+  await page.evaluate(() => { window.__hideUpper = true; });
+  await waitFrames(page, 3);
+  const without = await read();
+  const delta = normal.map((p, i) => Math.max(...p.map((v, j) => Math.abs(v - without[i][j]))));
+  console.log(`hall ${at.x},${at.y} turn ${turn}: body/torso/head ${delta.join(',')}`);
+  for (const d of delta) expect(d, 'upper walls cannot paint over the warden in an open hall').toBeLessThanOrEqual(2);
+});
+
+test('the upper-wall focus follows the actual moving warden without rebuilding the scene', async ({ page }) => {
+  const w = create(LEVELS, 0, 17);
+  w.bought = LEVELS[0].pads.filter(p => !p.unlock.level).map(p => p.id);
+  w.fightIn = w.boost.t = 1e9;
+  w.ride = { state: 'away', x: -100, t: 1e9 };
+  Object.assign(w.agents[0], { x: 400, y: 290 });
+  await page.addInitScript(instrumentUpper, JSON.stringify(w));
+  await page.goto('/');
+  await page.waitForFunction(() => window.__upperDraws > 0);
+  await waitFrames(page, 10);
+  const sample = () => page.evaluate(() => {
+    const gl = window.__upperGL, p = window.__upperProgram;
+    return { focus: gl.getUniform(p, gl.getUniformLocation(p, 'wallFocus')),
+      player: window.__jailbirds.state().agents[0], builds: window.__jailbirds.drawn().rubble.builds };
+  });
+  const before = await sample();
+  await walkTo(page, { x: 430, y: 290 });
+  await waitFrames(page, 3);
+  const after = await sample();
+  expect(after.builds).toBe(before.builds);
+  expect(after.player.x - before.player.x).toBeGreaterThan(20);
+  expect(after.focus, 'the linked shader has a live warden focus').not.toBeNull();
+  expect(after.focus[0]).toBeCloseTo(after.player.x, 2);
+  expect(after.focus[1]).toBeCloseTo(after.player.y, 2);
 });
 
 test('theme rebuilds release old scene instance buffers, not just their geometries', async ({ page, browserName }) => {
