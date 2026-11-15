@@ -237,6 +237,11 @@ export function padVisible(w: World, p: PadDef) {
   return !w.bought.includes(p.id) && isOpen(w, p.after);
 }
 
+/** the last purchased content stage, with no cached or saved copy of its values */
+export function stationTier(w: World, st: AnyStation) {
+  return st.tiers?.findLast(t => isOpen(w, t.pad));
+}
+
 /** a station hands out one thing every `every` seconds while someone stays */
 function tick(w: World, key: string, every: number, live: Set<string>) {
   live.add(key);
@@ -689,7 +694,7 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
     // carriers: fill up at a source, put down at a sink
     if (a.kind === "player" || a.kind === "carrier") {
       const most = a.kind === "player" ? w.carryMax : HELPER_CARRY;
-      if (st.kind === "source" && near(a, st.at, st.r) && a.carry < most && tick(w, key + ":fill", st.every, live)) a.carry++;
+      if (st.kind === "source" && near(a, st.at, st.r) && a.carry < most && tick(w, key + ":fill", stationTier(w, st)?.every ?? st.every, live)) a.carry++;
       if (st.kind === "sink" && isOpen(w, st.locked) && inside(a, st.zone) && a.carry > 0) {
         const room = st.seats.filter((s) => isOpen(w, s.locked)).length;
         if ((w.stock[st.id] ?? 0) < room && tick(w, key + ":drop", st.every, live)) {
@@ -991,13 +996,14 @@ function residents(w: World, l: LevelDef) {
     } else if (a.state === "home" && resting(a)) {
       // resting off a bump, free and at home: needs wait, time served goes on
       a.hurt = Math.max(0, a.hurt - DT);
-      a.served += DT;
+      const h = byId(l, a.house);
+      a.served += DT * (h ? stationTier(w, h)?.servedRate ?? 1 : 1);
       a.rest += DT;
     } else if (a.state === "home") {
       for (const n of l.needs) a.needs[n.id] = Math.max(0, a.needs[n.id] - DT / n.decay);
-      a.served += DT;
-      a.rest += DT;
       const h = byId(l, a.house) as S<"house">;
+      a.served += DT * (stationTier(w, h)?.servedRate ?? 1);
+      a.rest += DT;
       if (mood(l, a) === "ok") {
         a.t += DT;
         if (a.t >= l.coinEvery) {
@@ -1043,7 +1049,7 @@ function residents(w: World, l: LevelDef) {
         continue;
       }
       a.t += DT;
-      if (a.t >= st.use) {
+      if (a.t >= (stationTier(w, st)?.use ?? st.use)) {
         a.needs[st.need] = 1;
         a.carry = 0;
         // a use may leave a mess: at a home's own seat it clogs it a level, anywhere else it is on the floor

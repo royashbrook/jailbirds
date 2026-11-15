@@ -67,7 +67,14 @@ export type ReleaseDef = { id: string; kind: "release"; at: Pt; r: number; exit:
 /** where a collector brings the desks' coins: it stands at `at` to put them in, they stack at `pileAt`
  * for the player to walk over like any other pile */
 export type SafeDef = { id: string; kind: "safe"; at: Pt; r: number; pileAt: Pt };
-export type AnyStation = StationDef | ReleaseDef | SafeDef;
+/** purchased stages change only future work. rates remain content, not another saved ledger */
+export interface StationTier {
+  pad: string;
+  every?: number;
+  use?: number;
+  servedRate?: number;
+}
+export type AnyStation = (StationDef | ReleaseDef | SafeDef) & { tiers?: StationTier[] };
 
 export interface NeedDef {
   id: string;

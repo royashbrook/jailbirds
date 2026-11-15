@@ -8,7 +8,7 @@ import {
   type BufferGeometry,
 } from "three";
 import { doorMid, inside, WALL, walls } from "../engine/geom.ts";
-import { isOpen, stampAt } from "../engine/sim.ts";
+import { isOpen, stampAt, stationTier } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, PadDef, RoomDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
 
@@ -178,6 +178,63 @@ export function carePieces(l: LevelDef, s: AnyStation, open: (id?: string) => bo
 }
 
 /** lambert, with a soft tile grid drawn from where each pixel sits in the world */
+/** Furnish the purchased capability, inside existing bed/prop footprints. No routes or actor poses move. */
+export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
+  const pieces: Piece[] = [];
+  const box = (x: number, z: number, sx: number, sz: number, sy: number, colour: string, bottom = 0) =>
+    pieces.push({ shape: "box", x, y: bottom + sy / 2, z, sx, sy, sz, ry: 0, colour });
+  const linen = `#${new Color(pal.bed).lerp(new Color(pal.pillow), 0.4).getHexString()}`;
+  const quilt = `#${new Color(pal.wood).lerp(new Color(pal.pillow), 0.55).getHexString()}`;
+  for (const s of l.stations) {
+    const tier = stationTier(w, s);
+    if (!tier || ("locked" in s && !isOpen(w, s.locked))) continue;
+    const best = tier === s.tiers?.at(-1);
+    if (s.kind === "house") {
+      for (const seat of s.seats) {
+        const x = seat.at.x, z = seat.at.y - 2;
+        box(x, z - 21, 23, 2, 10, pal.wood);
+        box(x, z + 5, 20, 25, 0.6, best ? quilt : linen, 8.5);
+        box(x, z - 6, 20, 1.2, 0.3, pal.pillow, 9.1);
+        box(x, z + 20, 23, 2, 6, pal.wood);
+        if (best) {
+          box(x, z + 4, 18, 26, 3, pal.wood, 1);
+          box(x + 9.5, z + 4, 1, 5, 0.8, pal.metal, 2.5);
+          for (const dx of [-6, 0, 6]) box(x + dx, z + 6, 0.6, 21, 0.2, linen, 9.1);
+        }
+      }
+    } else if (s.kind === "source") {
+      const p = s.prop;
+      box(p.x + p.w / 2, p.y + 3, p.w - 4, 3, 12, pal.porcelain, 14);
+      for (let i = 0; i < 4; i++) box(p.x + 14 + i * 14, p.y + p.h - 1, 4, 2, 3, pal.dark, 7);
+      if (best) {
+        box(p.x + 36, p.y + 10, 64, 18, 5, pal.metal, 25);
+        box(p.x + 36, p.y + 5, 8, 7, 9, pal.metal, 30);
+        box(p.x + 36, p.y + 19, 48, 1, 1, pal.pillow, 27);
+      }
+    } else if (s.kind === "sink") {
+      const p = s.prop;
+      box(p.x + p.w / 2, p.y + p.h / 2, p.w - 8, 16, 0.5, best ? quilt : linen, 10);
+      for (const dx of [-p.w / 2 + 12, p.w / 2 - 12])
+        box(p.x + p.w / 2 + dx, p.y + p.h / 2, 2, 16, 0.2, pal.pillow, 10.5);
+      if (best) for (const seat of s.seats) if (isOpen(w, seat.locked)) {
+        const out = seat.at.y < p.y ? -1 : 1;
+        box(seat.at.x, seat.at.y + out * 5, 10, 2, 8, pal.wood, 4);
+        box(seat.at.x, seat.at.y, 10, 9, 0.6, linen, 6);
+      }
+    } else if (s.kind === "facility" && s.look === "shower") {
+      for (const seat of s.seats) if (isOpen(w, seat.locked)) {
+        box(seat.at.x, seat.at.y + 13, 30, 1.2, 24, best ? quilt : pal.porcelain, 2);
+        for (const dx of [-15, 15]) box(seat.at.x + dx, seat.at.y, 1, 26, 0.3, pal.metal, 1.6);
+        if (best) {
+          box(seat.at.x, seat.at.y + 12, 18, 1.5, 4, pal.metal, 12);
+          for (const dx of [-6, 6]) box(seat.at.x + dx, seat.at.y + 10.5, 2.5, 1.5, 2.5, pal.pillow, 13);
+        }
+      }
+    }
+  }
+  return pieces;
+}
+
 function tiled(): MeshLambertMaterial {
   const m = new MeshLambertMaterial();
   m.onBeforeCompile = (s) => {
@@ -319,7 +376,7 @@ export const stoneColour = (s: Stone, floor: Color, out: Color) => out.set(STONE
 
 export interface PadMesh { pad: PadDef; frame: Mesh; fill: Mesh; w: number; h: number }
 /** `rubble` is the ids of the rooms drawn full of rubble, `stones` how many stones that took */
-export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; wallFocus: Vector2; dispose(): void }
+export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; tiers: number; wallFocus: Vector2; dispose(): void }
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
@@ -396,6 +453,9 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
   }
   pieces.push(...yardPieces(l, pal));
   pieces.push(...doorBarPieces(l, w, pal));
+  const beforeTiers = pieces.length;
+  pieces.push(...roomTierPieces(l, w, pal));
+  const tiers = pieces.length - beforeTiers;
 
   // stand-here spots and furniture
   const spot = (x: number, z: number) => add("cyl", x, 1.4, z, 17, 0.4, 11, pal.spot);
@@ -553,6 +613,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     rubble: rubble.map((r) => r.id),
     stones: stones.length,
     care,
+    tiers,
     wallFocus,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };

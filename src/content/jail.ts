@@ -38,6 +38,7 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     return {
       id: `table${i + 1}`, kind: "sink", look: "table", prop, zone: grow(prop, 26), at: { x: 226, y: prop.y + 17 },
       item: "tray", every: 0.2, need: "food", use: 1.5, locked: i ? "table2" : undefined,
+      tiers: [{ pad: "canteen2", use: 1.2 }, { pad: "canteen3", use: 0.9 }],
       seats: [0, 1, 2, 3, 4, 5].map((s) => ({ at: { x: 85 + (s % 3) * 50, y: s < 3 ? prop.y - 14 : prop.y + prop.h + 14 }, look: "stool" })),
     };
   };
@@ -52,6 +53,7 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
       id: `c${i}`, kind: "house", room: `c${i}`, at: { x: cellMid(i), y: 184 }, r: 30, requires: "uniform",
       seats: [{ at: { x: cellX(i) + 18, y: CELL_Y + 30 } }, { at: { x: cellX(i) + 18, y: CELL_Y + 82 } }],
       locked: cellLock(i), coinAt: { x: cellMid(i), y: 176 },
+      tiers: [{ pad: `cell${i + 1}tier2`, servedRate: 1.15 }, { pad: `cell${i + 1}tier3`, servedRate: 1.3 }],
     })),
     {
       id: "toilets", kind: "facility", look: "toilet", need: "toilet", use: 1.5, mess: "poop", messChance: 0.35,
@@ -60,12 +62,14 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
         at: { x: cellX(i) + 60, y: CELL_Y + 22 }, messAt: { x: cellX(i) + 60 - 12, y: CELL_Y + 22 + 16 }, house: `c${i}`, locked: cellLock(i),
       })),
     },
-    { id: "stove", kind: "source", look: "stove", prop: { x: 340, y: 325, w: 110, h: 44 }, at: { x: 395, y: 412 }, r: 32, item: "tray", every: 0.3 },
+    { id: "stove", kind: "source", look: "stove", prop: { x: 340, y: 325, w: 110, h: 44 }, at: { x: 395, y: 412 }, r: 32, item: "tray", every: 0.3,
+      tiers: [{ pad: "kitchen2", every: 0.24 }, { pad: "kitchen3", every: 0.18 }] },
     table(0),
     table(1),
     {
       id: "showers", kind: "facility", look: "shower", need: "wash", use: 2.5, mess: "puddle", messChance: 0.4,
       zone: { x: 500, y: 310, w: 200, h: 330 },
+      tiers: [{ pad: "wash2", use: 2 }, { pad: "wash3", use: 1.5 }],
       seats: [0, 1, 2].map((i) => ({ at: { x: 545 + i * 60, y: 600 }, messAt: { x: 545 + i * 60, y: 556 }, locked: i ? `shower${i + 1}` : undefined })),
     },
     {
@@ -114,6 +118,21 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     // one riot guard: walks to a squabble or a riot and calms it, so the player need not
     { id: "riotguard", cost: cost(150), at: { x: 850, y: 625 }, rank: 5, after: "hospital", unlock: { helper: "calmer" }, label: "hire a riot guard" },
   ];
+  for (let i = 0; i < CELLS; i++) {
+    const at = { x: cellMid(i) + (i === 3 ? -15 : i === 4 ? 13 : 0), y: 244 };
+    pads.push(
+      { id: `cell${i + 1}tier2`, cost: cost(40), at, rank: 4, after: cellLock(i), unlock: {}, label: `cell ${i + 1}: stays +15%` },
+      { id: `cell${i + 1}tier3`, cost: cost(80), at, rank: 7, after: `cell${i + 1}tier2`, unlock: {}, label: `cell ${i + 1}: stays +30%` },
+    );
+  }
+  pads.push(
+    { id: "kitchen2", cost: cost(100), at: { x: 370, y: 490 }, rank: 4, after: "cook", unlock: {}, label: "trays: 0.24s" },
+    { id: "kitchen3", cost: cost(180), at: { x: 370, y: 490 }, rank: 7, after: "kitchen2", unlock: {}, label: "trays: 0.18s" },
+    { id: "canteen2", cost: cost(100), at: { x: 240, y: 540 }, rank: 4, after: "table2", unlock: {}, label: "meals: 1.2s" },
+    { id: "canteen3", cost: cost(180), at: { x: 240, y: 540 }, rank: 7, after: "canteen2", unlock: {}, label: "meals: 0.9s" },
+    { id: "wash2", cost: cost(100), at: { x: 735, y: 560 }, rank: 4, after: "shower3", unlock: {}, label: "showers: 2s" },
+    { id: "wash3", cost: cost(180), at: { x: 735, y: 560 }, rank: 7, after: "wash2", unlock: {}, label: "showers: 1.5s" },
+  );
   // paid once, it opens the jail it names on the map. she stays where she is until she goes
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: next }, label: "next jail" });
   return {

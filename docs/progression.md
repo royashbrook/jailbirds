@@ -207,10 +207,14 @@ closed map worlds are not silently simulated. any away-income popup needs a
 specified cap and idempotent accounting first. laundry/library/utilities stay
 optional, not assumed requirements for parity.
 
-## P1.2 proposal: useful room stages, then staff training
+## P1.2: useful room stages, then staff training
 
-not yet ratified or implemented. P1.1's goal card is a separate slice. the
-controlled baseline and its limits live in [economy.md](economy.md). existing
+room capabilities/save meaning ratified, room candidate implemented but not
+released. full regression, independent source review and release gates
+remain. P1.1's
+goal card is a separate slice. room stages ship before staff training, which
+keeps its own capability/walk-bound review. the controlled baseline and its
+limits live in [economy.md](economy.md). existing
 income, prices, needs, home capacity and layouts stay intact. three stages
 means the existing room plus two real upgrades, not three paid reskins.
 
@@ -225,6 +229,9 @@ means the existing room plus two real upgrades, not three paid reskins.
 
 times are nominal settings, measured with fixed-step rounding when
 implemented. these are capability choices, not measured economic gains.
+faster seat turnover may change the realised number of visits and messes
+even though need decay and mess probabilities stay fixed. measure it rather
+than promising unchanged mess counts per minute.
 cell upgrades improve future served progress only. they do not rewrite the
 already served value, the75-unit target, ordinary needs or recovery work.
 both healthy and bumped residents progress at the improved rate while home.
@@ -272,6 +279,12 @@ payment radius, existing station work circles/service rectangles or the
 manual incident radius. this is an all-open geometry projection, not a
 purchase test, native phone view or test of implemented new pads. keep its
 assertions against the real content once authored.
+the current payment radius is24 and calming reach40. each of the two
+middle cell centres is sqrt(56^2+34^2)=65.513 units from the anchor,
+1.513 beyond the sum64. pin no payment at the closest calming points
+through real steps, so enlarging the payment radius cannot quietly erase
+that margin. the room release authors11 centres/22 purchases. the other
+two centres/four purchases wait for the staff-training slice.
 
 art stays inside existing footprints: cell mattress/frame/pillow stages,
 stove/worktop/hood stages, tablecloth/seat/backrest stages, shower fittings

@@ -104,3 +104,40 @@ the event ledger and save checks, then again after moving the harness into
 the repo. no gameplay source changed during that comparison. do not rebalance
 old income from this small baseline. measure each proposed capability and a
 working active-player policy before claiming its economic benefit.
+
+## room-stage service comparison
+
+controlled600-second stationary-safe profiles, seeds37/71 in both jails.
+start from the earlier engine-emitted empty-house maxed setups. assign
+rank10 in every arm. capability arms assign the named stage purchases and
+their paid values, not a natural purchase sequence or time-to-upgrade run.
+arrivals, needs, incidents and helpers then run normally. no manual work.
+
+`scripts/measure-service-visits.mjs CHECKOUT base|facilities|rooms SETUP_DIR`
+reads those four earlier `maxed-jailN-SEED.json` files. use baseline outputs
+from commit f7c3878, before the room implementation. the checkout argument
+selects the actual engine/content to import. output records HEAD,dirty state
+and runtime-file hashes. `base` buys no new stages, `facilities` buys the
+kitchen/canteen/shower stages, `rooms` adds the cell stages too.
+
+| jail / seed | completed meals, base / facilities / rooms | showers | new puddles | releases |
+|---|---|---|---|---|
+| pine hill /37 |46 /49 /36 |9 /20 /4 |3 /6 /2 |47 /41 /55 |
+| pine hill /71 |40 /44 /31 |10 /10 /6 |4 /3 /2 |48 /48 /55 |
+| desert rock /37 |42 /46 /36 |10 /13 /1 |5 /2 /0 |47 /44 /54 |
+| desert rock /71 |42 /41 /36 |17 /9 /2 |4 /3 /0 |42 /48 /51 |
+
+meals in these cases all use table1. table2's timing is tested directly,
+not claimed exercised by this policy. toilet dirt is not counted as floor
+poop. new floor puddles are counted by distinct emitted mess ids. these are
+counts in the stated ten-minute windows, not a general throughput estimate.
+
+the unbought-stage arm's final full-world hash matches the released engine
+at2c6a3e9 in all four cases. capabilities do change the loop when purchased.
+notably, faster facilities alone produced six rather than three puddles in
+pine hill/37 and41 rather than47 releases. unchanged need decay does not
+prove unchanged visit/mess counts. faster service, reservations, incidents
+and the shared deterministic RNG interact. the combined room arm releases
+more in all four cases, but that does not establish a universal improvement
+or isolate any one cause. no old earnings or mess probabilities were tuned
+to force an outcome. active manual-service balance remains unmeasured here.

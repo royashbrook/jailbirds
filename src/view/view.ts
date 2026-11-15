@@ -879,6 +879,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
       care: built?.care ?? 0,
+      tiers: built?.tiers ?? 0,
       rubble: {
         rooms: built ? [...built.rubble] : [], stones: built?.stones ?? 0, builds,
         clearing: reveals.map((r) => r.room.id), revealed: revealed.map((r) => ({ ...r })),
