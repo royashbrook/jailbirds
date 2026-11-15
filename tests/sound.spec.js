@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.js";
-import { byId, inmates, line, queued, state, untilSim, walkTo } from "./helpers.js";
+import { byId, inmates, line, queued, squabbleAt, state, untilSim, walkTo } from "./helpers.js";
 
 // the music and the sounds, through a stand-in for web audio: it makes no noise,
 // it writes down every context made, every sound started, every suspend and resume.
@@ -232,7 +232,7 @@ test("the tune takes on its alarm while there is a squabble, and drops it once t
     // an old save, on a device with no map yet: it is moved over as the page opens
     localStorage.removeItem("jailbirds:map");
     localStorage.setItem("jailbirds:save", save);
-  }, JSON.stringify({ ...world, alert: { x, y, ids: [], held: 0 } }));
+  }, JSON.stringify((({ others, ...q }) => ({ ...world, ...q, agents: [world.agents[0], ...others] }))(squabbleAt(world, { x, y }))));
   await page.reload();
   await untilSim(page, (s) => s.steps > world.steps + 2 && s.alert !== null, 1, "the squabble to be on");
   expect((await sound(page)).trouble).toBe(true);

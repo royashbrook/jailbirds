@@ -66,7 +66,12 @@ because riot recovery must exist before escalation is enabled.
    a30-second riot-eligibility floor that counts down at1 simulation second per
    second, unaffected by the upset multiplier. this is a veto on riot selection,
    not another scheduler: a due incident during the floor may still be a
-   squabble. keep ordinary squabble scheduling and reset timing unchanged.
+   squabble. a squabble keeps its minimum of4 at home, its normal/upset burn
+   rates and its reset. a riot crowd of3 has its own minimum, so the one shared
+   `fightIn` clock can run with only those3 at home. time it has run stays run:
+   when the crowd calms it holds, never rewinds or resets, and a later fourth
+   resident continues from there. a due clock gives one incident, then the
+   ordinary reset.
 6. reward is the existing6 floor coins at the anchor, once per resolved
    incident, not a direct wallet credit. remove the alert
    in the same simulation transition as reward/settled count. warning

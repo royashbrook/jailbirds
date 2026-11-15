@@ -280,9 +280,9 @@ test("an old save has no collector and an empty safe, and nothing else changes",
     if (k === "agents") continue;
     assert.deepEqual(back[k], v, k);
   }
-  // the only new things on an old save's people: an empty bag, and no unrest yet
-  assert.deepEqual(back.agents.map(({ cash, unrest, ...a }) => a), raw.agents);
-  assert.ok(back.agents.every((a) => a.cash === 0 && a.unrest === 0));
+  // the only new things on an old save's people: an empty bag, no unrest yet and nobody hurt
+  assert.deepEqual(back.agents.map(({ cash, unrest, hurt, ...a }) => a), raw.agents);
+  assert.ok(back.agents.every((a) => a.cash === 0 && a.unrest === 0 && a.hurt === 0));
   assert.deepEqual(back.took, { n: 0, floor: 0, rank: 0, piles: {} });
 });
 

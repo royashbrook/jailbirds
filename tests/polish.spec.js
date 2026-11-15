@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures.js";
-import { queued, state, untilSim, walkTo } from "./helpers.js";
+import { queued, squabbleAt, state, untilSim, walkTo } from "./helpers.js";
 
 // the little things that say "you got it": a "+7" off the warden, a count that jumps,
 // a ring where a pad was bought. when each shows and for how long is tests/overlay.test.mjs;
@@ -218,7 +218,8 @@ test("with less motion a +7 shows and goes without floating, counts do not jump 
 test("the squabble burst wobbles where it is, and does not slide about the screen", async ({ page }) => {
   await page.goto("/");
   // a squabble up the way from the warden and out of his reach, so it stays up
-  await reopen(page, await started(page), { alert: { x: 330, y: 470, ids: [], held: 0 } });
+  const w0 = await started(page);
+  await reopen(page, w0, squabbleAt(w0, { x: 330, y: 470 }));
   await started(page);
   const burst = page.locator(".overlay > .burst");
   await expect(burst).toBeVisible();
@@ -258,14 +259,14 @@ test("a squabble off the screen gets the arrow pointing the way, and one in view
   await page.goto("/");
   const world = await started(page);
   // far from the warden, so the camera that follows him can't see it
-  await reopen(page, world, { warden: { x: 60, y: 760 }, alert: { x: 780, y: 120, ids: [], held: 0 } });
+  await reopen(page, world, { warden: { x: 60, y: 760 }, ...squabbleAt(world, { x: 780, y: 120 }) });
   await started(page);
   const arrow = page.locator(".overlay > .alert-arrow");
   // the arrow itself has no box, its parts do: read whether it is shown
   await expect(arrow).toHaveJSProperty("hidden", false);
   await expect(arrow.locator("b")).toBeVisible();
   // walk the squabble right under him: now it is in view, the arrow goes and the shout is clear
-  await reopen(page, world, { warden: { x: 330, y: 540 }, alert: { x: 330, y: 470, ids: [], held: 0 } });
+  await reopen(page, world, { warden: { x: 330, y: 540 }, ...squabbleAt(world, { x: 330, y: 470 }) });
   await started(page);
   await expect(page.locator(".overlay > .burst")).toBeVisible();
   await expect(arrow).toHaveJSProperty("hidden", true);

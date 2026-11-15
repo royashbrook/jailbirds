@@ -157,6 +157,10 @@ export interface LevelDef {
   boost: { spots: Pt[]; every: number; kinds: BoostKinds };
   /** two residents squabble now and then (sooner when someone is cross); stand there to settle it */
   fights: { every: number; crossEvery: number; settle: number; reward: number; minPop: number };
+  /** from `rank` up, a due incident with `min` or more upset at home in one block is a riot instead: up to
+   * `max` of them walk to `at` over `warn` seconds, standing within reach for `hold` seconds calms it, the
+   * lowest id gets a bump of `bump` seconds to rest off at home, and no riot starts for `calm` seconds */
+  riot: { rank: number; min: number; max: number; warn: number; hold: number; calm: number; bump: number; at: Pt };
 }
 
 /** worst first: cross (a need run out), upset (unrest built up), needy (a need low), ok */
@@ -188,6 +192,8 @@ export interface Agent {
   unrest: number;
   /** seconds served at home */
   served: number;
+  /** seconds of rest left after a bump in a riot, falling only at home; 0 is well */
+  hurt: number;
   /** seconds since it last got home: it settles in before asking to go anywhere */
   rest: number;
   t: number;
@@ -230,9 +236,12 @@ export interface World {
   /** counters the screen watches for popups */
   released: number;
   settled: number;
-  /** a squabble in progress: where, who, how long the player has stood there */
-  alert: { x: number; y: number; ids: number[]; held: number } | null;
+  /** the one incident: a squabble or a riot, where, who, how long the player has stood there, and for a
+   * riot the seconds of warning left while they gather (0 once it is on) */
+  alert: Alert | null;
   fightIn: number;
+  /** seconds before another riot may start, in simulation time; squabbles do not wait on it */
+  riotCalm: number;
   boost: { x: number; y: number; here: boolean; t: number };
   /** what the boost on the floor is, picked once when it turns up */
   boostKind: BoostKind;
@@ -251,6 +260,7 @@ export interface World {
    * while the player keeps still beside them; a reload or a new level starts with none */
   grab: Grab | null;
 }
+export interface Alert { kind: "squabble" | "riot"; x: number; y: number; ids: number[]; held: number; warn: number }
 export interface Grab { id: number; t: number }
 export interface Took { n: number; floor: number; rank: number; piles: Record<string, number> }
 export type Stick = { x: number; y: number };

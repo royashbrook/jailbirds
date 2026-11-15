@@ -122,6 +122,8 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
       },
     },
     fights: { every: 80, crossEvery: 25, settle: 1.2, reward: 6, minPop: 4 },
+    // starting picks, not measured balance: the corridor below the cells is where they gather
+    riot: { rank: 3, min: 3, max: 4, warn: 5, hold: 3, calm: 30, bump: 20, at: { x: 360, y: 210 } },
   };
 }
 
@@ -151,6 +153,7 @@ const NEEDS: Record<string, (noun: string) => string> = {
 export function hintText(h: Hint, noun: string): string {
   switch (h.key) {
     case "alert": return "uh oh, a squabble! run over and calm it down";
+    case "riot": return "a riot is starting! run to the cells and calm everyone down";
     case "checkin": return "stand behind the intake desk to check them in";
     case "nobed": return "no free beds! unlock another cell";
     case "pickup": return `stand by the checked-in ${noun} to lead them`;
