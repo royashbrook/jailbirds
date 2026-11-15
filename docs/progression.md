@@ -235,11 +235,9 @@ optional, not assumed requirements for parity.
 
 ## P1.2: useful room stages, then staff training
 
-room capabilities/save meaning ratified, room candidate implemented but not
-released. full regression, independent source review and release gates
-remain. P1.1's
-goal card is a separate slice. room stages ship before staff training, which
-keeps its own capability/walk-bound review. the controlled baseline and its
+room stages shipped in0.1.175. staff training remains a separate capability/
+walk-bound review and release, after P1.1's goal card and the room stages.
+the controlled baseline and its
 limits live in [economy.md](economy.md). existing
 income, prices, needs, home capacity and layouts stay intact. three stages
 means the existing room plus two real upgrades, not three paid reskins.
@@ -302,11 +300,11 @@ payment centres, reusing each centre for its own two-stage chain:
 geometry probe on the unchanged0.1.155 walls: both jails, each13 centres,
 actual movement from the start, body-radius wall checks on every step.
 reproduce with `node --experimental-strip-types scripts/measure-tier-footprints.mjs`.
-all26 reached. authored room and proposed staff payment radii do not overlap each other, any old
+all26 reached. authored room and staff payment radii do not overlap each other, any old
 payment radius, existing station work circles/service rectangles or the
 manual incident radius. this is an all-open geometry projection, not a
 purchase test or native phone view. room centres are read from the real
-content; only the two staff centres remain proposed. The original projection
+content. The original projection
 checked house work circles but missed their larger squabble calming reach.
 All16 house/jail combinations now have real active-squabble no-payment tests.
 the current payment radius is24 and calming reach40. each of the two
@@ -315,7 +313,7 @@ middle cell centres is sqrt(56^2+39^2)=68.242 units from the anchor,
 1 beyond that sum. pin no payment at the closest calming points
 through real steps, so enlarging the payment radius cannot quietly erase
 that margin. the room release authors11 centres/22 purchases. the other
-two centres/four purchases wait for the staff-training slice.
+two centres/four purchases are authored in the separate staff-training candidate.
 
 art stays inside existing footprints: cell mattress/frame/pillow stages,
 stove/worktop/hood stages, tablecloth/seat/backrest stages, shower fittings
@@ -336,6 +334,23 @@ types hunk with the P1.1 owner. exact-head review, old-capture restore,
 one paid purchase per chain and real timer/travel/stack probes precede
 release. price labels must say the real effect and stay readable. measure
 fresh and maxed active-service profiles too before claiming a faster economy.
+
+### staff-training candidate
+
+the four new pad unlocks carry helperSpeed100/115 or helperCarry5/6. the engine
+derives the last bought value from content, with released85/4 fallbacks. no
+new world/save field stores a tier or a derived rate. walking applies to all
+six hired kinds and the escort's following line. actual fixed-step travel is
+tested for each kind, including the clerk and collector. carry affects only
+the hired cook's stove fill limit and its decision to leave with a full stack.
+the player's speed, line and stack, unescorted residents, collector cash,
+ordinary need settings, configured income rewards and service timers stay unchanged.
+
+the two existing-footprint floor markers show one/two/three pace chevrons and
+the cook's actual four/five/six trays. they reuse the scene's batched boxes
+and colours, add no collision geometry, and persist after the price pads are
+bought. goal labels state the capability, with dedicated narrow-phone checks
+under the served CSP. no measured payback or faster-economy claim is made.
 
 ## acceptance and save gates
 

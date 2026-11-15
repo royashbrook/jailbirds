@@ -9,13 +9,14 @@ import { collide, doorMid, walls } from "../src/engine/geom.ts";
 const BEFORE = ["25cb1f26aeb0a37fd61d471bb2bd2193dac1abe363b28633888f0ff01aacf255", "677fa5619e2bdaa09b3320e58d303eb9db343f06292a27863e7070227dc26424"];
 const ROOM_TIERS = [...Array.from({ length: 8 }, (_, i) => [`cell${i + 1}tier2`, `cell${i + 1}tier3`]).flat(),
   "kitchen2", "kitchen3", "canteen2", "canteen3", "wash2", "wash3"];
+const STAFF_TRAINING = ["staff2", "staff3", "cookcarry2", "cookcarry3"];
 
 test("the annex appends to both jails without changing any pre-care content", () => {
   for (const [i, l] of LEVELS.entries()) {
     // Strip only the later additions. The original hash still pins every old coordinate, rate and price.
     const old = { ...l, size: { ...l.size, w: 720 }, rooms: l.rooms.filter(r => r.id !== "hospital"),
       stations: l.stations.filter(s => s.id !== "hospital").map(({ tiers, ...s }) => s),
-      pads: l.pads.filter(p => !["hospital", "carebeds", "riotguard", ...ROOM_TIERS].includes(p.id)) };
+      pads: l.pads.filter(p => !["hospital", "carebeds", "riotguard", ...ROOM_TIERS, ...STAFF_TRAINING].includes(p.id)) };
     assert.equal(createHash("sha256").update(JSON.stringify(old)).digest("hex"), BEFORE[i], l.id);
     assert.deepEqual(l.size, { w: 960, h: 900 });
     const room = l.rooms.find(r => r.id === "hospital"), care = l.stations.find(s => s.id === "hospital");

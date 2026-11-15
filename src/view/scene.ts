@@ -8,7 +8,7 @@ import {
   type BufferGeometry,
 } from "three";
 import { doorMid, inside, WALL, walls } from "../engine/geom.ts";
-import { isOpen, stampAt, stationTier } from "../engine/sim.ts";
+import { helperCarry, isOpen, stampAt, stationTier } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, PadDef, RoomDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
 
@@ -235,6 +235,33 @@ export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
   return pieces;
 }
 
+/** Small floor plaques, not walls: chevrons for staff pace and the cook's actual tray capacity. */
+export function trainingPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
+  const pieces: Piece[] = [];
+  const box = (x: number, z: number, sx: number, sz: number, sy: number, colour: string, bottom = 0, ry = 0) =>
+    pieces.push({ shape: "box", x, y: bottom + sy / 2, z, sx, sy, sz, ry, colour });
+  const pace = l.pads.filter(p => p.unlock.helperSpeed !== undefined);
+  if (pace[0] && isOpen(w, pace[0].after)) {
+    const { x, y: z } = pace[0].at, stage = pace.findLastIndex(p => isOpen(w, p.id)) + 2;
+    box(x, z, 28, 26, 1.2, pal.wood);
+    for (let i = 0; i < stage; i++) {
+      const dx = (i - (stage - 1) / 2) * 8;
+      box(x + dx - 2, z - 3, 10, 1.7, .5, pal.pillow, 1.2, -Math.PI / 4);
+      box(x + dx - 2, z + 3, 10, 1.7, .5, pal.pillow, 1.2, Math.PI / 4);
+    }
+  }
+  const carry = l.pads.find(p => p.unlock.helperCarry !== undefined);
+  if (carry && isOpen(w, carry.after)) {
+    const { x, y: z } = carry.at;
+    box(x, z, 28, 26, 1.2, pal.wood);
+    for (let i = 0; i < helperCarry(w, l); i++) {
+      box(x, z, 18, 12, .5, pal.metal, 1.2 + i * 1.2);
+      box(x, z, 14, 8, .2, pal.pillow, 1.7 + i * 1.2);
+    }
+  }
+  return pieces;
+}
+
 /** lambert, with a soft tile grid drawn from where each pixel sits in the world */
 function tiled(): MeshLambertMaterial {
   const m = new MeshLambertMaterial();
@@ -377,7 +404,7 @@ export const stoneColour = (s: Stone, floor: Color, out: Color) => out.set(STONE
 
 export interface PadMesh { pad: PadDef; frame: Mesh; fill: Mesh; w: number; h: number }
 /** `rubble` is the ids of the rooms drawn full of rubble, `stones` how many stones that took */
-export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; tiers: number; wallFocus: Vector2; dispose(): void }
+export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; tiers: number; training: number; wallFocus: Vector2; dispose(): void }
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
@@ -457,6 +484,9 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
   const beforeTiers = pieces.length;
   pieces.push(...roomTierPieces(l, w, pal));
   const tiers = pieces.length - beforeTiers;
+  const beforeTraining = pieces.length;
+  pieces.push(...trainingPieces(l, w, pal));
+  const training = pieces.length - beforeTraining;
 
   // stand-here spots and furniture
   const spot = (x: number, z: number) => add("cyl", x, 1.4, z, 17, 0.4, 11, pal.spot);
@@ -615,6 +645,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     stones: stones.length,
     care,
     tiers,
+    training,
     wallFocus,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };

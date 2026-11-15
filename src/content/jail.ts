@@ -132,6 +132,10 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "canteen3", cost: cost(180), at: { x: 240, y: 540 }, rank: 7, after: "canteen2", unlock: {}, label: "meals: 0.9s" },
     { id: "wash2", cost: cost(100), at: { x: 735, y: 560 }, rank: 4, after: "shower3", unlock: {}, label: "showers: 2s" },
     { id: "wash3", cost: cost(180), at: { x: 735, y: 560 }, rank: 7, after: "wash2", unlock: {}, label: "showers: 1.5s" },
+    { id: "staff2", cost: cost(120), at: { x: 850, y: 700 }, rank: 5, after: "guard", unlock: { helperSpeed: 100 }, label: "staff speed: 100" },
+    { id: "staff3", cost: cost(220), at: { x: 850, y: 700 }, rank: 8, after: "staff2", unlock: { helperSpeed: 115 }, label: "staff speed: 115" },
+    { id: "cookcarry2", cost: cost(120), at: { x: 850, y: 765 }, rank: 5, after: "cook", unlock: { helperCarry: 5 }, label: "cook: 5 trays" },
+    { id: "cookcarry3", cost: cost(220), at: { x: 850, y: 765 }, rank: 8, after: "cookcarry2", unlock: { helperCarry: 6 }, label: "cook: 6 trays" },
   );
   // paid once, it opens the jail it names on the map. she stays where she is until she goes
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: next }, label: "next jail" });
