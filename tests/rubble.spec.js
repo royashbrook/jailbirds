@@ -35,17 +35,21 @@ async function seedEveryLoad(page, w) {
     localStorage.setItem("jailbirds:save", raw);
   }, JSON.stringify(w));
 }
-/** a second page on the same phone with storage of its own. a page's last save can still be written
- * after the next page in the same storage has loaded (traced 8 in 80 locally, and once on a hosted run
- * before the load, which brought the first page's jail up in the second), so a page seeded with
- * another jail never shares storage. `mine(p)` says whether nothing was saved there before its first load */
-async function ownPage(browser, baseURL) {
+/** a second page on the same phone, with storage of its own, seeded with old save `w` before every load
+ * as seedEveryLoad does. measured locally: a closed page's last save was sometimes still written after
+ * the next page in the same storage had seeded and loaded (8 in 80). a hosted run loaded the first
+ * page's jail in the second, which fits that, though its write order was not captured. so a page seeded
+ * with another jail never shares storage. one init script looks before it seeds (scripts added apart
+ * run in no set order), and `mine(p)` says whether its storage was empty at the first load */
+async function ownPage(browser, baseURL, w) {
   const { viewport, deviceScaleFactor, isMobile, hasTouch, userAgent } = test.info().project.use;
   const ctx = await browser.newContext({ baseURL, viewport, deviceScaleFactor, isMobile, hasTouch, userAgent });
   const p = await ctx.newPage();
-  await p.addInitScript(() => {
-    if (!sessionStorage.getItem("first")) sessionStorage.setItem("first", localStorage.getItem("jailbirds:map") === null ? "empty" : "taken");
-  });
+  await p.addInitScript((raw) => {
+    if (!sessionStorage.getItem("first")) sessionStorage.setItem("first", localStorage.length === 0 ? "empty" : "taken");
+    localStorage.removeItem("jailbirds:map");
+    localStorage.setItem("jailbirds:save", raw);
+  }, JSON.stringify(w));
   return { ctx, p };
 }
 const mine = (p) => p.evaluate(() => sessionStorage.getItem("first") === "empty");
@@ -146,8 +150,7 @@ test("standing on a clear cell pad with no money, or before its level, does noth
   expect(r.builds).toBe(builds);
 
   // money, but the next cell wants level 2
-  const { ctx, p: page2 } = await ownPage(browser, baseURL);
-  await seedEveryLoad(page2, world({ coins: 50, rank: 1, bought: ["cell3"] }, { x: pad("cell4").at.x, y: pad("cell4").at.y }));
+  const { ctx, p: page2 } = await ownPage(browser, baseURL, world({ coins: 50, rank: 1, bought: ["cell3"] }, { x: pad("cell4").at.x, y: pad("cell4").at.y }));
   await page2.goto("/");
   await started(page2);
   expect(await mine(page2), "nothing saved here before the seed").toBe(true);
@@ -259,8 +262,7 @@ test("with less motion a cleared cell glows a moment, nothing flies, and it open
 test("four beds with every cell full of rubble, sixteen with all six cleared; what it costs to draw", async ({ browser, baseURL, browserName }) => {
   // each measure in its own storage: see ownPage
   const measure = async (bought) => {
-    const { ctx, p } = await ownPage(browser, baseURL);
-    await seedEveryLoad(p, world({ rank: 6, bought }, { x: 400, y: 200 }));
+    const { ctx, p } = await ownPage(browser, baseURL, world({ rank: 6, bought }, { x: 400, y: 200 }));
     await p.goto("/");
     await started(p);
     expect(await mine(p), "nothing saved here before the seed").toBe(true);
