@@ -242,6 +242,13 @@ export function stationTier(w: World, st: AnyStation) {
   return st.tiers?.findLast(t => isOpen(w, t.pad));
 }
 
+export function helperSpeed(w: World, l: LevelDef) {
+  return l.pads.findLast(p => p.unlock.helperSpeed !== undefined && isOpen(w, p.id))?.unlock.helperSpeed ?? HELPER_SPEED;
+}
+export function helperCarry(w: World, l: LevelDef) {
+  return l.pads.findLast(p => p.unlock.helperCarry !== undefined && isOpen(w, p.id))?.unlock.helperCarry ?? HELPER_CARRY;
+}
+
 /** a station hands out one thing every `every` seconds while someone stays */
 function tick(w: World, key: string, every: number, live: Set<string>) {
   live.add(key);
@@ -280,20 +287,23 @@ function walkPath(a: Agent, speed: number) {
 
 // walls and the walking grid change only when something is bought, so keep them
 const cache = new Map<string, { walls: Rect[]; nav: Nav }>();
-function grid(w: World, l: LevelDef, agents: boolean) {
-  const key = `${l.id}:${agents}:${[...w.bought].sort().join()}`;
+function grid(w: World, l: LevelDef, agents: boolean, forPlayer = false) {
+  const key = `${l.id}:${agents}:${forPlayer}:${[...w.bought].sort().join()}`;
   let got = cache.get(key);
   if (!got) {
     if (cache.size > 40) cache.clear();
     const ws = walls(l, (r) => isOpen(w, r.locked), agents);
-    got = { walls: ws, nav: nav(l, ws) };
+    // NPCs may use the road. A route driven by the player stick must stay inside its clamp.
+    const spawn = all(l, "spawn")[0];
+    const bounds = forPlayer ? { x: BODY, y: BODY, w: l.size.w - BODY * 2, h: (spawn?.roadY ?? l.size.h) - 30 - BODY } : undefined;
+    got = { walls: ws, nav: nav(l, ws, bounds) };
     cache.set(key, got);
   }
   return got;
 }
 /** the way from here to there, round the walls: agents may use residents-only doors, actors may not */
 export function route(w: World, l: LevelDef, a: Agent, to: Pt) {
-  return navRoute(grid(w, l, a.kind === "agent").nav, a, to);
+  return navRoute(grid(w, l, a.kind === "agent", a.kind === "player").nav, a, to);
 }
 function goTo(w: World, l: LevelDef, a: Agent, to: Pt) {
   const end = a.path[a.path.length - 1];
@@ -545,8 +555,9 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   fights(w, l);
 
   // followers walk the leader's trail, so they come through the same doors
+  const staffSpeed = helperSpeed(w, l);
   for (const a of w.agents.filter(isActor)) {
-    const speed = a.kind === "player" ? w.speed * boostMult(w, l) : HELPER_SPEED;
+    const speed = a.kind === "player" ? w.speed * boostMult(w, l) : staffSpeed;
     followers(w, a).forEach((b, i) => {
       const target = alongTrail(a, (i + 1) * FOLLOW_GAP);
       const k = a.kind === "player" ? catchUp(b.id, w.steps) : 1.15;
@@ -596,6 +607,7 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
   const line = followers(w, a);
   const leads = a.kind === "player" || a.kind === "escort";
   const cap = a.kind === "player" ? w.lineMax : HELPER_LINE;
+  const most = a.kind === "carrier" ? helperCarry(w, l) : w.carryMax;
   const join = (b: Agent) => {
     if (line.length >= cap) return;
     if (b.state === "home" && resting(b)) {
@@ -693,7 +705,6 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
     }
     // carriers: fill up at a source, put down at a sink
     if (a.kind === "player" || a.kind === "carrier") {
-      const most = a.kind === "player" ? w.carryMax : HELPER_CARRY;
       if (st.kind === "source" && near(a, st.at, st.r) && a.carry < most && tick(w, key + ":fill", stationTier(w, st)?.every ?? st.every, live)) a.carry++;
       if (st.kind === "sink" && isOpen(w, st.locked) && inside(a, st.zone) && a.carry > 0) {
         const room = st.seats.filter((s) => isOpen(w, s.locked)).length;
@@ -1073,6 +1084,7 @@ function residents(w: World, l: LevelDef) {
 function helpers(w: World, l: LevelDef) {
   // what each guard is already going to fetch this step, so two guards never go for the same one
   const claimed = new Set<string>();
+  const speed = helperSpeed(w, l), carry = helperCarry(w, l);
   let k = 0;
   for (const h of w.agents) {
     if (h.kind === "player" || h.kind === "agent") continue;
@@ -1084,7 +1096,7 @@ function helpers(w: World, l: LevelDef) {
       const source = all(l, "source")[0];
       const sinks = all(l, "sink").filter((s) => isOpen(w, s.locked));
       const room = sinks.find((s) => (w.stock[s.id] ?? 0) < s.seats.filter((x) => isOpen(w, x.locked)).length);
-      const filling = source && near(h, source.at, source.r) && h.carry < HELPER_CARRY;
+      const filling = source && near(h, source.at, source.r) && h.carry < carry;
       if (room && (h.carry === 0 || filling)) goal = source.at;
       else if (room && h.carry > 0) goal = room.at;
     } else if (h.kind === "cleaner") {
@@ -1108,7 +1120,7 @@ function helpers(w: World, l: LevelDef) {
       if (w.alert) goal = { x: w.alert.x, y: w.alert.y };
     } else continue;
     goTo(w, l, h, goal);
-    walkPath(h, HELPER_SPEED);
+    walkPath(h, speed);
   }
 }
 const roomOf = (st: AnyStation): Pt | null => {

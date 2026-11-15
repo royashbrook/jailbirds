@@ -3,15 +3,14 @@ import { create, step, player, route, DT, isOpen, ALERT_R } from '../src/engine/
 import { LEVELS } from '../src/content/jail.ts';
 import { walls, dist } from '../src/engine/geom.ts';
 
-const roomTier = p => /tier[23]$|^(kitchen|canteen|wash)[23]$/.test(p.id);
+const upgrade = p => /tier[23]$|^(kitchen|canteen|wash|staff|cookcarry)[23]$/.test(p.id);
 // Geometric projection; actual incident no-payment tests separately exercise the engine.
 const PAD_R = 24;
 for (let n = 0; n < 2; n++) {
   const l = LEVELS[n];
-  // Room centres now come from authored data. Only the two staff points remain proposed.
+  // Every centre comes from authored data, one per two-stage purchase chain.
   const proposed = [
-    ...l.pads.filter(p => /tier2$|^(kitchen|canteen|wash)2$/.test(p.id)).map(p => ({ id: p.id, ...p.at })),
-    { id: 'staff-speed', x: 850, y: 700 }, { id: 'staff-carry', x: 850, y: 765 },
+    ...l.pads.filter(p => /tier2$|^(kitchen|canteen|wash|staff|cookcarry)2$/.test(p.id)).map(p => ({ id: p.id, ...p.at })),
   ];
   for (const target of proposed) {
     const w = create(LEVELS, n, 37), p = player(w);
@@ -22,7 +21,7 @@ for (let n = 0; n < 2; n++) {
     const nearestWall = Math.min(...ws.map(r => Math.hypot(target.x - Math.max(r.x, Math.min(target.x, r.x+r.w)),
       target.y - Math.max(r.y, Math.min(target.y, r.y+r.h)))));
     assert.ok(nearestWall > 10, `${target.id} body hits wall`);
-    for (const old of l.pads.filter(p => !roomTier(p))) assert.ok(dist(target, old.at) > PAD_R * 2, `${target.id} shares two pad payment zones with ${old.id}`);
+    for (const old of l.pads.filter(p => !upgrade(p))) assert.ok(dist(target, old.at) > PAD_R * 2, `${target.id} shares two pad payment zones with ${old.id}`);
     for (const other of proposed) if (other !== target) assert.ok(dist(target, other) > PAD_R * 2);
     assert.ok(dist(target, l.riot.at) > PAD_R + ALERT_R, `${target.id} overlaps the riot response zone`);
     for (const st of l.stations) {
