@@ -1186,13 +1186,17 @@ function alertFrom(w: World, l: LevelDef): Alert | null {
 function looseEnds(w: World, l: LevelDef) {
   const ids = w.alert?.ids ?? [];
   for (const a of w.agents) {
-    if (a.kind !== "agent" || ids.includes(a.id)) continue;
-    if (a.state === "fight") a.state = "home";
-    if (a.state !== "riot") continue;
-    // a save is never lost over one loose end: a home that cannot be walked to is simply where it is
+    if (a.kind !== "agent" || ids.includes(a.id) || (a.state !== "fight" && a.state !== "riot")) continue;
     const h = byId(l, a.house);
-    if (h?.kind === "house" && h.seats[a.slot]) goHome(w, l, a);
-    else a.state = "home";
+    if (h?.kind === "house" && h.seats[a.slot]) {
+      goHome(w, l, a);
+      continue;
+    }
+    // a save is never lost over one loose end: with no bed it can walk to, it goes back to the desk
+    // to be given one, as a newcomer is. its time served and everything else stay as they were
+    const desk = all(l, "checkin")[0];
+    Object.assign(a, { state: "ready", house: "", slot: -1, leader: -1, station: "", seat: -1 });
+    a.path = desk ? route(w, l, a, desk.out[0]) : [];
   }
 }
 /** a whole number of coins, none less than none */

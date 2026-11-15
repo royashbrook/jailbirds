@@ -368,6 +368,36 @@ test("once the riot wait is over, a due incident with a crowd is a riot again", 
   assert.equal(w.alert?.kind, "riot");
 });
 
+test("a saved rioter or squabbler no alert names goes home when it has one, or back to the desk for a bed when it has none, and the jail runs on", () => {
+  for (const state of ["riot", "fight"]) {
+    const w = jail({ rank: 2, unrest: [0.1, 0.1] });
+    const raw = JSON.parse(JSON.stringify(w));
+    raw.alert = null;
+    const base = raw.agents.find((a) => a.kind === "agent");
+    const loose = [
+      { ...base, id: 50, state, house: "c0", slot: 0 },
+      { ...base, id: 51, state, house: "missing", slot: 0 },
+      { ...base, id: 52, state, house: "c1", slot: 7 },
+      { ...base, id: 53, state, house: "", slot: -1 },
+    ];
+    raw.agents = [raw.agents[0], ...loose.map((a) => ({ ...a, served: 30 }))];
+    const back = restore(JSON.stringify(raw), LEVELS);
+    assert.ok(back, `${state}: the save loads`);
+    const got = (id) => back.agents.find((a) => a.id === id);
+    assert.ok(["back", "home"].includes(got(50).state), `${state}: a real home is walked back to`);
+    assert.equal(got(50).house, "c0");
+    for (const id of [51, 52, 53]) {
+      assert.equal(got(id).state, "ready", `${state} ${id}: back to the desk for a bed`);
+      assert.equal(got(id).house, "");
+      assert.equal(got(id).served, 30, "time served kept");
+    }
+    // well past the coin cadence and a squabble's worth of time: nothing throws, nothing is paid
+    wait(back, Math.max(L.coinEvery * 3, 20));
+    assert.equal(reward(back), 0);
+    for (const id of [50, 51, 52, 53]) assert.ok(got(id), `${state} ${id}: still here`);
+  }
+});
+
 /** a save as the game wrote it before riots: no kind or warning on the alert, nobody hurt, no riot wait */
 function oldSave(w) {
   const raw = JSON.parse(JSON.stringify(w));
@@ -400,7 +430,7 @@ test("old saves: a squabble naming nobody who is squabbling is dropped, and its 
   empty.alert.ids = [];
   let back = restore(JSON.stringify(empty), LEVELS);
   assert.equal(back.alert, null);
-  for (const id of fighters) assert.equal(back.agents.find((a) => a.id === id).state, "home", "not left squabbling with no squabble");
+  for (const id of fighters) assert.ok(["back", "home"].includes(back.agents.find((a) => a.id === id).state), "not left squabbling with no squabble");
   const gone = oldSave(w);
   gone.alert.ids = [900, 901];
   back = restore(JSON.stringify(gone), LEVELS);
