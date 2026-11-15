@@ -28,6 +28,7 @@ const CARE_BED = "#9fdcc0", CARE_SHEET = "#fff4dc", ICE_PACK = "#8fd3f4", CARE_C
 /** a care bed about its seat: it runs `half` either way along z, the pillow centre sits `pillow` along
  * from the seat, and the sheet's top is `sheetTop` up. whoever rests in it is laid out to these */
 export const CARE_BED_SHAPE = { half: 22, pillow: -14, sheetTop: 9.7 } as const;
+export const HOME_BED_SHAPE = { offset: -2, half: 22, pillow: -14, sheetTop: 8.5 } as const;
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
@@ -178,7 +179,7 @@ export function carePieces(l: LevelDef, s: AnyStation, open: (id?: string) => bo
 }
 
 /** lambert, with a soft tile grid drawn from where each pixel sits in the world */
-/** Furnish the purchased capability, inside existing bed/prop footprints. No routes or actor poses move. */
+/** Furnish the purchased capability inside existing bed/prop footprints. No routes or sim seats move. */
 export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
   const pieces: Piece[] = [];
   const box = (x: number, z: number, sx: number, sz: number, sy: number, colour: string, bottom = 0) =>
@@ -191,7 +192,7 @@ export function roomTierPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
     const best = tier === s.tiers?.at(-1);
     if (s.kind === "house") {
       for (const seat of s.seats) {
-        const x = seat.at.x, z = seat.at.y - 2;
+        const x = seat.at.x, z = seat.at.y + HOME_BED_SHAPE.offset;
         box(x, z - 21, 23, 2, 10, pal.wood);
         box(x, z + 5, 20, 25, 0.6, best ? quilt : linen, 8.5);
         box(x, z - 6, 20, 1.2, 0.3, pal.pillow, 9.1);
@@ -414,7 +415,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     if (r.look === "cell") {
       // two jail bunks: a metal frame, a thin grey mattress and a flat pillow
       for (const dy of [30, 82]) {
-        const bx = r.rect.x + 18, bz = r.rect.y + dy - 2;
+        const bx = r.rect.x + 18, bz = r.rect.y + dy + HOME_BED_SHAPE.offset;
         box(bx, bz, 24, 44, 6, ok ? pal.metal : pal.locked);
         box(bx, bz + 1, 21, 40, 2.5, ok ? pal.bed : pal.locked, 6);
         box(bx, bz - 14, 16, 8, 2.5, ok ? pal.pillow : pal.locked, 8.5);

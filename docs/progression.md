@@ -292,6 +292,12 @@ and screens. keep silhouettes, access and occupied-seat poses readable.
 training purchases need a small visible training marker, not an invented
 room or obstruction. measure actual calls, triangles and resources after
 authoring. test camera extremes and both orientations in both engines.
+the occupied-bed pass also found that existing home sleepers faced away
+from their pillow and hung beyond the mattress. correct that display
+transform for home sleep as a separate renderer delta. care alignment
+stays intact. simulation seats, paths, headings, served/recovery values
+and world coordinates do not move. awake residents keep their ordinary
+standing/walking transform.
 
 delivery: room effects + their working art first, staff training separately
 if the review gets broad. before runtime edits, agree the minimal engine/
