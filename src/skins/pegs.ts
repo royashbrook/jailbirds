@@ -31,6 +31,9 @@ const CROSS = hex("#e9877a");
 const JEANS = hex("#4d6a9a");
 const METAL = hex("#c5ced8");
 const BADGE = hex("#ffcf33");
+// the riot guard's kit: a round see-through-blue shield and a bright whistle
+const SHIELD = hex("#8fd0f2");
+const WHISTLE = hex("#ff5a5f");
 const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
   player: { body: hex("#3f6fd8"), hat: hex("#22325a"), pants: hex("#22325a") },
   escort: { body: hex("#6b778c"), hat: hex("#2f3a4d"), pants: hex("#2f3a4d") },
@@ -38,6 +41,8 @@ const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
   clerk: { body: hex("#e0a040"), hat: hex("#2f8f6a"), pants: hex("#5a4a3a") },
   cleaner: { body: hex("#2fb39a"), hat: hex("#1f6f60"), pants: hex("#1f6f60") },
   collector: { body: hex("#4caf50"), hat: hex("#1e5e2a"), pants: hex("#5b4636") },
+  // the riot guard: purple, with a white helmet
+  calmer: { body: hex("#7a5cc7"), hat: hex("#f4f6fa"), pants: hex("#3d2f6b") },
 };
 /** how long an arm is, shoulder to wrist, before scaling */
 export const ARM = 7;
@@ -76,6 +81,9 @@ function pose(p: Pose, put: Put) {
   // a badge on a guard's chest
   if (p.kind === "player" || p.kind === "escort")
     put("dot", jitter + 2 * s, top - 6 * s, BODY_R * s + Math.sin(lean) * BODY_H * s * 0.6, lean, 0, 0, 1.3 * s, 1.3 * s, 0.6 * s, BADGE);
+  // a riot guard's whistle, hanging on its chest
+  if (p.kind === "calmer")
+    put("dot", jitter - 1.8 * s, top - 5 * s, BODY_R * s + Math.sin(lean) * BODY_H * s * 0.6 + 0.4 * s, lean, 0, 0, 1.5 * s, 0.9 * s, 1.1 * s, WHISTLE);
   // the head, a little forward with the lean. no face: she likes them blank
   const hy = top + HEAD_R * s * 0.8, hz = Math.sin(lean) * BODY_H * s * 0.9;
   put("head", jitter, hy, hz, 0, 0, 0, s, s, s, head);
@@ -98,6 +106,9 @@ function pose(p: Pose, put: Put) {
     const hand = (along: number) => reach.set(0, -along * as, 0).applyEuler(turn.set(pitch, yaw, roll));
     hand(ARM + 0.4);
     put("dot", ax + reach.x, shoulder + reach.y, sz + reach.z, 0, 0, 0, 2.1 * s, 2.1 * s, 2.1 * s, skin);
+    // a riot guard holds a small round shield in its left hand, flat side out
+    if (p.kind === "calmer" && side < 0)
+      put("dot", ax + reach.x - 1.6 * s, shoulder + reach.y + 1 * s, sz + reach.z + 1.6 * s, 0, 0, 0, 3.6 * s, 4.2 * s, 0.9 * s, SHIELD);
     if (p.kind === "agent" && !p.uniform) {
       hand(ARM - 1.6);
       put("dot", ax + reach.x, shoulder + reach.y, sz + reach.z, pitch, yaw, roll, 2.3 * s, 1.1 * s, 2.3 * s, METAL);
@@ -121,6 +132,10 @@ function pose(p: Pose, put: Put) {
     put("hat", jitter, ht - 1.4 * s, hz - 2.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.4 * s, dress.hat);
   } else if (p.kind === "cleaner") {
     put("hat", jitter, ht - 1.4 * s, hz, 0, 0, 0, 4.8 * s, 1.6 * s, 4.8 * s, dress.hat);
+  } else if (p.kind === "calmer") {
+    // a round-topped helmet: a deep crown down over the top of the head, and a rim all the way round
+    put("hat", jitter, ht - 0.3 * s, hz, 0, 0, 0, 5.2 * s, 3.4 * s, 5.2 * s, dress.hat);
+    put("hat", jitter, ht - 1.9 * s, hz, 0, 0, 0, 5.8 * s, 0.7 * s, 5.8 * s, dress.hat);
   } else if (p.uniform) {
     put("hat", jitter, ht - 0.6 * s, hz, 0, 0, 0, 4.7 * s, 2.2 * s, 4.7 * s, BEANIE);
   }
