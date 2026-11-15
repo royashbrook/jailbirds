@@ -15,10 +15,11 @@ import { cleared } from "../src/view/view.ts";
 const CELLS = [["cell3", "c2"], ["cell4", "c3"], ["cell5", "c4"], ["cell6", "c5"], ["cell7", "c6"], ["cell8", "c7"]];
 const ids = (rooms) => rooms.map((r) => r.id);
 
-test("the six cells still shut are the rubble, in both jails, and nothing else ever is", () => {
+test("the original six shut cells and the locked care annex are the only rubble, in both jails", () => {
   for (const l of LEVELS) {
     const w = create(LEVELS, LEVELS.indexOf(l), 5);
-    assert.deepEqual(ids(rubbleRooms(l, w)), CELLS.map(([, room]) => room), l.id);
+    assert.deepEqual(ids(rubbleRooms(l, w)), [...CELLS.map(([, room]) => room), "hospital"], l.id);
+    assert.deepEqual(ids(rubbleRooms(l, w).filter((r) => r.look === "cell")), CELLS.map(([, room]) => room));
     // each one is the room its pad opens, at the price and rank it always had
     for (const [pad, room] of CELLS) {
       const p = l.pads.find((x) => x.id === pad);
@@ -31,7 +32,7 @@ test("the six cells still shut are the rubble, in both jails, and nothing else e
     // bought one by one, each leaves the rubble as it is bought, and only that one
     for (let i = 0; i < CELLS.length; i++) {
       w.bought.push(CELLS[i][0]);
-      assert.deepEqual(ids(rubbleRooms(l, w)), CELLS.slice(i + 1).map(([, room]) => room));
+      assert.deepEqual(ids(rubbleRooms(l, w)), [...CELLS.slice(i + 1).map(([, room]) => room), "hospital"]);
     }
     // every other pad bought too changes nothing more
     w.bought.push(...l.pads.map((p) => p.id).filter((id) => !w.bought.includes(id)));
@@ -90,8 +91,8 @@ test("the rubble is a bounded heap of chunky stones inside the cell's walls and 
       assert.ok(Math.min(s.sx, s.sy, s.sz) >= 3, "too thin");
       assert.ok(s.tone >= 0 && Number.isInteger(s.tone));
     }
-    // the corridor in front, where the pad and the route to the beds are, stays clear: the cell ends at y 146
-    assert.ok(Math.max(...stones.map((s) => s.z + Math.max(s.sx, s.sy, s.sz))) < 146);
+    // the original cell corridor still stays clear; the annex has its own checked rectangle
+    if (room.look === "cell") assert.ok(Math.max(...stones.map((s) => s.z + Math.max(s.sx, s.sy, s.sz))) < 146);
     // and the heap has a top: the middle stands higher than the edges
     const mid = stones.filter((s) => s.y > 6).length;
     assert.ok(mid >= 4, `${room.id}: ${mid} stones up on the heap`);
@@ -126,6 +127,6 @@ test("a cell bought stays open after the jail is saved and opened again, and bed
   // and again, with all six: no cell goes back to rubble, sixteen beds
   again.world.bought.push("cell4", "cell5", "cell6", "cell7", "cell8");
   const third = readMap(JSON.stringify(record(again)), LEVELS);
-  assert.deepEqual(rubbleRooms(l, third.world), []);
+  assert.deepEqual(ids(rubbleRooms(l, third.world)), ["hospital"]);
   assert.equal(capacity(third.world, l), 16);
 });

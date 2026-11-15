@@ -31,6 +31,7 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
       id: "release", look: "release", rect: { x: 500, y: 680, w: 200, h: 120 },
       doors: [{ side: "w", at: 30, width: 60 }, { side: "s", at: 70, width: 60 }], label: "release",
     },
+    { id: "hospital", look: "care", rect: { x: 760, y: 310, w: 180, h: 210 }, doors: [{ side: "w", at: 70, width: 60 }], locked: "hospital", label: "care" },
   ];
   const table = (i: number): AnyStation => {
     const prop = { x: 60, y: 350 + i * 100, w: 150, h: 34 };
@@ -73,6 +74,16 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     },
     // the commissary safe outside intake: the collector puts the desks' coins in, the player takes them out
     { id: "safe", kind: "safe", at: { x: 250, y: 785 }, r: 26, pileAt: { x: 220, y: 785 } },
+    {
+      id: "hospital", kind: "facility", look: "care", need: "care", use: 8, mess: "puddle", messChance: 0,
+      zone: { x: 770, y: 375, w: 160, h: 70 },
+      seats: [
+        { at: { x: 805, y: 355 }, locked: "hospital", look: "bed" },
+        { at: { x: 895, y: 355 }, locked: "hospital", look: "bed" },
+        { at: { x: 805, y: 470 }, locked: "carebeds", look: "bed" },
+        { at: { x: 895, y: 470 }, locked: "carebeds", look: "bed" },
+      ],
+    },
   ];
   // a cell still to open is full of rubble: paying its pad clears it
   const cellPad = (i: number, c: number, rank: number): PadDef => ({
@@ -98,11 +109,13 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "clerk", cost: cost(70), at: { x: 420, y: 690 }, rank: 4, unlock: { helper: "clerk" }, label: "hire a clerk" },
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
     { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
+    { id: "hospital", cost: cost(80), at: { x: 850, y: 560 }, rank: 3, after: "cell4", unlock: { room: "hospital" }, label: "care room" },
+    { id: "carebeds", cost: cost(100), at: { x: 850, y: 560 }, rank: 5, after: "hospital", unlock: {}, label: "more care beds" },
   ];
   // paid once, it opens the jail it names on the map. she stays where she is until she goes
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: next }, label: "next jail" });
   return {
-    id: `jail${n}`, name, size: { w: 720, h: 900 }, rooms, stations, pads,
+    id: `jail${n}`, name, size: { w: 960, h: 900 }, rooms, stations, pads,
     needs: [
       { id: "food", decay: 60, start: 0.5, escort: true },
       { id: "wash", decay: 90, start: 0.9, escort: true },
