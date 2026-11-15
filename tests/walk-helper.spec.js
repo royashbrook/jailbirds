@@ -5,6 +5,31 @@ import { state, waitSim, walkTo } from './helpers.js';
 
 test.use({ viewport: { width: 390, height: 664 } });
 
+test('native walk endpoints stay inside the stick ring so its base never follows them', async ({ page }) => {
+  const w = create(LEVELS, 0, 17);
+  w.bought = LEVELS[0].pads.filter(p => !p.unlock.level).map(p => p.id);
+  w.fightIn = w.boost.t = 1e9;
+  w.ride = { state: 'away', x: -100, t: 1e9 };
+  Object.assign(w.agents[0], { x: 730, y: 650 });
+  await page.addInitScript(raw => {
+    localStorage.setItem('jailbirds:save', raw);
+    window.walkRadii = [];
+    let origin;
+    addEventListener('pointerdown', e => { origin = { x: e.clientX, y: e.clientY }; }, true);
+    addEventListener('pointermove', e => {
+      if (origin) window.walkRadii.push(Math.hypot(e.clientX - origin.x, e.clientY - origin.y));
+    }, true);
+    addEventListener('pointerup', () => { origin = null; }, true);
+  }, JSON.stringify(w));
+  await page.goto('/');
+  // At the default 30-degree camera, this long clear path requests a 15-degree
+  // screen gesture. Rounding a 44px command gives (43,11), outside the ring.
+  await walkTo(page, { x: 900, y: 650 - 170 * Math.tan(Math.PI / 12) });
+  const radii = await page.evaluate(() => window.walkRadii);
+  expect(Math.max(...radii), 'a full-strength native gesture was exercised').toBeGreaterThan(40);
+  expect(Math.max(...radii), 'no pointer move makes the floating base follow it').toBeLessThanOrEqual(44);
+});
+
 test('a delayed captured state cannot certify arrival while the stick still drives past the desk', async ({ page }) => {
   const w = create(LEVELS, 0, 37);
   // Captured before the final steering command in deploy43700210513, not an invented far-away start.

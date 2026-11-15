@@ -76,7 +76,8 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
       const push = Math.min(1, d / (s.speed * seconds));
       // WebKit quantizes native pointer coordinates. Integer endpoints and a 3px
       // radius keep even the rounded vector above the engine's 2.2px deadzone.
-      const r = Math.max(3, push * 44);
+      // Leave rounding room below 44px too: crossing the ring drags its base.
+      const r = Math.min(43, Math.max(3, push * 44));
       // the target is in world space; the thumb gesture is in screen space
       await page.mouse.move(Math.round(cx + ((dx * c - dy * sn) / d) * r), Math.round(cy + ((dx * sn + dy * c) / d) * r));
       await waitFrames(page, 1);
