@@ -103,6 +103,8 @@ a {
   height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  /* one column that may shrink below its content: a long goal label ellipsizes instead of pushing the row past the screen */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom))
     max(12px, env(safe-area-inset-left));
@@ -1059,4 +1061,14 @@ a {
     width: 28px;
     height: 28px;
   }
+}
+/* the goal's money: the same bill as the money in the stats, small enough for the row */
+.goal small {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.goal small .money-mark {
+  width: 13px;
+  height: 13px;
 }

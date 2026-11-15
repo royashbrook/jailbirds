@@ -41,7 +41,7 @@ async function freshRow(page, info) {
 test("a fresh game shows the cheapest open pad, nothing paid", async ({ page }) => {
   await open(page, null);
   const c = pad("cell3");
-  await expect.poll(() => text(page)).toBe(`${c.label} $0/${c.cost}`);
+  await expect.poll(() => text(page)).toBe(`${c.label} 0/${c.cost}`);
   expect(await shown(page)).toBe("visible");
   await expect(page.locator("#tip")).not.toBeEmpty();
   await expect(page.locator("#tip")).toBeVisible();
@@ -55,7 +55,7 @@ test("paying into the pad moves the row", async ({ page }) => {
   Object.assign(w.agents[0], { x: c.at.x, y: c.at.y });
   await open(page, w);
   await untilSim(page, (s) => (s.paid.cell3 ?? 0) === 3, 4, "three paid into the pad");
-  await expect.poll(() => text(page)).toBe(`${c.label} $3/${c.cost}`);
+  await expect.poll(() => text(page)).toBe(`${c.label} 3/${c.cost}`);
   const fill = await page.locator("#goal .fill").evaluate((el) => el.style.width);
   expect(parseFloat(fill)).toBeCloseTo((100 * 3) / c.cost, 1);
 });
@@ -87,7 +87,7 @@ test("an alert hides the row but keeps its place", async ({ page }, info) => {
   expect(b.y, "row top during an alert").toBe(fresh.y);
   await expect.poll(() => shown(page)).toBe("hidden");
   // the goal is still there under it, only not shown
-  expect(await text(page)).toBe(`${pad("cell3").label} $0/${pad("cell3").cost}`);
+  expect(await text(page)).toBe(`${pad("cell3").label} 0/${pad("cell3").cost}`);
   await expect(page.locator("#tip")).not.toBeEmpty();
   await expect(page.locator("#tip")).toBeVisible();
 });
@@ -125,3 +125,29 @@ for (const size of [{ width: 320, height: 568 }, { width: 390, height: 664 }, { 
     const without = await tall();
     console.log(`[goal] ${browserName} ${size.width}x${size.height}: canvas ${withRow}px with the row, ${without}px without, cost ${without - withRow}px; row ${g.height}px`);
   });
+
+// the narrowest phone with big text and wide side insets: the longest real goal label still ellipsizes,
+// and the row and its money stay inside the content box, never past the screen (the page would clip it,
+// so a scroll check alone cannot see it)
+test("320 wide, large text, wide side insets: the row and its money stay inside the content box", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  const w = create(LEVELS, 0, 5);
+  w.rank = 5;
+  // everything else open at this rank bought, so the riot guard is the goal, paid all but one
+  w.bought = L.pads.filter((p) => (p.rank ?? 0) <= 5 && p.id !== "riotguard" && p.id !== "next").map((p) => p.id);
+  w.paid = { riotguard: pad("riotguard").cost - 1 };
+  w.ride = { state: "away", x: -100, t: 1e9 };
+  w.fightIn = 1e9;
+  await page.addInitScript(() => {
+    const s = document.createElement("style");
+    s.textContent = ".play{padding-left:44px!important;padding-right:44px!important}.goal{font-size:20px!important}.goal small{font-size:18px!important}";
+    document.addEventListener("DOMContentLoaded", () => document.head.appendChild(s));
+  });
+  await open(page, w);
+  expect(await text(page)).toBe(`${pad("riotguard").label} ${pad("riotguard").cost - 1}/${pad("riotguard").cost}`);
+  const right = 320 - 44;
+  const goalBox = await box(page, "#goal");
+  const money = await box(page, "#goal small");
+  expect(goalBox.x + goalBox.width, "the row inside the content box").toBeLessThanOrEqual(right + 0.5);
+  expect(money.x + money.width, "its money inside the content box").toBeLessThanOrEqual(right + 0.5);
+});

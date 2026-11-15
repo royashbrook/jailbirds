@@ -576,7 +576,7 @@
       {#if aim?.kind === "pad"}
         <span class="what">{aim.label}</span>
         <span class="bar"><span class="fill" style:width={`${(100 * aim.paid) / aim.cost}%`}></span></span>
-        <small>${aim.paid}/{aim.cost}</small>
+        <small><svg class="money-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><ellipse cx="12" cy="12" rx="3.5" ry="3" /></svg>{aim.paid}/{aim.cost}</small>
       {:else if aim}
         <span class="what">level {aim.rank}: {aim.label}</span>
       {/if}
