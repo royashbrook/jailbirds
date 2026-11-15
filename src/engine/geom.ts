@@ -67,13 +67,13 @@ export function collide(p: Pt, rad: number, ws: Rect[]) {
 const TILE = 8;
 const CLEAR = 11;
 export interface Nav { cols: number; rows: number; blocked: Uint8Array }
-export function nav(level: LevelDef, ws: Rect[]): Nav {
+export function nav(level: LevelDef, ws: Rect[], bounds?: Rect): Nav {
   const cols = Math.ceil(level.size.w / TILE), rows = Math.ceil(level.size.h / TILE);
   const blocked = new Uint8Array(cols * rows);
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
       const p = { x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 };
-      if (ws.some((w) => inside(p, w, CLEAR))) blocked[r * cols + c] = 1;
+      if ((bounds && !inside(p, bounds)) || ws.some((w) => inside(p, w, CLEAR))) blocked[r * cols + c] = 1;
     }
   return { cols, rows, blocked };
 }
