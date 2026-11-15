@@ -8,6 +8,24 @@ export const byId = (s, id) => s.agents.find((a) => a.id === id);
 export const queued = (s) => inmates(s).filter((a) => a.state === "queue");
 export const line = (s) => s.agents.filter((a) => a.leader === s.agents[0].id && a.state === "follow");
 
+/** a squabble at `at` the way an old save holds one: two residents of the first cell squabbling, and
+ * the alert naming them. a saved squabble that names nobody squabbling is dropped as it loads, so a
+ * test that wants one on screen seeds both. gives the save's new nextId, alert and everyone but the
+ * player */
+export function squabbleAt(world, at) {
+  const id = world.nextId;
+  const fighter = (slot) => ({
+    id: id + slot, kind: "agent", x: 67, y: 184, face: 1, moving: false, walk: 0, look: slot, tags: ["uniform"], state: "fight",
+    leader: -1, house: "c0", slot, station: "", seat: -1, needs: { food: 1, wash: 1, toilet: 1 }, unrest: 0, served: 0,
+    rest: 0, t: 0, carry: 0, cash: 0, path: [], trail: [],
+  });
+  return {
+    nextId: id + 2,
+    alert: { x: at.x, y: at.y, ids: [id, id + 1], held: 0 },
+    others: [...world.agents.slice(1).filter((a) => a.house !== "c0"), fighter(0), fighter(1)],
+  };
+}
+
 /** poll until the game says yes; fail once `seconds` of game time pass without it */
 export async function untilSim(page, ok, seconds, what) {
   let start = null;
