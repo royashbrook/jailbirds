@@ -81,6 +81,45 @@ test("three at home with fewer than three upset is no incident at all, and the c
   assert.equal(w.fightIn, 7, "below the squabble's smallest jail, nothing counts down");
 });
 
+test("time the incident clock ran for a crowd of three stays run: no rewind when they calm, a fourth carries on from there", () => {
+  const f = L.fights;
+  const w = jail({ unrest: [0.9, 0.9, 0.9] });
+  w.fightIn = 20;
+  steps(w, 120);
+  const burnt = 20 - 120 * DT * (f.every / f.crossEvery);
+  assert.ok(Math.abs(w.fightIn - burnt) < 1e-9, `upset burn, ${w.fightIn}`);
+  assert.equal(w.alert, null);
+  for (const a of residents(w)) a.unrest = 0.1;
+  steps(w, 60);
+  assert.ok(Math.abs(w.fightIn - burnt) < 1e-9, "three calm: held where it was, not rewound");
+  const four = jail({ unrest: [0.1, 0.1, 0.1, 0.1] }).agents.at(-1);
+  w.agents.push({ ...four, id: w.nextId++ });
+  steps(w, 1);
+  assert.ok(Math.abs(w.fightIn - (burnt - DT)) < 1e-9, "a calm fourth: on at the ordinary rate from there");
+  assert.equal(w.alert, null);
+});
+
+test("a clock left due by a crowd that calmed gives one squabble when a fourth comes, paid once, then the ordinary wait", () => {
+  const f = L.fights;
+  const w = jail({ unrest: [0.9, 0.9, 0.1] });
+  w.fightIn = -0.5;
+  steps(w, 30);
+  assert.equal(w.alert, null, "three at home, two upset: nothing");
+  const four = jail({ unrest: [0.1, 0.1, 0.1, 0.1] }).agents.at(-1);
+  w.agents.push({ ...four, id: w.nextId++ });
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "squabble");
+  const settled = w.settled, coins = w.coins;
+  Object.assign(player(w), { x: w.alert.x, y: w.alert.y + 20 });
+  until(w, () => w.alert === null, f.settle + 1, "the squabble settled");
+  assert.equal(w.settled, settled + 1);
+  assert.ok(w.fightIn >= f.every * 0.7 - 1, `the ordinary wait after, not ${w.fightIn}`);
+  Object.assign(player(w), { x: 330, y: 540 });
+  steps(w, 120);
+  assert.equal(w.alert, null, "no second incident off the same due clock");
+  assert.equal(reward(w) + w.coins - coins, f.reward, "one reward");
+});
+
 test("rank 3 with three or more upset: a riot warning, at most four, lowest ids first", () => {
   const w = jail();
   steps(w, 1);
