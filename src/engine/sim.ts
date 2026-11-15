@@ -41,7 +41,8 @@ const PILE_R = 30;
 /** the least a desk's pile must hold before a collector walks over for it */
 export const COLLECT_MIN = 6;
 const BOOST_R = 22;
-const ALERT_R = 40;
+/** how near to an incident counts as being there to calm it */
+export const ALERT_R = 40;
 const TRAIL_STEP = 3;
 /** seconds home before a resident asks to be led anywhere */
 export const SETTLE = 2;
@@ -470,7 +471,7 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
     if (!b || b.state === "follow") w.grab = null;
   }
 
-  // only the player picks up coins, piles and boosts, pays pads and settles squabbles.
+  // only the player picks up coins, piles and boosts and pays pads (a calmer helps settle incidents, below).
   // each pickup is written down here, where it happens, for the screen to read
   const before = w.floor.length;
   w.floor = w.floor.filter((c) => !near(c, p, COIN_R));
@@ -845,13 +846,18 @@ function settle(w: World, l: LevelDef, al: Alert) {
   w.fightIn = f.every * (0.7 + 0.6 * rand(w));
 }
 
+/** someone is there to calm it: the player, or a calmer, within reach. one or both, it is the same one
+ * step of the hold, never two */
+const minded = (w: World, al: Alert) =>
+  near(player(w), al, ALERT_R) || w.agents.some((a) => a.kind === "calmer" && near(a, al, ALERT_R));
+
 function fights(w: World, l: LevelDef) {
   const f = l.fights;
   if (w.riotCalm > 0) w.riotCalm = Math.max(0, w.riotCalm - DT);
   if (w.alert?.kind === "riot") return riot(w, l, w.alert);
   if (w.alert) {
     const al = w.alert;
-    if (near(player(w), al, ALERT_R)) al.held += DT;
+    if (minded(w, al)) al.held += DT;
     if (al.held >= f.settle) {
       for (const id of al.ids) {
         const b = w.agents.find((a) => a.id === id);
@@ -913,7 +919,7 @@ function riotCrowd(l: LevelDef, home: Agent[]): Agent[] {
   return [];
 }
 /** a riot: they gather while the warning runs, and only those still there and still upset when it ends
- * make it a riot. then the player standing within reach for the hold calms it. nobody is ever lost */
+ * make it a riot. then the player or a calmer standing within reach for the hold calms it. nobody is ever lost */
 function riot(w: World, l: LevelDef, al: Alert) {
   const r = l.riot;
   const crowd = al.ids.map((id) => w.agents.find((a) => a.id === id)).filter((a): a is Agent => a?.state === "riot");
@@ -927,7 +933,7 @@ function riot(w: World, l: LevelDef, al: Alert) {
     al.ids = keep.map((a) => a.id);
     return;
   }
-  al.held = near(player(w), al, ALERT_R) ? al.held + DT : 0;
+  al.held = minded(w, al) ? al.held + DT : 0;
   if (al.held >= r.hold - 1e-9) calmDown(w, l, crowd, true);
 }
 /** a riot over: everyone back home on their way, nobody's home or time touched. calmed, it pays, the
@@ -1091,6 +1097,9 @@ function helpers(w: World, l: LevelDef) {
       const safe = all(l, "safe")[0];
       if (h.cash > 0) goal = safe?.at ?? goal;
       else goal = collectFrom(w, l)?.pileAt ?? goal;
+    } else if (h.kind === "calmer") {
+      // to the incident while there is one, warning or not; with none, back to stand with the others
+      if (w.alert) goal = { x: w.alert.x, y: w.alert.y };
     } else continue;
     goTo(w, l, h, goal);
     walkPath(h, HELPER_SPEED);
@@ -1138,9 +1147,11 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
 
 /** what to do next, as a key the content turns into words */
 export type Hint =
-  | { key: "alert" | "riot" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
+  | { key: "alert" | "riot" | "guarded" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
   | { key: "errand" | "fetch" | "drop"; need: string };
 export function hint(w: World, l: LevelDef): Hint {
+  // a riot guard that is here is on its way to it, or calming it: say so, warning or not
+  if (w.alert && w.agents.some((a) => a.kind === "calmer")) return { key: "guarded" };
   if (w.alert) return { key: w.alert.kind === "riot" ? "riot" : "alert" };
   const me = player(w);
   const line = followers(w, me);

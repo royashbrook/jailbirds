@@ -102,7 +102,9 @@ export type Job = number | Claim;
  * jobs done so far. she never takes on a mess, or dirt, made after she came */
 export interface Fairy { todo: Job[]; visits: number; x: number; y: number; target: Job | null; t: number }
 
-export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk" | "collector";
+/** calmer: walks to the incident and stands there, so the hold runs without the player. it leads nobody,
+ * carries nothing and takes no coins */
+export type HelperKind ="escort" | "carrier" | "cleaner" | "clerk" | "collector" | "calmer";
 export interface Unlock {
   room?: string;
   carry?: number;
@@ -236,7 +238,7 @@ export interface World {
   /** counters the screen watches for popups */
   released: number;
   settled: number;
-  /** the one incident: a squabble or a riot, where, who, how long the player has stood there, and for a
+  /** the one incident: a squabble or a riot, where, who, how long the player or a calmer has stood there, and for a
    * riot the seconds of warning left while they gather (0 once it is on) */
   alert: Alert | null;
   fightIn: number;

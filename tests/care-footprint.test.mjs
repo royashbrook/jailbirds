@@ -10,7 +10,7 @@ const BEFORE = ["25cb1f26aeb0a37fd61d471bb2bd2193dac1abe363b28633888f0ff01aacf25
 
 test("the annex appends to both jails without changing any pre-care content", () => {
   for (const [i, l] of LEVELS.entries()) {
-    const old = { ...l, size: { ...l.size, w: 720 }, rooms: l.rooms.filter(r => r.id !== "hospital"), stations: l.stations.filter(s => s.id !== "hospital"), pads: l.pads.filter(p => !["hospital", "carebeds"].includes(p.id)) };
+    const old = { ...l, size: { ...l.size, w: 720 }, rooms: l.rooms.filter(r => r.id !== "hospital"), stations: l.stations.filter(s => s.id !== "hospital"), pads: l.pads.filter(p => !["hospital", "carebeds", "riotguard"].includes(p.id)) };
     assert.equal(createHash("sha256").update(JSON.stringify(old)).digest("hex"), BEFORE[i], l.id);
     assert.deepEqual(l.size, { w: 960, h: 900 });
     const room = l.rooms.find(r => r.id === "hospital"), care = l.stations.find(s => s.id === "hospital");

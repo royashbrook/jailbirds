@@ -111,6 +111,8 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
     { id: "hospital", cost: cost(80), at: { x: 850, y: 560 }, rank: 3, after: "cell4", unlock: { room: "hospital" }, label: "care room" },
     { id: "carebeds", cost: cost(100), at: { x: 850, y: 560 }, rank: 5, after: "hospital", unlock: {}, label: "more care beds" },
+    // one riot guard: walks to a squabble or a riot and calms it, so the player need not
+    { id: "riotguard", cost: cost(150), at: { x: 850, y: 625 }, rank: 5, after: "hospital", unlock: { helper: "calmer" }, label: "hire a riot guard" },
   ];
   // paid once, it opens the jail it names on the map. she stays where she is until she goes
   if (next) pads.push({ id: "next", cost: cost(200), at: { x: 320, y: 785 }, rank: 6, unlock: { level: next }, label: "next jail" });
@@ -167,6 +169,7 @@ export function hintText(h: Hint, noun: string): string {
   switch (h.key) {
     case "alert": return "uh oh, a squabble! run over and calm it down";
     case "riot": return "a riot is starting! run to the cells and calm everyone down";
+    case "guarded": return "your riot guard is on the way to calm it down";
     case "checkin": return "stand behind the intake desk to check them in";
     case "nobed": return "no free beds! unlock another cell";
     case "pickup": return `stand by the checked-in ${noun} to lead them`;
