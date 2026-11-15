@@ -65,6 +65,22 @@ test("with fewer than three upset it is a squabble, even at rank 3", () => {
   assert.equal(w.alert.kind ?? "squabble", "squabble");
 });
 
+test("three at home, all upset, is a riot: the squabble's smallest jail does not apply", () => {
+  assert.ok(L.fights.minPop > R.min, "the case only means something while squabbles need more");
+  const w = jail({ unrest: [0.9, 0.9, 0.9] });
+  steps(w, 1);
+  assert.equal(w.alert?.kind, "riot");
+  assert.equal(w.alert.ids.length, 3);
+});
+
+test("three at home with fewer than three upset is no incident at all, and the clock does not run", () => {
+  const w = jail({ unrest: [0.9, 0.9, 0.1] });
+  w.fightIn = 7;
+  steps(w, 60);
+  assert.equal(w.alert, null);
+  assert.equal(w.fightIn, 7, "below the squabble's smallest jail, nothing counts down");
+});
+
 test("rank 3 with three or more upset: a riot warning, at most four, lowest ids first", () => {
   const w = jail();
   steps(w, 1);

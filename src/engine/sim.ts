@@ -818,7 +818,9 @@ function fights(w: World, l: LevelDef) {
     return;
   }
   const home = w.agents.filter((a) => atEase(a) && !isDone(l, a));
-  if (home.length < f.minPop) return;
+  // a riot has its own smallest crowd; squabbles keep theirs
+  const crowd = w.rank >= l.riot.rank && w.riotCalm <= 0 ? riotCrowd(l, home) : [];
+  if (home.length < f.minPop && !crowd.length) return;
   // a cross or upset resident makes a squabble come sooner
   const sooner = home.some((a) => {
     const m = mood(l, a);
@@ -826,7 +828,6 @@ function fights(w: World, l: LevelDef) {
   });
   w.fightIn -= DT * (sooner ? f.every / f.crossEvery : 1);
   if (w.fightIn > 0) return;
-  const crowd = w.rank >= l.riot.rank && w.riotCalm <= 0 ? riotCrowd(l, home) : [];
   if (crowd.length) {
     const r = l.riot;
     crowd.forEach((a, i) => {
