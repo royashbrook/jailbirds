@@ -152,7 +152,8 @@ a {
 .rank b {
   font-variant-numeric: tabular-nums;
 }
-.rank .bar {
+.rank .bar,
+.goal .bar {
   width: 44px;
   height: 10px;
   border-radius: 5px;
@@ -160,16 +161,45 @@ a {
   border: 1px solid var(--line);
   overflow: hidden;
 }
-.rank .fill {
+.rank .fill,
+.goal .fill {
   display: block;
   height: 100%;
   background: var(--coin);
   transition: width 0.4s ease-out;
 }
-.rank small {
+.rank small,
+.goal small {
   font-size: 12px;
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
+}
+/* the next goal: one short row under the stats. always the same height, hidden rather
+   than removed, so the jail under it never jumps */
+.goal {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.goal.hide {
+  visibility: hidden;
+}
+.goal .what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goal .bar {
+  flex: none;
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
 }
 .zoom {
   position: absolute;

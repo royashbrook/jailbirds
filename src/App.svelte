@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { capacity, DT, followers, freeBeds, hint, player, rankNeed, step } from "./engine/sim.ts";
+  import { capacity, DT, followers, freeBeds, goal, hint, player, rankNeed, step, type Goal } from "./engine/sim.ts";
   import { cues, gains, snap } from "./engine/cues.ts";
   import type { Stick, World } from "./engine/types.ts";
   import { LEVELS, MAP, PICKED, WORDS, hintText } from "./content/jail.ts";
@@ -147,6 +147,9 @@
   }
   let place = $state(level().name);
   let tip = $state("");
+  // the next thing to save up for, and whether an alert has it hidden for now
+  let aim = $state<Goal | null>(null);
+  let alerted = $state(false);
   let saved = $state(opened.saved);
   // this tab has stopped saving because another has the map now: it stays told until play here
   let elsewhere = $state(false);
@@ -241,6 +244,8 @@
     }
     place = l.name;
     tip = hintText(hint(world, l), skin.noun);
+    aim = goal(world, l);
+    alerted = world.alert !== null;
   }
   sync();
   /** save now, in this call: for pagehide and the like, where a lock could not be waited for. the
@@ -565,6 +570,16 @@
         <small>{stars}/{need}</small>
       </div>
 
+    </div>
+    <!-- the next goal: hidden, never removed, so the jail below keeps its size in every state -->
+    <div class="goal" id="goal" class:hide={!aim || alerted} aria-hidden={!aim || alerted}>
+      {#if aim?.kind === "pad"}
+        <span class="what">{aim.label}</span>
+        <span class="bar"><span class="fill" style:width={`${(100 * aim.paid) / aim.cost}%`}></span></span>
+        <small>${aim.paid}/{aim.cost}</small>
+      {:else if aim}
+        <span class="what">level {aim.rank}: {aim.label}</span>
+      {/if}
     </div>
   </header>
   <div
