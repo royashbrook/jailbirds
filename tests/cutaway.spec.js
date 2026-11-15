@@ -3,6 +3,8 @@ import { create } from '../src/engine/sim.ts';
 import { LEVELS } from '../src/content/jail.ts';
 import { waitFrames } from './helpers.js';
 import { Matrix4, Vector3 } from 'three';
+import { upperWallPieces } from '../src/view/scene.ts';
+import { pegs } from '../src/skins/pegs.ts';
 
 function instrumentUpper(raw) {
   localStorage.setItem('jailbirds:save', raw);
@@ -59,8 +61,12 @@ for (const tilt of [35, 15]) test(`at tilt ${tilt}, actual wall pixels cut away 
       projection: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'projectionMatrix'))) };
   });
   const view = new Matrix4().fromArray(m.view), projection = new Matrix4().fromArray(m.projection);
-  const samples = [20, 270].map(z => {
-    const p = new Vector3(350, 35, z).applyMatrix4(view).applyMatrix4(projection);
+  // Prove each sample hits real upper geometry, not an open doorway that would pass without a cutaway.
+  const pieces = upperWallPieces(LEVELS[0], w, pegs.palette(false));
+  const samples = [{ x: 350, y: 35, z: 20 }, { x: 305, y: 35, z: 270 }].map(at => {
+    expect(pieces.some(p => Math.abs(at.x - p.x) < p.sx / 2 && Math.abs(at.y - p.y) < p.sy / 2
+      && Math.abs(at.z - p.z) < p.sz / 2), `real wall at ${JSON.stringify(at)}`).toBe(true);
+    const p = new Vector3(at.x, at.y, at.z).applyMatrix4(view).applyMatrix4(projection);
     const x = Math.floor((p.x * 0.5 + 0.5) * m.w), y = Math.floor((p.y * 0.5 + 0.5) * m.h);
     expect(x).toBeGreaterThanOrEqual(1);
     expect(x).toBeLessThan(m.w - 1);
