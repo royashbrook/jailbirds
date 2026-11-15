@@ -3,7 +3,7 @@
 // when one of those changes. everything of one shape shares one instanced mesh,
 // so the whole jail is a handful of draw calls.
 import {
-  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DodecahedronGeometry, DoubleSide, Euler, Group, InstancedMesh, Matrix4,
+  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DodecahedronGeometry, DoubleSide, Euler, Group, InstancedBufferAttribute, InstancedMesh, Matrix4,
   Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, type Material,
   type BufferGeometry,
 } from "three";
@@ -14,6 +14,7 @@ import type { Palette } from "../skins/types.ts";
 
 export const WALL_H = 15;
 export const WALL_CAP = 1.8;
+export const UPPER_WALL_H = 44;
 /** how tall the desks stand, so what sits on them sits on top */
 export const DESK_H = 13;
 /** how far along the release desk the ink pad sits from the papers, where the stamp waits */
@@ -30,6 +31,82 @@ export const CARE_BED_SHAPE = { half: 22, pillow: -14, sheetTop: 9.7 } as const;
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
+interface UpperWallPiece extends Piece { nx: number; nz: number }
+
+/** Only the room's outer shell grows tall. Tall dividers between every bunk would obscure the next
+ * cell even with the near side cut away. The existing low walls remain a separate, unchanged batch. */
+export function upperWallPieces(l: LevelDef, w: World, pal: Palette): UpperWallPiece[] {
+  const pieces: UpperWallPiece[] = [];
+  const wall = new Color(pal.wall).lerp(new Color(pal.metal), 0.45);
+  const paint = `#${wall.clone().lerp(new Color("#d2a093"), 0.22).getHexString()}`;
+  const band = `#${wall.clone().lerp(new Color("#b97e6d"), 0.4).getHexString()}`;
+  const cap = `#${wall.clone().lerp(new Color(pal.pillow), 0.32).getHexString()}`;
+  const bottom = WALL_H + WALL_CAP;
+  for (const room of l.rooms.filter(r => r.look !== "cell")) {
+    for (const wl of walls({ ...l, rooms: [room] }, r => isOpen(w, r.locked), true)) {
+      const x = wl.x + wl.w / 2, z = wl.y + wl.h / 2;
+      const nx = wl.w === WALL ? (x < room.rect.x + room.rect.w / 2 ? -1 : 1) : 0;
+      const nz = nx ? 0 : (z < room.rect.y + room.rect.h / 2 ? -1 : 1);
+      const add = (y: number, h: number, extra: number, colour: string) =>
+        pieces.push({ shape: "box", x, y, z, sx: wl.w + extra, sy: h, sz: wl.h + extra, ry: 0, colour, nx, nz });
+      add((bottom + UPPER_WALL_H) / 2, UPPER_WALL_H - bottom, 2, paint);
+      add(31, 1.4, 2.3, band);
+      add(UPPER_WALL_H + WALL_CAP / 2, WALL_CAP, 4, cap);
+    }
+  }
+  return pieces;
+}
+
+/** The two sliding halves park beside a real open gap. Nothing closes over a resident route, and a
+ * purchase opens the grille in the same scene rebuild that opens the room, without a second timer. */
+export function doorBarPieces(l: LevelDef, w: World, pal: Palette): Piece[] {
+  const pieces: Piece[] = [];
+  for (const room of l.rooms.filter(r => r.look === "cell")) for (const door of room.doors) {
+    const { mid, out } = doorMid(room, door), tx = -out.y, tz = out.x;
+    const open = isOpen(w, room.locked), width = door.width / 2 - 3;
+    const box = (along: number, y: number, across: number, h: number) => pieces.push({ shape: "box",
+      x: mid.x + out.x * 5 + tx * along, y, z: mid.y + out.y * 5 + tz * along,
+      sx: tx ? across : 1.2, sy: h, sz: tz ? across : 1.2, ry: 0, colour: pal.metal });
+    for (const side of [-1, 1]) {
+      const centre = side * (open ? door.width / 2 + width / 2 + 2 : width / 2);
+      for (let bar = 0; bar < 4; bar++) box(centre + (bar / 3 - 0.5) * (width - 1.2), 14, 1.2, 24);
+      for (const y of [2, 26]) box(centre, y, width, 1.4);
+    }
+  }
+  return pieces;
+}
+
+/** A dedicated opaque material cuts just the upper walls, never shared furniture or people. Camera
+ * uniforms already describe the frame being drawn, avoiding a second camera state or a one-frame-late
+ * instance-buffer rewrite. Below 30 degrees the whole upper layer cuts away for a clear low view. */
+function upperWallBatch(pieces: UpperWallPiece[]) {
+  const geometry = new BoxGeometry(1, 1, 1);
+  geometry.setAttribute("wallNormal", new InstancedBufferAttribute(new Float32Array(pieces.flatMap(p => [p.nx, p.nz])), 2));
+  const material = new MeshLambertMaterial();
+  material.onBeforeCompile = s => {
+    s.vertexShader = s.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec2 wallNormal;\nvarying float vWallCut;")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+vec3 wallCentre = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+vec2 wallFacing = (mat3(modelMatrix) * vec3(wallNormal.x, 0.0, wallNormal.y)).xz;
+float nearSide = step(0.0, dot(wallFacing, cameraPosition.xz - wallCentre.xz));
+vWallCut = max(nearSide, 1.0 - step(0.5, abs(viewMatrix[1][2])));`);
+    s.fragmentShader = s.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vWallCut;")
+      .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vWallCut > 0.5) discard;");
+  };
+  const mesh = new InstancedMesh(geometry, material, pieces.length);
+  const dummy = new Object3D(), tint = new Color();
+  pieces.forEach((p, i) => {
+    dummy.position.set(p.x, p.y, p.z);
+    dummy.scale.set(p.sx, p.sy, p.sz);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setColorAt(i, tint.set(p.colour));
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
 
 /** Outside the walkable rectangle: decoration cannot become a new obstacle or purchase target. */
 export function yardPieces(l: LevelDef, pal: Palette): Piece[] {
@@ -314,6 +391,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     }
   }
   pieces.push(...yardPieces(l, pal));
+  pieces.push(...doorBarPieces(l, w, pal));
 
   // stand-here spots and furniture
   const spot = (x: number, z: number) => add("cyl", x, 1.4, z, 17, 0.4, 11, pal.spot);
@@ -417,8 +495,13 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     });
     mesh.instanceMatrix.needsUpdate = true;
     group.add(mesh);
-    disposables.push(mesh.geometry, material);
+    // Instance matrices and colours belong to the mesh, not its shared geometry.
+    disposables.push(mesh, mesh.geometry, material);
   }
+
+  const upper = upperWallBatch(upperWallPieces(l, w, pal));
+  group.add(upper);
+  disposables.push(upper, upper.geometry, upper.material as Material);
 
   // the rubble: every stone of every buried cell in one instanced mesh, made only when the scene is
   // rebuilt (something bought), never as coins go in
@@ -437,7 +520,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     });
     mesh.instanceMatrix.needsUpdate = true;
     group.add(mesh);
-    disposables.push(mesh.geometry, material);
+    disposables.push(mesh, mesh.geometry, material);
   }
 
   // price pads: a tinted dashed square and a fill that grows as coins go in
