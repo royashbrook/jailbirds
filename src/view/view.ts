@@ -16,7 +16,7 @@ import { WALL, walls } from "../engine/geom.ts";
 import { CLEAN_TIME, DIRT_MAX, dirtSpots, inCare, isDone, isOpen, mood, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, RoomDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
-import { buildScene, CARE_BED_SHAPE, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
+import { buildScene, CARE_BED_SHAPE, HOME_BED_SHAPE, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
 
 /** where everyone stood one step ago, by id */
@@ -68,9 +68,17 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
 /** someone resting in a care bed is drawn lying along it, head on the pillow and on top of the sheet: the
  * lying peg's head is `REST_HEAD` along from its feet and its underside `REST_UNDER` up from its root, so
  * its feet go that far down the bed from the pillow and it is lifted onto the sheet. drawing only: the
- * seat in the sim does not move. ordinary sleep at home is drawn as it always was */
+ * seat in the sim does not move. home bunks use the same alignment, with their own mattress height */
 export const REST_HEAD = 26.08, REST_UNDER = 4.8;
-export function restIn(l: LevelDef, a: Agent): { x: number; z: number; heading: number; up: number } | null {
+export function restIn(l: LevelDef, a: Agent, action: Action): { x: number; z: number; heading: number; up: number } | null {
+  if (action !== "sleep") return null;
+  if (a.state === "home") {
+    const home = l.stations.find(s => s.id === a.house);
+    const seat = home?.kind === "house" ? home.seats[a.slot] : undefined;
+    if (!seat) return null;
+    return { x: seat.at.x, z: seat.at.y + HOME_BED_SHAPE.offset + HOME_BED_SHAPE.pillow + REST_HEAD,
+      heading: 0, up: HOME_BED_SHAPE.sheetTop - REST_UNDER + 0.6 };
+  }
   if (!inCare(l, a)) return null;
   const st = l.stations.find((s) => s.id === a.station);
   const seat = st?.kind === "facility" ? st.seats[a.seat] : undefined;
@@ -611,7 +619,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       }
       if (action === "sleep") heading = Math.PI;
       // in a care bed: laid along it, head on its pillow, on top of its sheet
-      const rest = restIn(l, a);
+      const rest = restIn(l, a, action);
       if (rest) (x = rest.x), (z = rest.z), (heading = rest.heading);
       if (action === "fight" && w.alert && w.alert.kind !== "riot") {
         // a squabble: the two come out of their bunks and square up in the doorway,
@@ -879,6 +887,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
       care: built?.care ?? 0,
+      tiers: built?.tiers ?? 0,
       rubble: {
         rooms: built ? [...built.rubble] : [], stones: built?.stones ?? 0, builds,
         clearing: reveals.map((r) => r.room.id), revealed: revealed.map((r) => ({ ...r })),

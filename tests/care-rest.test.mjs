@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Box3, Euler, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { LEVELS } from "../src/content/jail.ts";
 import { pegs } from "../src/skins/pegs.ts";
-import { CARE_BED_SHAPE } from "../src/view/scene.ts";
+import { CARE_BED_SHAPE, HOME_BED_SHAPE } from "../src/view/scene.ts";
 import { actionOf, restIn } from "../src/view/view.ts";
 
 // someone resting in a care bed is drawn with the head on the pillow and the body on the sheet, inside
@@ -41,7 +41,7 @@ function drawn(a, place) {
 
 for (const seat of [0, 1, 2, 3]) test(`in care bed ${seat}: head on the pillow, lying on the sheet, all of it on the bed`, () => {
   const a = resident(seat), at = care.seats[seat].at, { half, pillow, sheetTop } = CARE_BED_SHAPE;
-  const place = restIn(L, a);
+  const place = restIn(L, a, actionOf(null,L,a));
   assert.ok(place, "a care rest place");
   const { pose, out } = drawn(a, place);
   assert.equal(pose.action, "sleep");
@@ -58,8 +58,31 @@ for (const seat of [0, 1, 2, 3]) test(`in care bed ${seat}: head on the pillow, 
   assert.ok(all.min.z >= at.y - half - 0.5 && all.max.z <= at.y + half + 0.5, `figure z ${all.min.z}..${all.max.z}`);
 });
 
-test("only someone in a care seat is laid out this way; sleep at home is drawn as before", () => {
-  const home = { ...resident(0), state: "home", station: "", seat: -1 };
-  assert.equal(restIn(L, home), null);
-  assert.equal(actionOf(null, L, home), "sleep");
+for (const house of L.stations.filter(s => s.kind === "house")) for (const slot of [0,1]) for (const hurt of [0,10])
+  test(`${house.id} bunk${slot}, bump${hurt}: head is on its own pillow, not beyond the foot of the mattress`, () => {
+    const at=house.seats[slot].at,home={...resident(0),state:"home",house:house.id,slot,station:"",seat:-1,
+      x:at.x,y:at.y,hurt,rest:10};
+    const before=JSON.stringify(home),place=restIn(L,home,actionOf(null,L,home));
+    assert.ok(place);
+    const {pose,out}=drawn(home,place),head=out.find(p=>p.part==="head").box.getCenter(new Vector3());
+    assert.equal(pose.action,"sleep");
+    assert.ok(Math.abs(head.z-(at.y+HOME_BED_SHAPE.offset+HOME_BED_SHAPE.pillow))<.01);
+    assert.ok(Math.abs(head.x-at.x)<.01);
+    const body=out.find(p=>p.part==="body").box;
+    assert.ok(body.min.y>=HOME_BED_SHAPE.sheetTop-.2&&body.min.y<=HOME_BED_SHAPE.sheetTop+1.5);
+    const all=out.reduce((b,p)=>b.union(p.box),new Box3().makeEmpty());
+    assert.ok(all.min.z>=at.y+HOME_BED_SHAPE.offset-HOME_BED_SHAPE.half-.5);
+    assert.ok(all.max.z<=at.y+HOME_BED_SHAPE.offset+HOME_BED_SHAPE.half+.5);
+    assert.equal(JSON.stringify(home),before);
+  });
+
+test("an invalid home is not a fabricated bed pose", () => {
+  assert.equal(restIn(L,{...resident(0),state:"home",house:"missing"},"sleep"),null);
+});
+
+test("an awake resident at home keeps the standing position instead of a bed transform", () => {
+  const a={...resident(0),state:"home",station:"",seat:-1,hurt:0,rest:0};
+  const action=actionOf(null,L,a);
+  assert.equal(action,"stand");
+  assert.equal(restIn(L,a,action),null);
 });
