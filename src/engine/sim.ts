@@ -206,8 +206,31 @@ export const isDone = (l: LevelDef, a: Agent) => a.kind === "agent" && !!a.house
 export const resting = (a: Agent) => (a.hurt ?? 0) > 0;
 /** at home and well: the only residents an incident, a service or a lead out can take */
 const atEase = (a: Agent) => a.state === "home" && !resting(a);
+/** the service a bump is seen to at: a facility meeting this takes the recovery work off faster than
+ * rest at home. it is never a need that runs down, so it is never in `needs` */
+export const CARE = "care";
+/** recovery work taken off per second in a care seat, against 1 a second resting at home */
+export const CARE_RATE = 2.5;
+const isCare = (st: AnyStation | undefined): boolean => st?.kind === "facility" && st.need === CARE && !!st.zone;
+/** an open, free care seat for this resident, if any: the first care station's first one */
+function careSeat(w: World, l: LevelDef, a: Agent): { st: S<"facility">; seat: number } | null {
+  for (const st of l.stations) {
+    if (!isCare(st)) continue;
+    const seat = seatFor(w, st, CARE, a);
+    if (seat >= 0) return { st: st as S<"facility">, seat };
+  }
+  return null;
+}
+/** a resident resting off a bump at home who may be led to care: its own allowance, apart from atEase,
+ * so a bumped one is still in no incident and never let out */
+const careWaiting = (w: World, l: LevelDef, a: Agent) => a.state === "home" && resting(a) && a.rest >= SETTLE && !!careSeat(w, l, a);
+/** a follower holding a care seat it is being led to */
+const booked = (a: Agent) => a.state === "follow" && !!a.station;
+/** being seen to in a care seat, for the screen */
+export const inCare = (l: LevelDef, a: Agent) => a.state === "use" && isCare(byId(l, a.station));
 /** a resident at home who is waiting to be led somewhere */
-const waiting = (l: LevelDef, a: Agent) => atEase(a) && a.rest >= SETTLE && (isDone(l, a) || !!wants(l, a, true));
+const waiting = (w: World, l: LevelDef, a: Agent) =>
+  (atEase(a) && a.rest >= SETTLE && (isDone(l, a) || !!wants(l, a, true))) || careWaiting(w, l, a);
 
 export function padVisible(w: World, p: PadDef) {
   return !w.bought.includes(p.id) && isOpen(w, p.after);
@@ -272,8 +295,9 @@ function goTo(w: World, l: LevelDef, a: Agent, to: Pt) {
   a.path = route(w, l, a, to);
 }
 
+/** nobody on the way to it, in it, or being led to it holding it */
 const freeSeat = (w: World, st: string, s: number) =>
-  !w.agents.some((a) => a.station === st && a.seat === s && (a.state === "go" || a.state === "use"));
+  !w.agents.some((a) => a.station === st && a.seat === s && (a.state === "go" || a.state === "use" || a.state === "follow"));
 /** an open, free, clean seat at a station that meets this need, for this resident */
 function seatFor(w: World, st: AnyStation, need: string, a: Agent) {
   if ((st.kind !== "sink" && st.kind !== "facility") || st.need !== need) return -1;
@@ -520,7 +544,11 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
     followers(w, a).forEach((b, i) => {
       const target = alongTrail(a, (i + 1) * FOLLOW_GAP);
       const k = a.kind === "player" ? catchUp(b.id, w.steps) : 1.15;
-      if (!near(b, target, 1.5)) walkTo(b, target, speed * k);
+      // one fallen behind (out of bed late, or the leader already round a corner) goes by the route to its
+      // place on the trail, through the doors, never straight at it. close up, it walks the trail itself
+      if (!b.path.length && !near(b, target, FOLLOW_GAP)) b.path = route(w, l, b, target);
+      if (b.path.length) walkPath(b, speed * k);
+      else if (!near(b, target, 1.5)) walkTo(b, target, speed * k);
     });
   }
 
@@ -564,6 +592,15 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
   const cap = a.kind === "player" ? w.lineMax : HELPER_LINE;
   const join = (b: Agent) => {
     if (line.length >= cap) return;
+    if (b.state === "home" && resting(b)) {
+      // leaving home for care: a free seat is checked and held now, or they stay and rest. the bed stays theirs
+      const c = careSeat(w, l, b);
+      if (!c) return;
+      b.station = c.st.id;
+      b.seat = c.seat;
+    }
+    // whatever walk they were on is over: in line they go by the routed catch-up, then the trail
+    b.path = [];
     if (b.state === "ready") b.slot = -1;
     b.state = "follow";
     b.leader = a.id;
@@ -578,7 +615,7 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
     for (const b of w.agents) if (b.state === "ready" && near(b, a, PICKUP_RADIUS)) can.push(b);
     for (const h of all(l, "house"))
       if (isOpen(w, h.locked) && near(a, h.at, h.r))
-        for (const b of w.agents) if (b.house === h.id && waiting(l, b)) can.push(b);
+        for (const b of w.agents) if (b.house === h.id && waiting(w, l, b)) can.push(b);
     if (a.kind === "player") hold(w, can, still && line.length < cap, join);
     else for (const b of can) join(b);
   }
@@ -623,21 +660,28 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
         const fresh = line.find(isFresh);
         if (fresh && slot >= 0 && tick(w, key, 0.25, live)) moveIn(fresh, slot);
       }
-      for (const b of line) if (b.house === st.id && !isDone(l, b) && !wants(l, b, true)) goHome(w, l, b);
+      // one being led to care is not sent back in at its own door
+      for (const b of line) if (b.house === st.id && !booked(b) && !isDone(l, b) && !wants(l, b, true)) goHome(w, l, b);
     } else if ((st.kind === "sink" || (st.kind === "facility" && st.zone)) && leads && inside(a, st.kind === "sink" ? st.zone : st.zone!)) {
       // led into the room: whoever wants what it offers takes a seat. anyone who has
       // served their time is on the way out and only stops at the release desk
       for (const b of line) {
+        // one holding a care seat takes that seat here, and nothing anywhere else
+        if (booked(b)) {
+          if (b.station === st.id) sendTo(w, l, b, st, b.seat);
+          continue;
+        }
         if (isDone(l, b) || wants(l, b, true) !== st.need) continue;
         const seat = seatFor(w, st, st.need, b);
         if (seat >= 0) sendTo(w, l, b, st, seat);
       }
     } else if (st.kind === "release" && leads && near(a, st.at, st.r)) {
-      // a helper hands over one each `every` seconds; the player sees off everyone done at once
+      // a helper hands over one each `every` seconds; the player sees off everyone done at once.
+      // nobody still resting off a bump is let out, done or not
       if (a.kind === "player") {
-        for (const b of line) if (b.state === "follow" && isDone(l, b)) release(w, l, b, st);
+        for (const b of line) if (b.state === "follow" && isDone(l, b) && !resting(b)) release(w, l, b, st);
       } else {
-        const done = line.find((b) => isDone(l, b));
+        const done = line.find((b) => isDone(l, b) && !resting(b));
         if (done && tick(w, key, st.every, live)) release(w, l, done, st);
       }
     }
@@ -976,6 +1020,14 @@ function residents(w: World, l: LevelDef) {
       }
     } else if (a.state === "use") {
       const st = byId(l, a.station) as S<"sink"> | S<"facility">;
+      if (isCare(st)) {
+        // in a care seat: the recovery work that is left comes off faster than at home, needs wait,
+        // time served goes on. well again, back to the bed they kept
+        a.hurt = Math.max(0, a.hurt - CARE_RATE * DT);
+        a.served += DT;
+        if (a.hurt <= 0) goHome(w, l, a);
+        continue;
+      }
       // at a sink, wait for an item, then use it
       if (st.kind === "sink" && !a.carry) {
         if ((w.stock[st.id] ?? 0) > 0) {
@@ -1056,6 +1108,10 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
       const house = all(l, "house").find((s) => isOpen(w, s.locked) && s.seats.some((_, i) => !w.agents.some((b) => b.house === s.id && b.slot === i)));
       return house?.at ?? null;
     }
+    if (booked(first)) {
+      const st = byId(l, first.station);
+      return st ? roomOf(st) : null;
+    }
     if (isDone(l, first)) return all(l, "release")[0]?.at ?? null;
     const need = wants(l, first, true);
     for (const st of l.stations) if (need && roomOf(st) && seatFor(w, st, need, first) >= 0) return roomOf(st);
@@ -1069,9 +1125,10 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
     return ready;
   }
   for (const b of w.agents) {
-    if (!waiting(l, b) || claimed.has(`h${b.house}`)) continue;
+    if (!waiting(w, l, b) || claimed.has(`h${b.house}`)) continue;
     const need = wants(l, b, true);
-    if (isDone(l, b) || l.stations.some((st) => need && roomOf(st) && seatFor(w, st, need, b) >= 0)) {
+    // a bumped one waiting is only waiting while a care seat is free for them
+    if (resting(b) || isDone(l, b) || l.stations.some((st) => need && roomOf(st) && seatFor(w, st, need, b) >= 0)) {
       claimed.add(`h${b.house}`);
       return (byId(l, b.house) as S<"house">).at;
     }
@@ -1081,14 +1138,16 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
 
 /** what to do next, as a key the content turns into words */
 export type Hint =
-  | { key: "alert" | "riot" | "checkin" | "nobed" | "pickup" | "house" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
+  | { key: "alert" | "riot" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
   | { key: "errand" | "fetch" | "drop"; need: string };
 export function hint(w: World, l: LevelDef): Hint {
   if (w.alert) return { key: w.alert.kind === "riot" ? "riot" : "alert" };
   const me = player(w);
   const line = followers(w, me);
   if (line.some((b) => !b.house)) return { key: "house" };
-  if (line.some((b) => isDone(l, b))) return { key: "release" };
+  // care only when there is a seat to go to: one held in the line, or one free for a bumped one at home
+  if (line.some(booked)) return { key: "care" };
+  if (line.some((b) => isDone(l, b) && !resting(b))) return { key: "release" };
   const want = line.map((b) => wants(l, b, true)).find(Boolean);
   if (want) return { key: "errand", need: want };
   // items first when someone sits at a sink with nothing to use
@@ -1097,6 +1156,7 @@ export function hint(w: World, l: LevelDef): Hint {
   if (queued(w).length) return noBed(w, l) ? { key: "nobed" } : { key: "checkin" };
   if (w.agents.some((a) => a.state === "ready")) return { key: "pickup" };
   if (w.agents.some((a) => atEase(a) && isDone(l, a))) return { key: "done" };
+  if (w.agents.some((a) => careWaiting(w, l, a))) return { key: "care" };
   const errand = w.agents.map((a) => (atEase(a) ? wants(l, a, true) : null)).find(Boolean);
   if (errand) return { key: "errand", need: errand };
   if (messy(w, l)) return { key: "clean" };
@@ -1191,8 +1251,11 @@ function alertFrom(w: World, l: LevelDef): Alert | null {
  * squabbler is still in bed, so is home at once, a rioter walks */
 function looseEnds(w: World, l: LevelDef) {
   const ids = w.alert?.ids ?? [];
+  const held = new Set<string>();
   for (const a of w.agents) {
-    if (a.kind !== "agent" || ids.includes(a.id) || (a.state !== "fight" && a.state !== "riot")) continue;
+    if (a.kind !== "agent") continue;
+    const loose = !ids.includes(a.id) && (a.state === "fight" || a.state === "riot");
+    if (!loose && !lostCare(w, l, a, held)) continue;
     if (hasBed(l, a)) {
       goHome(w, l, a);
       continue;
@@ -1203,6 +1266,20 @@ function looseEnds(w: World, l: LevelDef) {
     Object.assign(a, { state: "ready", house: "", slot: -1, leader: -1, station: "", seat: -1 });
     a.path = desk ? route(w, l, a, desk.out[0]) : [];
   }
+}
+/** a saved care seat that cannot be kept: led, on the way or in one that is gone, locked, already held by
+ * someone earlier in the save, or held by someone no longer resting or with no bed to go back to. a
+ * follower holding anything else is the same. whoever loses one goes home to rest, nothing paid */
+function lostCare(w: World, l: LevelDef, a: Agent, held: Set<string>) {
+  const st = byId(l, a.station);
+  if (!(a.state === "follow" && a.station) && !((a.state === "go" || a.state === "use") && isCare(st))) return false;
+  const key = `${a.station}:${a.seat}`;
+  const seat = isCare(st) ? (st as S<"facility">).seats[a.seat] : undefined;
+  if (seat && isOpen(w, seat.locked) && resting(a) && hasBed(l, a) && !held.has(key)) {
+    held.add(key);
+    return false;
+  }
+  return true;
 }
 /** a whole number of coins, none less than none */
 const count = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;

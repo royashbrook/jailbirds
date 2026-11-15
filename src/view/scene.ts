@@ -7,7 +7,7 @@ import {
   Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, PlaneGeometry, SphereGeometry, SRGBColorSpace, type Material,
   type BufferGeometry,
 } from "three";
-import { doorMid, WALL, walls } from "../engine/geom.ts";
+import { doorMid, inside, WALL, walls } from "../engine/geom.ts";
 import { isOpen, stampAt } from "../engine/sim.ts";
 import type { AnyStation, LevelDef, PadDef, RoomDef, World } from "../engine/types.ts";
 import type { Palette } from "../skins/types.ts";
@@ -21,6 +21,12 @@ export const STAMP_PAD = 26;
 /** the top of the papers' stack on the release desk */
 export const PAPER_TOP = DESK_H + 1.8;
 const TILE = 40;
+/** the care room's own colours: mint bedding, a cream sheet and cabinet, a soft blue ice pack and a mint
+ * cross. bright enough by night too */
+const CARE_BED = "#9fdcc0", CARE_SHEET = "#fff4dc", ICE_PACK = "#8fd3f4", CARE_CROSS = "#4fb889";
+/** a care bed about its seat: it runs `half` either way along z, the pillow centre sits `pillow` along
+ * from the seat, and the sheet's top is `sheetTop` up. whoever rests in it is laid out to these */
+export const CARE_BED_SHAPE = { half: 22, pillow: -14, sheetTop: 9.7 } as const;
 
 type Shape = "box" | "cyl" | "ball" | "floor";
 interface Piece { shape: Shape; x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number; colour: string }
@@ -53,6 +59,40 @@ export function yardPieces(l: LevelDef, pal: Palette): Piece[] {
   }
   for (let x = -26; x <= l.size.w + 26; x += 64) add("cyl", x, 8.5, -24, 1.4, 17, 1.4, pal.metal);
   for (const h of [7, 13]) box(l.size.w / 2, -24, l.size.w + 52, 1.6, 1.6, pal.metal, h);
+  return pieces;
+}
+
+/** the care room: a bed at each seat (frame, mint mattress, cream sheet, pillow), a bedside table with an
+ * ice pack in each row with an open bed, and a small cabinet with a mint cross by the back wall. a bed
+ * not yet bought is drawn grey; nothing is drawn while the room itself is still rubble */
+export function carePieces(l: LevelDef, s: AnyStation, open: (id?: string) => boolean, buried: Set<string>, pal: Palette): Piece[] {
+  const pieces: Piece[] = [];
+  if (s.kind !== "facility" || !s.seats.length) return pieces;
+  const box = (x: number, z: number, w: number, d: number, h: number, colour: string, y = 0) =>
+    pieces.push({ shape: "box", x, y: y + h / 2, z, sx: w, sy: h, sz: d, ry: 0, colour });
+  const room = l.rooms.find((r) => inside(s.seats[0].at, r.rect));
+  if (room && buried.has(room.id)) return pieces;
+  const rows = new Set<number>();
+  for (const seat of s.seats) {
+    const ok = open(seat.locked), bx = seat.at.x, bz = seat.at.y;
+    const { half, pillow, sheetTop } = CARE_BED_SHAPE;
+    box(bx, bz, 24, half * 2, 6, ok ? pal.metal : pal.locked);
+    box(bx, bz + 1, 21, half * 2 - 4, 2.5, ok ? CARE_BED : pal.locked, 6);
+    box(bx, bz + 6, 22, 24, sheetTop - 8.5, ok ? CARE_SHEET : pal.locked, 8.5);
+    box(bx, bz + pillow, 16, 8, 2.5, ok ? pal.pillow : pal.locked, 8.5);
+    if (ok) rows.add(bz);
+  }
+  const xs = s.seats.map((seat) => seat.at.x), mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+  for (const z of rows) {
+    box(mid, z - 10, 10, 10, 8, pal.wood);
+    box(mid, z - 10, 6, 4, 2, ICE_PACK, 8);
+  }
+  if (room && rows.size) {
+    const cz = room.rect.y + 12;
+    box(mid, cz, 26, 9, 22, CARE_SHEET);
+    box(mid, cz + 4.6, 8, 0.4, 2.4, CARE_CROSS, 13);
+    box(mid, cz + 4.6, 2.4, 0.4, 8, CARE_CROSS, 10);
+  }
   return pieces;
 }
 
@@ -198,12 +238,13 @@ export const stoneColour = (s: Stone, floor: Color, out: Color) => out.set(STONE
 
 export interface PadMesh { pad: PadDef; frame: Mesh; fill: Mesh; w: number; h: number }
 /** `rubble` is the ids of the rooms drawn full of rubble, `stones` how many stones that took */
-export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; dispose(): void }
+export interface Built { group: Group; pads: PadMesh[]; rubble: string[]; stones: number; care: number; dispose(): void }
 
 type S<K extends AnyStation["kind"]> = Extract<AnyStation, { kind: K }>;
 
 export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
   const pieces: Piece[] = [];
+  let care = 0;
   const add = (shape: Shape, x: number, y: number, z: number, sx: number, sy: number, sz: number, colour: string, ry = 0) =>
     pieces.push({ shape, x, y, z, sx, sy, sz, ry, colour });
   /** a box standing on the floor at x,z (centre), w wide, d deep, h tall */
@@ -321,6 +362,11 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
       const c = ok ? pal.wood : pal.locked;
       box(s.prop.x + s.prop.w / 2, s.prop.y + s.prop.h / 2, s.prop.w, s.prop.h, 10, c);
       s.seats.forEach((seat) => cyl(seat.at.x, seat.at.y, 6, 6, ok && open(seat.locked) ? "#c98a4f" : pal.locked));
+    } else if (s.kind === "facility" && s.look === "care") {
+      // counted off what was actually added, so the page can say how much of the care room it drew
+      const before = pieces.length;
+      pieces.push(...carePieces(l, s, open, buried, pal));
+      care += pieces.length - before;
     } else if (s.kind === "facility") {
       s.seats.forEach((seat) => {
         const ok = open(seat.locked);
@@ -418,6 +464,7 @@ export function buildScene(l: LevelDef, w: World, pal: Palette): Built {
     pads,
     rubble: rubble.map((r) => r.id),
     stones: stones.length,
+    care,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };
 }

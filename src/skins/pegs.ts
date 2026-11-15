@@ -149,7 +149,7 @@ const light: Palette = {
   hall: "#efe6d6",
   floors: {
     block: "#e4e0ee", cell: "#f0e3f5", canteen: "#ffe3c2", kitchen: "#dcedf4",
-    washroom: "#d2eef6", intake: "#f2e8cd", release: "#dcf1d6",
+    washroom: "#d2eef6", intake: "#f2e8cd", release: "#dcf1d6", care: "#d6eee3",
   },
   locked: "#b9b4ab",
   wall: "#9aa6cf",
@@ -182,7 +182,7 @@ const dark: Palette = {
   hall: "#3a3742",
   floors: {
     block: "#3d3a4a", cell: "#463f55", canteen: "#4d4136", kitchen: "#36434c",
-    washroom: "#324750", intake: "#47402f", release: "#33443a",
+    washroom: "#324750", intake: "#47402f", release: "#33443a", care: "#30483f",
   },
   locked: "#25232b",
   wall: "#7d88b0",

@@ -8,7 +8,7 @@ import { LEVELS } from "../src/content/jail.ts";
 // motion, a quiet glow). what the view drew is read off window.__jailbirds.drawn().rubble, never
 // off three.js itself
 const CELLS = ["cell3", "cell4", "cell5", "cell6", "cell7", "cell8"];
-const ROOMS = ["c2", "c3", "c4", "c5", "c6", "c7"];
+const ROOMS = ["c2", "c3", "c4", "c5", "c6", "c7", "hospital"];
 const pad = (id) => LEVELS[0].pads.find((p) => p.id === id);
 const rubble = (page) => page.evaluate(() => window.__jailbirds.drawn().rubble);
 const drawn = (page) => page.evaluate(() => window.__jailbirds.drawn());
@@ -278,8 +278,8 @@ test("four beds with every cell full of rubble, sixteen with all six cleared; wh
   expect(shut.beds).toBe("0/4");
   expect(shut.rooms).toEqual(ROOMS);
   expect(open.beds).toBe("0/16");
-  expect(open.rooms).toEqual([]);
-  expect(open.stones).toBe(0);
+  expect(open.rooms).toEqual(["hospital"]);
+  expect(open.stones).toBe(23);
   // every stone of every heap is one instanced mesh: one draw call and one geometry more, at most
   expect(shut.calls - open.calls).toBeLessThanOrEqual(3);
   expect(shut.geometries - open.geometries).toBeLessThanOrEqual(2);

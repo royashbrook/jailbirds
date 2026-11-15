@@ -98,6 +98,11 @@ only escape is an unimplemented or unaffordable room.
 
 ## C2: care annex, concrete footprint
 
+the footprint is a preparation slice, not a separately releasable purchase.
+release it only with working treatment, reservations, recovery and care art.
+the initial two beds and the upgrade must do their advertised jobs before
+either purchase is deployed.
+
 append to the east of each existing jail. preserve all existing room, station,
 seat, pad, boost, safe, mess and actor coordinates and ids. world becomes960x900.
 the existing house capacity stays4..16; treatment beds never count as home beds.
