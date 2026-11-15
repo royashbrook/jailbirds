@@ -49,6 +49,21 @@ export async function waitFrames(page, n) {
   while ((await frames()) < from + n) await page.waitForTimeout(30);
 }
 
+export function pointerOffset(dx, dy, turn, radius) {
+  const d = Math.hypot(dx, dy), angle = turn * Math.PI / 180;
+  const c = Math.cos(angle), sn = Math.sin(angle);
+  const x = (dx * c - dy * sn) / d, y = (dx * sn + dy * c) / d;
+  if (radius < 3) {
+    // WebKit uses integer pixels. (2,1) is the shortest integer vector beyond
+    // the 2.2px deadzone; a rounded 3px floor can keep stepping over the target.
+    const sx = x < 0 ? -1 : 1, sy = y < 0 ? -1 : 1;
+    return Math.abs(x) >= Math.abs(y) ? { x: sx * 2, y: sy } : { x: sx, y: sy * 2 };
+  }
+  // Leave rounding room below 44px: crossing the ring drags its base.
+  const r = Math.min(43, radius);
+  return { x: x * r, y: y * r };
+}
+
 /** walk the warden to a point in a straight line with the thumb stick, pushing less
  * the closer it gets. neutralize before reading: a delayed reply is an old position,
  * not permission to keep driving while it reaches us. `stop` ends
@@ -57,7 +72,6 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
   const box = await page.locator("#jail").boundingBox();
   const cx = Math.round(box.x + box.width / 2), cy = Math.round(box.y + box.height / 2);
   const turn = await page.evaluate(() => window.__jailbirds.camera().turn);
-  const angle = turn * Math.PI / 180, c = Math.cos(angle), sn = Math.sin(angle);
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   try {
@@ -74,12 +88,9 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
       const seconds = previousStep === null ? 0.5 : Math.max(0.5, (s.steps - previousStep) / 60);
       previousStep = s.steps;
       const push = Math.min(1, d / (s.speed * seconds));
-      // WebKit quantizes native pointer coordinates. Integer endpoints and a 3px
-      // radius keep even the rounded vector above the engine's 2.2px deadzone.
-      // Leave rounding room below 44px too: crossing the ring drags its base.
-      const r = Math.min(43, Math.max(3, push * 44));
       // the target is in world space; the thumb gesture is in screen space
-      await page.mouse.move(Math.round(cx + ((dx * c - dy * sn) / d) * r), Math.round(cy + ((dx * sn + dy * c) / d) * r));
+      const offset = pointerOffset(dx, dy, turn, push * 44);
+      await page.mouse.move(Math.round(cx + offset.x), Math.round(cy + offset.y));
       await waitFrames(page, 1);
     }
   } finally {
