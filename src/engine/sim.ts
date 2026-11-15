@@ -544,6 +544,9 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
     followers(w, a).forEach((b, i) => {
       const target = alongTrail(a, (i + 1) * FOLLOW_GAP);
       const k = a.kind === "player" ? catchUp(b.id, w.steps) : 1.15;
+      // one fallen behind (out of bed late, or the leader already round a corner) goes by the route to its
+      // place on the trail, through the doors, never straight at it. close up, it walks the trail itself
+      if (!b.path.length && !near(b, target, FOLLOW_GAP)) b.path = route(w, l, b, target);
       if (b.path.length) walkPath(b, speed * k);
       else if (!near(b, target, 1.5)) walkTo(b, target, speed * k);
     });
@@ -596,8 +599,8 @@ function act(w: World, l: LevelDef, a: Agent, live: Set<string>, still: boolean)
       b.station = c.st.id;
       b.seat = c.seat;
     }
-    // out of bed by the route to where the leader stands, through the door, then on its trail
-    b.path = b.state === "home" ? route(w, l, b, { x: a.x, y: a.y }) : [];
+    // whatever walk they were on is over: in line they go by the routed catch-up, then the trail
+    b.path = [];
     if (b.state === "ready") b.slot = -1;
     b.state = "follow";
     b.leader = a.id;

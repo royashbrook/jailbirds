@@ -2,6 +2,8 @@ import { test, expect } from "./fixtures.js";
 import { untilSim, waitFrames } from "./helpers.js";
 import { create } from "../src/engine/sim.ts";
 import { LEVELS } from "../src/content/jail.ts";
+import { pegs } from "../src/skins/pegs.ts";
+import { carePieces } from "../src/view/scene.ts";
 
 // the care room as she sees it: rubble until bought; then beds, the bought ones in colour, one in use
 // with someone resting in it. the shots are for a person to read; the checks are what the page says it drew
@@ -36,6 +38,7 @@ async function seed(page, w) {
 test("the care room: rubble before it is bought, then beds, one with someone resting in it", async ({ page, browserName }, info) => {
   await seed(page, world(["cell3", "cell4"], false));
   expect((await page.evaluate(() => window.__jailbirds.drawn().rubble)).rooms).toContain("hospital");
+  expect(await page.evaluate(() => window.__jailbirds.drawn().care), "no care room drawn under rubble").toBe(0);
   await page.screenshot({ path: info.outputPath(`care-shut-${browserName}.png`) });
 
   const ctx = await page.context().browser().newContext({ ...info.project.use, baseURL: info.project.use.baseURL });
@@ -44,6 +47,12 @@ test("the care room: rubble before it is bought, then beds, one with someone res
   const s = await untilSim(p, (x) => x.steps > 10, 2, "running");
   expect(s.agents.find((a) => a.station === "hospital")?.state).toBe("use");
   expect((await p.evaluate(() => window.__jailbirds.drawn().rubble)).rooms).not.toContain("hospital");
+  // what the scene really drew for the care room: four beds of four boxes, one table and pack, a cabinet of
+  // three, as carePieces lays out for the room bought and its extra beds not
+  const st = L.stations.find((s) => s.id === "hospital");
+  const expected = carePieces(L, st, (id) => !id || ["cell3", "cell4", "hospital"].includes(id), new Set(), pegs.palette(false)).length;
+  expect(expected).toBe(4 * 4 + 2 + 3);
+  expect(await p.evaluate(() => window.__jailbirds.drawn().care), "the care room the scene drew").toBe(expected);
   await p.screenshot({ path: info.outputPath(`care-open-${browserName}.png`) });
   // she rests off the bump in the bed at the care rate, then walks home
   await untilSim(p, (x) => x.agents.find((a) => a.id === s.agents.at(-1).id)?.state !== "use", 8, "well again");

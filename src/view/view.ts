@@ -16,7 +16,7 @@ import { WALL, walls } from "../engine/geom.ts";
 import { CLEAN_TIME, DIRT_MAX, dirtSpots, inCare, isDone, isOpen, mood, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, RoomDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
-import { buildScene, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
+import { buildScene, CARE_BED_SHAPE, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
 import type { CameraSettings } from "./camera.ts";
 
 /** where everyone stood one step ago, by id */
@@ -63,6 +63,19 @@ export function sway(id: number, t: number, x: number, y: number, heading: numbe
   const room = Math.max(0, Math.min(1, (clearance(x, y, ws) - BODY) / 8));
   const s = Math.sin(t * 2.4 * f.rate + f.phase) * SWAY * room;
   return { x: Math.cos(heading) * s, y: -Math.sin(heading) * s };
+}
+
+/** someone resting in a care bed is drawn lying along it, head on the pillow and on top of the sheet: the
+ * lying peg's head is `REST_HEAD` along from its feet and its underside `REST_UNDER` up from its root, so
+ * its feet go that far down the bed from the pillow and it is lifted onto the sheet. drawing only: the
+ * seat in the sim does not move. ordinary sleep at home is drawn as it always was */
+export const REST_HEAD = 26.08, REST_UNDER = 4.8;
+export function restIn(l: LevelDef, a: Agent): { x: number; z: number; heading: number; up: number } | null {
+  if (!inCare(l, a)) return null;
+  const st = l.stations.find((s) => s.id === a.station);
+  const seat = st?.kind === "facility" ? st.seats[a.seat] : undefined;
+  if (!seat) return null;
+  return { x: seat.at.x, z: seat.at.y + CARE_BED_SHAPE.pillow + REST_HEAD, heading: 0, up: CARE_BED_SHAPE.sheetTop - REST_UNDER + 0.6 };
 }
 
 /** what a character is doing, for the skin to pose. only someone ok sleeps */
@@ -596,6 +609,9 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
         heading += d * Math.min(1, dt * 14 * (own?.turn ?? 1));
       }
       if (action === "sleep") heading = Math.PI;
+      // in a care bed: laid along it, head on its pillow, on top of its sheet
+      const rest = restIn(l, a);
+      if (rest) (x = rest.x), (z = rest.z), (heading = rest.heading);
       if (action === "fight" && w.alert && w.alert.kind !== "riot") {
         // a squabble: the two come out of their bunks and square up in the doorway,
         // face to face, so it reads as a fight and not a bad dream
@@ -628,7 +644,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       const r = skin.model.root(pose);
       e.set(r.pitch, heading, 0, "YXZ");
       q.setFromEuler(e);
-      v.set(x, r.lift + up, z);
+      v.set(x, r.lift + up + (rest?.up ?? 0), z);
       root.compose(v, q, one);
       skin.model.pose(pose, put);
       if (!mounted) blob(x, z, action === "sleep" ? 9 : 8);
@@ -861,6 +877,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, programs: renderer.info.programs?.length ?? 0,
       eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
+      care: built?.care ?? 0,
       rubble: {
         rooms: built ? [...built.rubble] : [], stones: built?.stones ?? 0, builds,
         clearing: reveals.map((r) => r.room.id), revealed: revealed.map((r) => ({ ...r })),
