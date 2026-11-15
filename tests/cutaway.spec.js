@@ -50,11 +50,12 @@ for (const tilt of [35, 15]) test(`at tilt ${tilt}, actual wall pixels cut away 
   await page.goto('/');
   await page.waitForFunction(() => window.__upperDraws > 0);
   await waitFrames(page, 10);
-  // Project with the matrices the GPU actually used, not a second copy of the app's camera formula.
+  // modelView is required for positions even without cutaway logic; viewMatrix alone may be optimized
+  // out when the low-view guard is removed. The scene root is identity, so this projects level points.
   const m = await page.evaluate(() => {
     const gl = window.__upperGL, p = window.__upperProgram;
     return { w: gl.drawingBufferWidth, h: gl.drawingBufferHeight,
-      view: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'viewMatrix'))),
+      view: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'modelViewMatrix'))),
       projection: Array.from(gl.getUniform(p, gl.getUniformLocation(p, 'projectionMatrix'))) };
   });
   const view = new Matrix4().fromArray(m.view), projection = new Matrix4().fromArray(m.projection);
@@ -81,9 +82,15 @@ for (const tilt of [35, 15]) test(`at tilt ${tilt}, actual wall pixels cut away 
   await waitFrames(page, 3);
   const without = await read();
   const delta = normal.map((p, i) => Math.max(...p.map((v, j) => Math.abs(v - without[i][j]))));
-  expect(delta[1], 'camera-facing upper wall adds no pixels').toBeLessThanOrEqual(2);
-  if (tilt === 15) expect(delta[0], 'low view also cuts the far upper wall').toBeLessThanOrEqual(2);
-  else expect(delta[0], 'the far upper wall really paints pixels').toBeGreaterThan(15);
+  console.log(`wall pixel deltas at ${tilt}: far ${delta[0]}, near ${delta[1]}`);
+  if (tilt === 15) {
+    // A ray through the near sample can meet a far wall too. At low view BOTH must contribute nothing.
+    expect(delta[0], 'low view cuts upper-wall pixels on the far sample ray').toBeLessThanOrEqual(2);
+    expect(delta[1], 'low view cuts upper-wall pixels on the near sample ray').toBeLessThanOrEqual(2);
+  } else {
+    expect(delta[0], 'the far upper wall really paints pixels').toBeGreaterThan(15);
+    expect(delta[1], 'the near sample ray adds no upper-wall pixels').toBeLessThanOrEqual(2);
+  }
 });
 
 test('theme rebuilds release old scene instance buffers, not just their geometries', async ({ page, browserName }) => {
