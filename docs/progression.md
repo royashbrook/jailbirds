@@ -1,8 +1,9 @@
 # jail growth and a place worth growing
 
-implementation contract for #6, #23, #34, #36 and #45. baseline: 0.1.121,
-source64a0128. this is the current sequence, not a claim that unshipped features
-exist. exact-head review and release checks apply to every slice.
+implementation contract for #6, #23, #34, #36 and #45. original baseline:
+0.1.121/source64a0128. current accepted release: 0.1.155/source2c6a3e9.
+this is the current sequence, not a claim that unshipped features exist.
+exact-head review and release checks apply to every slice.
 
 ## direction and what is already done
 
@@ -13,9 +14,10 @@ currency, paid rescue, deleted residents or progress resets.
 
 the named map, per-jail saves, current-only reset, rubble cell reveals,
 collector, extra escort guards, hygiene/unrest, stamp, sound and feedback are
-already shipped. they are not future deliverables. pine hill and desert rock
-still share a footprint. hospital care, riots, incident guards, room tiers,
-distinct new layouts and the full environment pass remain ahead.
+already shipped. hospital care, riots, the incident guard, environment art
+and tall wall cutaways are also shipped. they are not future deliverables.
+pine hill and desert rock still share a footprint. room tiers and genuinely
+distinct new layouts remain ahead.
 
 ## delivery split and order
 
@@ -204,6 +206,86 @@ no new ordinary need drains on an old save before its service is available.
 closed map worlds are not silently simulated. any away-income popup needs a
 specified cap and idempotent accounting first. laundry/library/utilities stay
 optional, not assumed requirements for parity.
+
+## P1.2 proposal: useful room stages, then staff training
+
+not yet ratified or implemented. P1.1's goal card is a separate slice. the
+controlled baseline and its limits live in [economy.md](economy.md). existing
+income, prices, needs, home capacity and layouts stay intact. three stages
+means the existing room plus two real upgrades, not three paid reskins.
+
+| target | current stage | stage2 | stage3 |
+|---|---|---|---|
+| each existing two-bed cell | home stay progress1x |1.15x while actually home |1.30x while actually home |
+| kitchen | tray fill every0.30s |0.24s |0.18s |
+| canteen, both tables | meal use1.50s |1.20s |0.90s |
+| showers, all open seats | use2.50s |2.00s |1.50s |
+| hired staff walking |85 units/s |100 units/s |115 units/s |
+| cook tray stack |4 |5 |6 |
+
+times are nominal settings, measured with fixed-step rounding when
+implemented. these are capability choices, not measured economic gains.
+cell upgrades improve future served progress only. they do not rewrite the
+already served value, the75-unit target, ordinary needs or recovery work.
+both healthy and bumped residents progress at the improved rate while home.
+care keeps its existing recovery speed and served rate. walking/following
+does not gain served time. no new bed slots in the old small cell footprint.
+staff walking applies to all six hired kinds, not the warden or residents.
+escort follower speed uses the same improved leader speed. carry training
+affects the cook, not the player's stack or a collector's cash capacity.
+
+starting prices and gates for review, not a payback-duration claim:
+
+| purchase chain | stage2 / stage3 base cost | rank | prerequisite for stage2 |
+|---|---:|---|---|
+| each cell |40 /80 |4 /7 | its existing cell unlock, if any |
+| kitchen |100 /180 |4 /7 | cook hired |
+| canteen |100 /180 |4 /7 | second table bought |
+| showers |100 /180 |4 /7 | third shower bought |
+| staff walking |120 /220 |5 /8 | first escort hired |
+| cook carry |120 /220 |5 /8 | cook hired |
+
+stage3 always follows its own stage2. retain the existing per-jail cost
+multiplier.26 purchases cost2480 in pine hill and4960 in desert rock.
+the baseline's stationary safe balance is not a measured time to earn that
+amount. do not lower old earnings to stretch the catalogue. old rank6 worlds
+get useful stage2 targets immediately and actual future stage3 gates. a new
+player cannot buy an upgrade for a locked/unavailable service.
+
+derive effects from the existing bought ids and content values. do not save
+a second tier ledger or derived rates. no retroactive bill, money reset,
+resident/bed relocation or progress re-scaling. old fields retain their
+meaning. unbought upgrades retain the released capability exactly.
+
+proposed payment centres, reusing each centre for its own two-stage chain:
+
+- cells0..7: x67,151,235,304,416,487,571,655 at y244. the middle two shift
+  aside so neither payment radius intersects the manual riot-response area.
+- kitchen(370,490), canteen(240,540), showers(735,560).
+- staff walking(850,700), cook carry(850,765).
+
+planning probe on the unchanged0.1.155 layout: both jails, each13 centres,
+actual movement from the start, body-radius wall checks on every step.
+reproduce with `node --experimental-strip-types scripts/measure-tier-footprints.mjs`.
+all26 reached. proposed payment radii do not overlap each other, any old
+payment radius, existing station work circles/service rectangles or the
+manual incident radius. this is an all-open geometry projection, not a
+purchase test, native phone view or test of implemented new pads. keep its
+assertions against the real content once authored.
+
+art stays inside existing footprints: cell mattress/frame/pillow stages,
+stove/worktop/hood stages, tablecloth/seat/backrest stages, shower fittings
+and screens. keep silhouettes, access and occupied-seat poses readable.
+training purchases need a small visible training marker, not an invented
+room or obstruction. measure actual calls, triangles and resources after
+authoring. test camera extremes and both orientations in both engines.
+
+delivery: room effects + their working art first, staff training separately
+if the review gets broad. before runtime edits, agree the minimal engine/
+types hunk with the P1.1 owner. exact-head review, old-capture restore,
+one paid purchase per chain and real timer/travel/stack probes precede
+release. price labels must say the real effect and stay readable. measure
+fresh and maxed active-service profiles too before claiming a faster economy.
 
 ## acceptance and save gates
 
