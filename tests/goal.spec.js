@@ -16,6 +16,13 @@ const box = (page, s) =>
     return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : { x: 0, y: -1, width: 0, height: 0 };
   }, s);
 const shown = (page) => row(page).evaluate((el) => getComputedStyle(el).visibility);
+// extra css for a test, as a constructed sheet: the site's policy (style-src 'self') refuses an inline
+// <style> or addStyleTag, but not a sheet built through the css object model
+const adopt = (css) => {
+  const s = new CSSStyleSheet();
+  s.replaceSync(css);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
+};
 
 // `still`: a sheet opens at once (the next jail just unlocked) and holds the game still, so wait on frames
 async function open(page, w, still = false) {
@@ -120,7 +127,7 @@ for (const size of [{ width: 320, height: 568 }, { width: 390, height: 664 }, { 
     const tall = () => page.evaluate(() => document.querySelector("#jail").clientHeight);
     const withRow = await tall();
     // and what it would be with no row at all, for the record only
-    await page.addStyleTag({ content: "#goal { display: none !important; }" });
+    await page.evaluate(adopt, "#goal { display: none !important; }");
     await expect.poll(tall).toBeGreaterThan(withRow);
     const without = await tall();
     console.log(`[goal] ${browserName} ${size.width}x${size.height}: canvas ${withRow}px with the row, ${without}px without, cost ${without - withRow}px; row ${g.height}px`);
@@ -138,11 +145,9 @@ test("320 wide, large text, wide side insets: the row and its money stay inside 
   w.paid = { riotguard: pad("riotguard").cost - 1 };
   w.ride = { state: "away", x: -100, t: 1e9 };
   w.fightIn = 1e9;
-  await page.addInitScript(() => {
-    const s = document.createElement("style");
-    s.textContent = ".play{padding-left:44px!important;padding-right:44px!important}.goal{font-size:20px!important}.goal small{font-size:18px!important}";
-    document.addEventListener("DOMContentLoaded", () => document.head.appendChild(s));
-  });
+  await page.addInitScript(`document.addEventListener("DOMContentLoaded", () => (${adopt})(${JSON.stringify(
+    ".play{padding-left:44px!important;padding-right:44px!important}.goal{font-size:20px!important}.goal small{font-size:18px!important}",
+  )}));`);
   await open(page, w);
   expect(await text(page)).toBe(`${pad("riotguard").label} ${pad("riotguard").cost - 1}/${pad("riotguard").cost}`);
   const right = 320 - 44;
