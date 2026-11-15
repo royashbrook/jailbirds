@@ -151,7 +151,10 @@ for(let level=0;level<2;level++){
   const pair=[0,1].map(slot=>resident(w,{house:h.id,slot,state:'fight',x:h.at.x+slot*8,y:h.at.y}));
   w.alert={kind:'squabble',x:h.at.x,y:h.at.y,ids:pair.map(a=>a.id),held:0,warn:0};
   const d=dist(target.at,h.at);
-  Object.assign(player(w),{x:h.at.x+(target.at.x-h.at.x)*39.99/d,y:h.at.y+(target.at.y-h.at.y)*39.99/d});
+  // Vertical integer edges are exact: increasing PAD_R24 to25 must not hide
+  // a tangent payment behind the 0.01 inset used for irrational diagonal edges.
+  const reach=target.at.x===h.at.x?40:39.99;
+  Object.assign(player(w),{x:h.at.x+(target.at.x-h.at.x)*reach/d,y:h.at.y+(target.at.y-h.at.y)*reach/d});
   wait(w,l.fights.settle+.3);
   assert.equal(w.settled,1);assert.equal(w.alert,null);
   assert.equal(w.paid[id]??0,0,id);assert.ok(!w.bought.includes(id),id);
