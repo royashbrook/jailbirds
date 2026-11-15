@@ -1184,6 +1184,23 @@ export function hint(w: World, l: LevelDef): Hint {
   return { key: "idle" };
 }
 
+/** the next thing to save up for: the pad open now with the least left to pay, or else the
+ * lowest rank that opens a real pad. worked out when asked, never kept, never changes w or l */
+export type Goal =
+  | { kind: "pad"; id: string; label: string; cost: number; paid: number }
+  | { kind: "rank"; rank: number; id: string; label: string };
+export function goal(w: World, l: LevelDef): Goal | null {
+  const shown = l.pads.filter((p) => padVisible(w, p));
+  const left = (p: PadDef) => p.cost - (w.paid[p.id] ?? 0);
+  let pad: PadDef | undefined;
+  for (const p of shown) if ((p.rank ?? 0) <= w.rank && (!pad || left(p) < left(pad))) pad = p;
+  if (pad) return { kind: "pad", id: pad.id, label: pad.label ?? pad.id, cost: pad.cost, paid: w.paid[pad.id] ?? 0 };
+  let next: PadDef | undefined;
+  for (const p of shown) if ((p.rank ?? 0) > w.rank && (!next || (p.rank ?? 0) < (next.rank ?? 0))) next = p;
+  if (!next) return null;
+  return { kind: "rank", rank: next.rank ?? 0, id: next.id, label: next.label ?? next.id };
+}
+
 /** a saved game, or null when the slot holds nothing we can trust */
 export function restore(raw: string | null, levels: LevelDef[]): World | null {
   if (!raw) return null;

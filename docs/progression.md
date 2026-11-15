@@ -207,6 +207,32 @@ closed map worlds are not silently simulated. any away-income popup needs a
 specified cap and idempotent accounting first. laundry/library/utilities stay
 optional, not assumed requirements for parity.
 
+### P1.1: next-goal card
+
+1. `goal(w, l)` in sim.ts, next to `hint()`: pure, deterministic, never mutates
+   the world or the level. nothing is saved; it is worked out again when asked.
+   engine words only, no jail words.
+2. pad goal: among pads that are `padVisible` (not bought, any `after` already
+   bought) and whose rank is at most the current rank, the one with the least
+   money left to pay, `cost - paid`. a tie goes to content order. it gives
+   `{ kind: "pad", id, label, cost, paid }` with the honest total cost and what
+   is paid so far. so at rank 3 with line1 bought, line2 paid 34 of 35 beats an
+   unbought cell3 at 8: 1 left against 8.
+3. rank goal, only when there is no pad goal: among visible pads above the
+   current rank, the lowest such rank R. it gives `{ kind: "rank", rank: R, id,
+   label }` for one real pad at R, the first in content order. it never makes up
+   rank+1 when no pad needs it: at rank 2 with the next real pad at 5, it says 5.
+   a pad behind an unbought `after` is not visible and does not count.
+4. otherwise null: no real content left, whatever the rank.
+5. on screen: one compact row in the hud under the stats. a pad goal shows its
+   label, a small paid/cost and a thin bar like the rank bar. a rank goal reads
+   "level R: label". during an alert, and when the goal is null, the row is
+   hidden but keeps its height, so the jail never jumps between states. it
+   costs the canvas about 20px; that is accepted. the action tip stays as it
+   is. no new nav, tap target or camera change.
+6. no change to prices, earnings, money rate, capacity, helper speeds or any
+   content data.
+
 ## P1.2: useful room stages, then staff training
 
 room capabilities/save meaning ratified, room candidate implemented but not
