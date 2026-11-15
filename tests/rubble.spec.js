@@ -35,6 +35,20 @@ async function seedEveryLoad(page, w) {
     localStorage.setItem("jailbirds:save", raw);
   }, JSON.stringify(w));
 }
+/** a second page on the same phone with storage of its own. a page's last save can still be written
+ * after the next page in the same storage has loaded (traced 8 in 80 locally, and once on a hosted run
+ * before the load, which brought the first page's jail up in the second), so a page seeded with
+ * another jail never shares storage. `mine(p)` says whether nothing was saved there before its first load */
+async function ownPage(browser, baseURL) {
+  const { viewport, deviceScaleFactor, isMobile, hasTouch, userAgent } = test.info().project.use;
+  const ctx = await browser.newContext({ baseURL, viewport, deviceScaleFactor, isMobile, hasTouch, userAgent });
+  const p = await ctx.newPage();
+  await p.addInitScript(() => {
+    if (!sessionStorage.getItem("first")) sessionStorage.setItem("first", localStorage.getItem("jailbirds:map") === null ? "empty" : "taken");
+  });
+  return { ctx, p };
+}
+const mine = (p) => p.evaluate(() => sessionStorage.getItem("first") === "empty");
 /** a map record with both jails open, put in once, so a reload loads what the game saved since */
 async function seedMapOnce(page, w) {
   await page.goto("/manifest.json");
@@ -117,7 +131,7 @@ test("paying a clear cell pad opens the cell the moment it is paid: two beds, it
   expect((await rubble(page)).revealed.map((r) => r.room)).toEqual(["c2"]);
 });
 
-test("standing on a clear cell pad with no money, or before its level, does nothing and shows nothing", async ({ page }) => {
+test("standing on a clear cell pad with no money, or before its level, does nothing and shows nothing", async ({ page, browser, baseURL }) => {
   // no money
   await seedEveryLoad(page, world({ coins: 0 }, { x: pad("cell3").at.x, y: pad("cell3").at.y }));
   await page.goto("/");
@@ -132,10 +146,11 @@ test("standing on a clear cell pad with no money, or before its level, does noth
   expect(r.builds).toBe(builds);
 
   // money, but the next cell wants level 2
-  const page2 = await page.context().newPage();
+  const { ctx, p: page2 } = await ownPage(browser, baseURL);
   await seedEveryLoad(page2, world({ coins: 50, rank: 1, bought: ["cell3"] }, { x: pad("cell4").at.x, y: pad("cell4").at.y }));
   await page2.goto("/");
   await started(page2);
+  expect(await mine(page2), "nothing saved here before the seed").toBe(true);
   await expect(page2.locator(".tag.locked:not([hidden])", { hasText: "clear cell" }).first()).toContainText("lv 2");
   const early = await waitSim(page2, 2);
   expect(early.coins).toBe(50);
@@ -144,7 +159,7 @@ test("standing on a clear cell pad with no money, or before its level, does noth
   const r2 = await rubble(page2);
   expect(r2.rooms).toEqual(ROOMS.slice(1));
   expect(r2.revealed).toEqual([]);
-  await page2.close();
+  await ctx.close();
 });
 
 test("a cell cleared stays cleared and never shows clearing again: leaving mid-clear, travel, reload, start over", async ({ page }) => {
@@ -241,16 +256,18 @@ test("with less motion a cleared cell glows a moment, nothing flies, and it open
   await expect.poll(async () => (await rubble(page)).clearing, { timeout: 3000 }).toEqual([]);
 });
 
-test("four beds with every cell full of rubble, sixteen with all six cleared; what it costs to draw", async ({ page, browserName }) => {
+test("four beds with every cell full of rubble, sixteen with all six cleared; what it costs to draw", async ({ browser, baseURL, browserName }) => {
+  // each measure in its own storage: see ownPage
   const measure = async (bought) => {
-    const p = await page.context().newPage();
+    const { ctx, p } = await ownPage(browser, baseURL);
     await seedEveryLoad(p, world({ rank: 6, bought }, { x: 400, y: 200 }));
     await p.goto("/");
     await started(p);
+    expect(await mine(p), "nothing saved here before the seed").toBe(true);
     await waitFrames(p, 20);
     const d = await drawn(p);
     const beds = await crowd(p).textContent();
-    await p.close();
+    await ctx.close();
     return { calls: d.calls, triangles: d.triangles, geometries: d.geometries, textures: d.textures, programs: d.programs, rooms: d.rubble.rooms, stones: d.rubble.stones, beds };
   };
   const shut = await measure([]), open = await measure(CELLS);
