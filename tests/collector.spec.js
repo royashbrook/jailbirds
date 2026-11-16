@@ -35,15 +35,25 @@ async function open(page, s) {
   return errors;
 }
 
-// holds the reload's load event back 6s, longer than the whole walk to the safe (about 2.5s of
-// game time): the manifest for engines that wait on it, and a slow image for those that do not
+// holds the reload's load event back until the walk is really over: the new page reports the
+// delivery itself (a request to /__done once the safe holds 18), and until then the manifest
+// (for engines that wait on it) and a slow image (for those that do not) stay unanswered.
+// bounded at 20s; a hold that never sees the delivery fails the check after the reload.
 async function slowReload(page) {
-  await page.route("**/manifest.json", async (r) => { await new Promise((ok) => setTimeout(ok, 6000)); await r.continue(); });
+  let delivered;
+  const done = new Promise((ok) => (delivered = ok));
+  const held = () => Promise.race([done, new Promise((ok) => setTimeout(ok, 20000))]);
+  await page.route("**/__done", (r) => { delivered(); return r.fulfill({ status: 204 }); });
+  await page.route("**/manifest.json", async (r) => { await held(); await r.continue(); });
   await page.route("**/__slow.png", async (r) => {
-    await new Promise((ok) => setTimeout(ok, 6000));
+    await held();
     await r.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64") });
   });
-  await page.addInitScript(() => document.addEventListener("DOMContentLoaded", () => { const i = new Image(); i.src = "/__slow.png"; document.body.append(i); }));
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => { const i = new Image(); i.src = "/__slow.png"; document.body.append(i); });
+    const watch = () => (window.__jailbirds?.state().piles.safe === 18 ? fetch("/__done") : requestAnimationFrame(watch));
+    requestAnimationFrame(watch);
+  });
 }
 
 test("the safe stands by intake, and a collector carrying coins to it has a bag", ({ page }) => bagJourney(page, false));
@@ -74,10 +84,14 @@ async function bagJourney(page, slow) {
   }, plain);
   await page.evaluate((next) => sessionStorage.setItem("jb:next", next), JSON.stringify(save(12)));
   if (slow) await slowReload(page);
-  const t0 = Date.now();
   await page.reload();
-  // the slow case is only a proof if the load really outlasted the walk
-  if (slow) expect(Date.now() - t0, "the reload outlasted the walk").toBeGreaterThan(3000);
+  if (slow) {
+    // the slow case only proves anything if the walk was over before the test could first look,
+    // which is what 0.1.181's live run hit
+    const first = await state(page);
+    expect(first.piles.safe, "delivered before the first look").toBe(18);
+    expect(first.agents.find((a) => a.kind === "collector").cash).toBe(0);
+  }
   const carried = await untilSim(page, (w) => w.piles.safe === 18, 30, "the coins in the safe");
   expect(await page.evaluate(() => window.__bag), "the collector seen holding the 12 coins with its bag drawn").toBeTruthy();
   expect(carried.agents.find((a) => a.kind === "collector").cash).toBe(0);
