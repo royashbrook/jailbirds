@@ -35,21 +35,67 @@ async function open(page, s) {
   return errors;
 }
 
-test("the safe stands by intake, and a collector carrying coins to it has a bag", async ({ page }) => {
+// holds the reload's load event back until the walk is really over: the new page reports the
+// delivery itself (a request to /__done once the safe holds 18), and until then the manifest
+// (for engines that wait on it) and a slow image (for those that do not) stay unanswered.
+// bounded at 20s; a hold that never sees the delivery fails the check after the reload.
+async function slowReload(page) {
+  let delivered;
+  const done = new Promise((ok) => (delivered = ok));
+  const held = () => Promise.race([done, new Promise((ok) => setTimeout(ok, 20000))]);
+  await page.route("**/__done", (r) => { delivered(); return r.fulfill({ status: 204 }); });
+  await page.route("**/manifest.json", async (r) => { await held(); await r.continue(); });
+  await page.route("**/__slow.png", async (r) => {
+    await held();
+    await r.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64") });
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => { const i = new Image(); i.src = "/__slow.png"; document.body.append(i); });
+    const watch = () => (window.__jailbirds?.state().piles.safe === 18 ? fetch("/__done") : requestAnimationFrame(watch));
+    requestAnimationFrame(watch);
+  });
+}
+
+test("the safe stands by intake, and a collector carrying coins to it has a bag", ({ page }) => bagJourney(page, false));
+test.describe("a slow reload", () => {
+  // a service worker would answer the delayed requests from its cache, out of the route's reach
+  test.use({ serviceWorkers: "block" });
+  test("the collector's bag is still seen when the reload outlasts the walk", ({ page }) => bagJourney(page, true));
+});
+
+async function bagJourney(page, slow) {
   const errors = await open(page, save(0));
   const s = await state(page);
   expect(s.piles.safe).toBe(6);
   expect(s.agents.find((a) => a.kind === "collector").cash).toBe(0);
   const plain = (await drawn(page)).triangles;
-  // the same jail with coins on the desk: the collector picks them up and walks off with a bag
+  // the same jail with coins on the desk: the collector picks them up and walks off with a bag.
+  // the game runs while the page loads, and a reload can outlast the whole walk (one slow request
+  // kept 0.1.181's open for 11s), so the new page watches itself from its first frame: it latches
+  // the first frame where the collector holds the desk's 12 coins and its bag is drawn
+  await page.addInitScript((plain) => {
+    const look = () => {
+      const jb = window.__jailbirds;
+      const holding = jb?.state().agents.find((a) => a.kind === "collector")?.cash === 12;
+      if (holding && jb.drawn().triangles > plain) window.__bag = { steps: jb.state().steps, triangles: jb.drawn().triangles };
+      else requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  }, plain);
   await page.evaluate((next) => sessionStorage.setItem("jb:next", next), JSON.stringify(save(12)));
+  if (slow) await slowReload(page);
   await page.reload();
-  await untilSim(page, (w) => w.agents.find((a) => a.kind === "collector")?.cash === 12, 5, "the collector to pick up the desk's coins");
-  await waitFrames(page, 3);
-  expect((await drawn(page)).triangles).toBeGreaterThan(plain);
+  if (slow) {
+    // the slow case only proves anything if the walk was over before the test could first look,
+    // which is what 0.1.181's live run hit
+    const first = await state(page);
+    expect(first.piles.safe, "delivered before the first look").toBe(18);
+    expect(first.agents.find((a) => a.kind === "collector").cash).toBe(0);
+  }
   const carried = await untilSim(page, (w) => w.piles.safe === 18, 30, "the coins in the safe");
+  expect(await page.evaluate(() => window.__bag), "the collector seen holding the 12 coins with its bag drawn").toBeTruthy();
   expect(carried.agents.find((a) => a.kind === "collector").cash).toBe(0);
   expect(carried.coins).toBe(OLD.coins);
   await waitFrames(page, 3);
   expect(errors).toEqual([]);
-});
+}
