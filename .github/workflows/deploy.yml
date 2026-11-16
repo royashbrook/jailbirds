@@ -20,7 +20,7 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     # as in the checks: a stuck run stops, and the browsers come in the image
-    timeout-minutes: 30
+    timeout-minutes: 45
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
       options: --user 1001
