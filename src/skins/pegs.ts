@@ -34,7 +34,9 @@ const BADGE = hex("#ffcf33");
 // the riot guard's kit: a round light-blue shield and a bright whistle
 const SHIELD = hex("#8fd0f2");
 const WHISTLE = hex("#ff5a5f");
-const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
+/** the nurse's little heart: red, and never a cross */
+export const HEART = hex("#e5383b");
+export const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
   player: { body: hex("#3f6fd8"), hat: hex("#22325a"), pants: hex("#22325a") },
   escort: { body: hex("#6b778c"), hat: hex("#2f3a4d"), pants: hex("#2f3a4d") },
   carrier: { body: hex("#f4f1ea"), hat: hex("#ffffff"), pants: hex("#8a8f99") },
@@ -43,6 +45,8 @@ const DRESS: Record<string, { body: number; hat: number; pants: number }> = {
   collector: { body: hex("#4caf50"), hat: hex("#1e5e2a"), pants: hex("#5b4636") },
   // the riot guard: purple, with a white helmet
   calmer: { body: hex("#7a5cc7"), hat: hex("#f4f6fa"), pants: hex("#3d2f6b") },
+  // the nurse: pink scrubs and a white cap with a red heart on it
+  nurse: { body: hex("#ff9db4"), hat: hex("#ffffff"), pants: hex("#d9647f") },
 };
 /** how long an arm is, shoulder to wrist, before scaling */
 export const ARM = 7;
@@ -132,6 +136,12 @@ function pose(p: Pose, put: Put) {
     put("hat", jitter, ht - 1.4 * s, hz - 2.8 * s, 0, 0, 0, 3.2 * s, 0.5 * s, 2.4 * s, dress.hat);
   } else if (p.kind === "cleaner") {
     put("hat", jitter, ht - 1.4 * s, hz, 0, 0, 0, 4.8 * s, 1.6 * s, 4.8 * s, dress.hat);
+  } else if (p.kind === "nurse") {
+    // a small white cap with a red heart on the front: two round tops and a point
+    put("hat", jitter, ht + 0.1 * s, hz, 0, 0, 0, 4.7 * s, 2.8 * s, 4.7 * s, dress.hat);
+    put("dot", jitter - 0.7 * s, ht - 0.2 * s, hz + 4.6 * s, 0, 0, 0, 0.95 * s, 0.95 * s, 0.4 * s, HEART);
+    put("dot", jitter + 0.7 * s, ht - 0.2 * s, hz + 4.6 * s, 0, 0, 0, 0.95 * s, 0.95 * s, 0.4 * s, HEART);
+    put("dot", jitter, ht - 1 * s, hz + 4.6 * s, 0, 0, Math.PI / 4, 1 * s, 1 * s, 0.4 * s, HEART);
   } else if (p.kind === "calmer") {
     // a round-topped helmet: a deep crown down over the top of the head, and a rim all the way round
     put("hat", jitter, ht - 0.3 * s, hz, 0, 0, 0, 5.2 * s, 3.4 * s, 5.2 * s, dress.hat);

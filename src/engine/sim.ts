@@ -115,7 +115,7 @@ export function create(levels: LevelDef[], level = 0, seed = 1): World {
     bought: [], paid: {}, stock: {}, piles: {}, messes: [], dirt: {}, floor: [],
     ride: { state: "away", x: -100, t: 1 }, clock: {},
     carryMax: l.carry, lineMax: l.line, speed: l.speed, rank: 1, stars: 0, released: 0, settled: 0,
-    alert: null, fightIn: l.fights.every, riotCalm: 0, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
+    alert: null, fightIn: l.fights.every, riotCalm: 0, sickIn: l.sick.every, boost: { x: 0, y: 0, here: false, t: l.boost.every }, boosted: 0,
     boostKind: "skates", mountKind: "skates", fairy: idleFairy(), picked: { n: 0, kind: "skates" }, took: noneTaken(), grab: null,
   };
 }
@@ -219,6 +219,18 @@ function careSeat(w: World, l: LevelDef, a: Agent): { st: S<"facility">; seat: n
     if (!isCare(st)) continue;
     const seat = seatFor(w, st, CARE, a);
     if (seat >= 0) return { st: st as S<"facility">, seat };
+  }
+  return null;
+}
+/** how many care beds are open: none until the room is bought */
+const careBeds = (w: World, l: LevelDef) =>
+  l.stations.reduce((n, st) => n + (isCare(st) ? (st as S<"facility">).seats.filter((s) => isOpen(w, s.locked)).length : 0), 0);
+/** where the nurse stands, once the room the nurse works in is open */
+export function nurseAt(w: World, l: LevelDef): Pt | null {
+  for (const st of l.stations) {
+    if (!isCare(st)) continue;
+    const care = st as S<"facility">;
+    if (care.keeper && care.seats.length && isOpen(w, care.seats[0].locked)) return care.keeper;
   }
   return null;
 }
@@ -553,6 +565,7 @@ export function step(w: World, levels: LevelDef[], stick: Stick) {
   }
 
   fights(w, l);
+  sickness(w, l);
 
   // followers walk the leader's trail, so they come through the same doors
   const staffSpeed = helperSpeed(w, l);
@@ -914,6 +927,23 @@ function fights(w: World, l: LevelDef) {
   w.alert = { kind: "squabble", x: h.at.x, y: h.at.y, ids: pair.map((a) => a.id), held: 0, warn: 0 };
 }
 
+/** now and then someone well at home comes down with something. only once there is a nurse to see them,
+ * and never more at once than there are beds to treat them in, so nobody is ever stuck. they stay in bed,
+ * drop no money and get sadder until someone walks them to the nurse. nobody dies and nobody is lost */
+function sickness(w: World, l: LevelDef) {
+  const beds = careBeds(w, l);
+  if (!beds) return;
+  w.sickIn -= DT;
+  if (w.sickIn > 0) return;
+  w.sickIn = l.sick.every * (0.7 + 0.6 * rand(w));
+  if (w.agents.filter((a) => a.sick).length >= beds) return;
+  const well = w.agents.filter((a) => a.kind === "agent" && atEase(a) && a.rest >= SETTLE && !isDone(l, a));
+  if (!well.length) return;
+  const a = well[Math.floor(rand(w) * well.length)];
+  a.sick = l.sick.kinds[Math.floor(rand(w) * l.sick.kinds.length)];
+  a.hurt = l.riot.bump;
+}
+
 /** where each of a riot's crowd stands: side by side along the corridor, a body apart */
 const riotSpot = (l: LevelDef, i: number, n: number): Pt => ({ x: l.riot.at.x + (i - (n - 1) / 2) * 22, y: l.riot.at.y });
 /** the block a home is in: the block room whose walls hold the home's own room */
@@ -979,6 +1009,7 @@ function restless(w: World, l: LevelDef, a: Agent) {
   let rise = 0;
   for (const n of l.needs) if (a.needs[n.id] < l.threshold) rise += U_NEED;
   if (dirtyHome(w, l, a.house)) rise += U_DIRT;
+  if (a.sick) rise += U_NEED;
   a.unrest = rise > 0 ? Math.min(1, a.unrest + rise * DT) : Math.max(0, a.unrest - U_CALM * DT);
 }
 
@@ -1005,8 +1036,9 @@ function residents(w: World, l: LevelDef) {
     } else if (a.state === "leave") {
       if (walkPath(a, AGENT_SPEED)) w.agents = w.agents.filter((x) => x !== a);
     } else if (a.state === "home" && resting(a)) {
-      // resting off a bump, free and at home: needs wait, time served goes on
-      a.hurt = Math.max(0, a.hurt - DT);
+      // resting off a bump, free and at home: needs wait, time served goes on. being sick does not
+      // rest off: that takes the nurse
+      if (!a.sick) a.hurt = Math.max(0, a.hurt - DT);
       const h = byId(l, a.house);
       a.served += DT * (h ? stationTier(w, h)?.servedRate ?? 1 : 1);
       a.rest += DT;
@@ -1048,7 +1080,10 @@ function residents(w: World, l: LevelDef) {
         // time served goes on. well again, back to the bed they kept
         a.hurt = Math.max(0, a.hurt - CARE_RATE * DT);
         a.served += DT;
-        if (a.hurt <= 0) goHome(w, l, a);
+        if (a.hurt <= 0) {
+          delete a.sick;
+          goHome(w, l, a);
+        }
         continue;
       }
       // at a sink, wait for an item, then use it
@@ -1166,7 +1201,9 @@ function escortGoal(w: World, l: LevelDef, h: Agent, claimed: Set<string>): Pt |
 /** what to do next, as a key the content turns into words */
 export type Hint =
   | { key: "alert" | "riot" | "guarded" | "checkin" | "nobed" | "pickup" | "house" | "care" | "release" | "done" | "clean" | "coins" | "pad" | "rank" | "idle" }
-  | { key: "errand" | "fetch" | "drop"; need: string };
+  | { key: "errand" | "fetch" | "drop" | "sick"; need: string };
+/** the words for someone on their way to care: what they came down with, or a bump */
+const careHint = (a: Agent): Hint => (a.sick ? { key: "sick", need: a.sick } : { key: "care" });
 export function hint(w: World, l: LevelDef): Hint {
   // a riot guard that is here is on its way to it, or calming it: say so, warning or not
   if (w.alert && w.agents.some((a) => a.kind === "calmer")) return { key: "guarded" };
@@ -1175,13 +1212,17 @@ export function hint(w: World, l: LevelDef): Hint {
   const line = followers(w, me);
   if (line.some((b) => !b.house)) return { key: "house" };
   // care only when there is a seat to go to: one held in the line, or one free for a bumped one at home
-  if (line.some(booked)) return { key: "care" };
+  const toCare = line.find(booked);
+  if (toCare) return careHint(toCare);
   if (line.some((b) => isDone(l, b) && !resting(b))) return { key: "release" };
   const want = line.map((b) => wants(l, b, true)).find(Boolean);
   if (want) return { key: "errand", need: want };
   // items first when someone sits at a sink with nothing to use
   const emptyHanded = w.agents.find((a) => a.state === "use" && !a.carry && byId(l, a.station)?.kind === "sink");
   if (emptyHanded) return { key: me.carry ? "drop" : "fetch", need: (byId(l, emptyHanded.station) as S<"sink">).need };
+  // someone sick cannot get better without the nurse, so they come before the next busload
+  const poorly = w.agents.find((a) => a.sick && careWaiting(w, l, a));
+  if (poorly) return careHint(poorly);
   if (queued(w).length) return noBed(w, l) ? { key: "nobed" } : { key: "checkin" };
   if (w.agents.some((a) => a.state === "ready")) return { key: "pickup" };
   if (w.agents.some((a) => atEase(a) && isDone(l, a))) return { key: "done" };
@@ -1245,9 +1286,15 @@ export function restore(raw: string | null, levels: LevelDef[]): World | null {
       // saves from before riots are well
       const h = (a as Partial<Record<"hurt", unknown>>).hurt;
       a.hurt = num(h) ? clamp(h, 0, l.riot.bump) : 0;
+      // sick stays sick only with a nurse to go to and a bed to wait in; otherwise it is a bump to rest off
+      const ill = (a as Partial<Record<"sick", unknown>>).sick;
+      if (typeof ill === "string" && l.sick.kinds.includes(ill) && a.hurt > 0 && careBeds(back, l) > 0 && hasBed(l, a)) a.sick = ill;
+      else delete a.sick;
     }
     const calm = (w as Partial<Record<"riotCalm", unknown>>).riotCalm;
     back.riotCalm = num(calm) ? clamp(calm, 0, l.riot.calm) : 0;
+    const due = (w as Partial<Record<"sickIn", unknown>>).sickIn;
+    back.sickIn = num(due) ? clamp(due, 0, l.sick.every * 1.3) : l.sick.every;
     back.alert = alertFrom(back, l);
     looseEnds(back, l);
     const pk = got.picked as { n?: unknown; kind?: unknown } | null | undefined;

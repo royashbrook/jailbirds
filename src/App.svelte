@@ -14,8 +14,8 @@
   import { createSound } from "./lib/sound.ts";
   import { installControl } from "./install.ts";
   import { updateControl, type UpdateCheck } from "./pwa.ts";
-  // the drawn name: a striped bird and the word, no font file to load
-  import wordmark from "./lib/wordmark.svg?raw";
+  // the drawn name: you, everyone you have hired and the word, no font file to load
+  import { crewMark, crewOf } from "./lib/crew.ts";
 
   const ETHOS =
     "no ads, no lives, no timers, nothing to buy, no accounts, no cookies, nothing sold or shared.";
@@ -101,6 +101,8 @@
   }
 
   // what the screen watches; the world mutates in place
+  let crewKey = crewOf(world, level()).join();
+  let wordmark = $state(crewMark(crewOf(world, level())));
   let coins = $state(world.coins);
   let crowd = $state("");
   let rank = $state(world.rank);
@@ -200,6 +202,12 @@
 
   function sync() {
     const l = level();
+    // the logo changes only when someone new joins the crew, or in another jail with another crew
+    const team = crewOf(world, l);
+    if (team.join() !== crewKey) {
+      crewKey = team.join();
+      wordmark = crewMark(team);
+    }
     coins = world.coins;
     crowd = `${capacity(world, l) - freeBeds(world, l)}/${capacity(world, l)}`;
     rank = world.rank;
@@ -641,6 +649,7 @@
         <p>a bubble over someone means they want something: walk to their cell and lead them to the canteen or the showers. tables need trays from the kitchen. toilets in the cells get messy: walk over a mess to clean it. happy {skin.noun} drop money, and so do the desks.</p>
         <p>when one has served their time a key pops up over them: lead them to the release desk to set them free. each one set free earns a star, and stars fill your level. price tags with a lock open at a higher level.</p>
         <p>now and then two start a squabble: run over to calm them down. and keep an eye out for free skates, they make you zoom.</p>
+        <p>once you have a nurse, someone may get a tummy ache, a cold or a stubbed toe. a red heart over them means walk them to the nurse. nobody gets hurt for good, they just get sad until you do.</p>
         <p>pay the next jail price tag to open a new jail on the map. tap map to go between your jails: each one keeps going right where you left it.</p>
         <p class="ethos">{ETHOS}</p>
         <p class="version">version {__APP_VERSION__}</p>

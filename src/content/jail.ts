@@ -31,7 +31,7 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
       id: "release", look: "release", rect: { x: 500, y: 680, w: 200, h: 120 },
       doors: [{ side: "w", at: 30, width: 60 }, { side: "s", at: 70, width: 60 }], label: "release",
     },
-    { id: "hospital", look: "care", rect: { x: 760, y: 310, w: 180, h: 210 }, doors: [{ side: "w", at: 70, width: 60 }], locked: "hospital", label: "care" },
+    { id: "hospital", look: "care", rect: { x: 760, y: 310, w: 180, h: 210 }, doors: [{ side: "w", at: 70, width: 60 }], locked: "hospital", label: "nurse" },
   ];
   const table = (i: number): AnyStation => {
     const prop = { x: 60, y: 350 + i * 100, w: 150, h: 34 };
@@ -80,7 +80,7 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "safe", kind: "safe", at: { x: 250, y: 785 }, r: 26, pileAt: { x: 220, y: 785 } },
     {
       id: "hospital", kind: "facility", look: "care", need: "care", use: 8, mess: "puddle", messChance: 0,
-      zone: { x: 770, y: 375, w: 160, h: 70 },
+      zone: { x: 770, y: 375, w: 160, h: 70 }, keeper: { x: 850, y: 366 },
       seats: [
         { at: { x: 805, y: 355 }, locked: "hospital", look: "bed" },
         { at: { x: 895, y: 355 }, locked: "hospital", look: "bed" },
@@ -113,8 +113,8 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     { id: "clerk", cost: cost(70), at: { x: 420, y: 690 }, rank: 4, unlock: { helper: "clerk" }, label: "hire a clerk" },
     { id: "cleaner", cost: cost(70), at: { x: 420, y: 755 }, rank: 4, unlock: { helper: "cleaner" }, label: "hire a cleaner" },
     { id: "collector", cost: cost(100), at: { x: 420, y: 490 }, rank: 5, unlock: { helper: "collector" }, label: "hire a collector" },
-    { id: "hospital", cost: cost(80), at: { x: 850, y: 560 }, rank: 3, after: "cell4", unlock: { room: "hospital" }, label: "care room" },
-    { id: "carebeds", cost: cost(100), at: { x: 850, y: 560 }, rank: 5, after: "hospital", unlock: {}, label: "more care beds" },
+    { id: "hospital", cost: cost(80), at: { x: 850, y: 560 }, rank: 3, after: "cell4", unlock: { room: "hospital" }, label: "nurse's office" },
+    { id: "carebeds", cost: cost(100), at: { x: 850, y: 560 }, rank: 5, after: "hospital", unlock: {}, label: "more nurse beds" },
     // one riot guard: walks to a squabble or a riot and calms it, so the player need not
     { id: "riotguard", cost: cost(150), at: { x: 850, y: 625 }, rank: 5, after: "hospital", unlock: { helper: "calmer" }, label: "hire a riot guard" },
   ];
@@ -162,6 +162,8 @@ function jail(n: number, name: string, scale: number, next?: string): LevelDef {
     fights: { every: 80, crossEvery: 25, settle: 1.2, reward: 6, minPop: 4 },
     // starting picks, not measured balance: the corridor below the cells is where they gather
     riot: { rank: 3, min: 3, max: 4, warn: 5, hold: 3, calm: 30, bump: 20, at: { x: 360, y: 210 } },
+    // a starting pick, not measured balance
+    sick: { every: 50, kinds: ["tummy", "cold", "toe"] },
   };
 }
 
@@ -187,6 +189,8 @@ const NEEDS: Record<string, (noun: string) => string> = {
   wash: (noun) => `smelly ${noun}! walk them to the showers`,
 };
 
+const SICK: Record<string, string> = { tummy: "a tummy ache", cold: "a cold", toe: "a stubbed toe" };
+
 /** the line at the bottom of the screen. `noun` is the skin's word for the inmates */
 export function hintText(h: Hint, noun: string): string {
   switch (h.key) {
@@ -197,7 +201,8 @@ export function hintText(h: Hint, noun: string): string {
     case "nobed": return "no free beds! unlock another cell";
     case "pickup": return `stand by the checked-in ${noun} to lead them`;
     case "house": return "lead them to a cell with a free bed";
-    case "care": return "take the bumped one to the care room to get better faster";
+    case "care": return "take the bumped one to the nurse to get better faster";
+    case "sick": return `someone has ${SICK[h.need] ?? "a boo-boo"}! walk them to the nurse`;
     case "release": return "lead them to the release desk to set them free";
     case "done": return `some ${noun} served their time: fetch them from their cell`;
     case "errand": return NEEDS[h.need]?.(noun) ?? `walk the ${noun} where they want to go`;

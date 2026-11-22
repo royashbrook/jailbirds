@@ -38,7 +38,8 @@ export type Action = "stand" | "walk" | "sit" | "eat" | "sleep" | "clean" | "fig
 
 /** one character, ready to draw. it is reused from frame to frame: never keep it */
 export interface Pose {
-  kind: AgentKind;
+  /** anyone in the world, or the nurse, who is drawn but never walks in it */
+  kind: AgentKind | "nurse";
   action: Action;
   /** distance walked: the walk cycle turns on this, so feet never slide */
   walk: number;

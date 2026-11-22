@@ -132,7 +132,8 @@ export function createOverlay(root: HTMLElement) {
       if (b >= bubbles.length) break;
       const asking = (a.state === "home" && a.rest >= SETTLE) || a.state === "follow" || a.state === "go";
       if (a.kind !== "agent" || !asking) continue;
-      const need = isDone(l, a) ? "done" : wants(l, a, true);
+      // sick comes first: they cannot go anywhere else until the nurse has seen them
+      const need = a.sick ? "sick" : isDone(l, a) ? "done" : wants(l, a, true);
       if (!need) continue;
       view.screen(a.x, view.height + 6, a.y, pt);
       if (!pt.on) continue;

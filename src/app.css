@@ -121,10 +121,16 @@ a {
 }
 .hud .logo {
   display: flex;
+  min-width: 0;
 }
+/* the logo grows with the crew: on a narrow phone it shrinks to fit beside the version */
 .hud .logo .wordmark {
   height: 36px;
   width: auto;
+  max-width: 100%;
+}
+.hud .corner {
+  flex: none;
 }
 .stats {
   display: flex;
@@ -749,6 +755,10 @@ a {
 }
 .bubble[data-need="done"] {
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Ccircle%20cx%3D%278%27%20cy%3D%2712%27%20r%3D%274.5%27%20fill%3D%27%23ffd23f%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%2F%3E%3Cpath%20d%3D%27M12%2012h9M18%2012v3M21%2012v3%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");
+}
+/* sick: a white plus on a red heart. never a red cross on white, that emblem is protected */
+.bubble[data-need="sick"] {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%3E%3Cpath%20d%3D%27M12%2021.5C5%2016.5%201.8%2012.8%201.8%208.6%201.8%205.2%204.4%203%207.2%203c2%200%203.8%201%204.8%202.8C13%204%2014.8%203%2016.8%203c2.8%200%205.4%202.2%205.4%205.6%200%204.2-3.2%207.9-10.2%2012.9z%27%20fill%3D%27%23e5383b%27%20stroke%3D%27%233a2e2b%27%20stroke-width%3D%271.5%27%20stroke-linejoin%3D%27round%27%2F%3E%3Cpath%20d%3D%27M12%208v7M8.5%2011.5h7%27%20stroke%3D%27%23fff%27%20stroke-width%3D%272.6%27%20stroke-linecap%3D%27round%27%2F%3E%3C%2Fsvg%3E");
 }
 /* standing still by someone: a ring over their head fills up, and when it is full they join */
 .hold {

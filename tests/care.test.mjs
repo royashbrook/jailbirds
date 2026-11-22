@@ -483,7 +483,7 @@ test("old saves: residents with no bump field load well, holding nothing, and th
 });
 
 test("the hint for care has words, and the view lies someone down in a care bed", () => {
-  assert.match(hintText({ key: "care" }, "birds"), /care room/);
+  assert.match(hintText({ key: "care" }, "birds"), /nurse/);
   const w = careJail();
   const a = residents(w)[0];
   guard(w);
