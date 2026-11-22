@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { create, step, player } from '../src/engine/sim.ts';
 import { LEVELS } from '../src/content/jail.ts';
 import { cameraStick } from '../src/view/camera.ts';
-import { pointerOffset } from './helpers.js';
+import { orbitHold, pointerOffset } from './helpers.js';
 
 const nativeOffset=(dx,dy,turn,radius)=>{
   const v=pointerOffset(dx,dy,turn,radius);
@@ -46,4 +46,29 @@ test('the captured near-target orbit converges with the actual engine and an 83-
   }
   assert.ok(within(),`still orbiting at ${player(w).x},${player(w).y}`);
   assert.equal(player(w).moving,false);
+});
+
+test('a floor pulse wider than the arrival window hops for ever, and one held pulse ends it', () => {
+  const target={x:430,y:290};
+  const walk=(held)=>{
+    const w=create(LEVELS,0,17);
+    w.ride={state:'away',x:-100,t:1e9};w.fightIn=w.boost.t=1e9;
+    // a point from failed run45067458177, with its 114-tick pulse inside a 205-tick feedback cycle
+    Object.assign(player(w),{x:434.22,y:289.9});
+    let last=null;
+    for(let cycles=0;cycles<40;cycles++) {
+      const p={x:player(w).x,y:player(w).y},dx=target.x-p.x,dy=target.y-p.y,d=Math.hypot(dx,dy);
+      if(d<4) return cycles;
+      const radius=Math.min(1,d/(w.speed*3.4))*44,v=nativeOffset(dx,dy,30,radius);
+      const hold=held?orbitHold(last,p,target,radius,w.speed*Math.hypot(v.x,v.y)/44):0;
+      last=hold?null:p;
+      const stick=cameraStick({x:v.x/44,y:v.y/44},30);
+      for(let i=0;i<114+Math.round(hold*60);i++)step(w,LEVELS,stick);
+      for(let i=0;i<91;i++)step(w,LEVELS,{x:0,y:0});
+    }
+    return -1;
+  };
+  assert.equal(walk(false),-1,'without the hold this start never arrives');
+  const took=walk(true);
+  assert.ok(took>=0&&took<=4,`with the hold it arrives within a few pulses, took ${took}`);
 });

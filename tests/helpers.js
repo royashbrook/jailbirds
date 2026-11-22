@@ -64,6 +64,16 @@ export function pointerOffset(dx, dy, turn, radius) {
   return { x: x * r, y: y * r };
 }
 
+/** seconds to hold this pulse longer, or 0. on a slow runner the shortest pulse can move further than
+ * the arrival window is wide, so the warden hops across the target for ever (run 45067458177: 425.3,
+ * 434.4, 425.3). when a floor pulse has just crossed it, going past by as far as he is from it now means
+ * the next plain pulse, the same length back, lands on it */
+export function orbitHold(last, p, to, radius, unitsPerSecond) {
+  if (!last || radius >= 3) return 0;
+  const crossed = (to.x - last.x) * (to.x - p.x) + (to.y - last.y) * (to.y - p.y) < 0;
+  return crossed ? Math.hypot(to.x - p.x, to.y - p.y) / unitsPerSecond : 0;
+}
+
 /** walk the warden to a point in a straight line with the thumb stick, pushing less
  * the closer it gets. neutralize before reading: a delayed reply is an old position,
  * not permission to keep driving while it reaches us. `stop` ends
@@ -75,7 +85,7 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   try {
-    let start = null, previousStep = null;
+    let start = null, previousStep = null, last = null;
     for (;;) {
       await page.mouse.move(cx, cy);
       const s = await state(page), p = s.agents[0];
@@ -92,6 +102,10 @@ export async function walkTo(page, to, near = 4, stop = () => false) {
       const offset = pointerOffset(dx, dy, turn, push * 44);
       await page.mouse.move(Math.round(cx + offset.x), Math.round(cy + offset.y));
       await waitFrames(page, 1);
+      const hold = orbitHold(last, p, to, push * 44, (s.speed * Math.hypot(offset.x, offset.y)) / 44);
+      if (hold) await page.waitForTimeout(hold * 1000);
+      // a held pulse is followed by a plain one, which is the one that lands
+      last = hold ? null : p;
     }
   } finally {
     await page.mouse.up();
