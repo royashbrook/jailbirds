@@ -58,6 +58,20 @@ test("no nurse is drawn before the office is bought, and the logo is just you", 
   expect(await crew(page)).toEqual(["player"]);
 });
 
+test("browser tests make no sound: audio goes through the silent gain, none reaches the speakers", async ({ page }) => {
+  await page.goto("/");
+  const heard = await page.evaluate(() => {
+    const ctx = new AudioContext(), tone = ctx.createOscillator();
+    tone.connect(ctx.destination);
+    const gain = ctx.destination.gain.value;
+    ctx.close();
+    return { ...window.__quiet, gain };
+  });
+  expect(heard.through).toBeGreaterThan(0);
+  expect(heard.loud).toBe(0);
+  expect(heard.gain).toBe(0);
+});
+
 for (const width of [320, 390]) {
   test(`${width} wide: the whole crew in the logo, on one row with the version`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width, height: 700 });
