@@ -60,8 +60,9 @@ export type StationDef =
     }
   /** agents use a seat to meet a need; a use may leave a mess that blocks the seat until cleaned.
    * at a seat that belongs to one house that mess clogs the seat instead, and it gets dirtier until cleaned.
-   * with a zone, residents are led there; without one, they walk to it themselves */
-  | { id: string; kind: "facility"; seats: Seat[]; need: string; use: number; mess: string; messChance: number; look: string; zone?: Rect };
+   * with a zone, residents are led there; without one, they walk to it themselves. `keeper` is where
+   * the person who works there stands once its first seat is open: drawn only, nothing walks round them */
+  | { id: string; kind: "facility"; seats: Seat[]; need: string; use: number; mess: string; messChance: number; look: string; zone?: Rect; keeper?: Pt };
   /** an actor standing at `at` sends a finished follower out through `exit`: it pays, and earns a star */
 export type ReleaseDef = { id: string; kind: "release"; at: Pt; r: number; exit: Pt[]; every: number; pay: number; pileAt: Pt; look: string; prop: Rect };
 /** where a collector brings the desks' coins: it stands at `at` to put them in, they stack at `pileAt`
@@ -173,6 +174,8 @@ export interface LevelDef {
    * `max` of them walk to `at` over `warn` seconds, standing within reach for `hold` seconds calms it, the
    * lowest id gets a bump of `bump` seconds to rest off at home, and no riot starts for `calm` seconds */
   riot: { rank: number; min: number; max: number; warn: number; hold: number; calm: number; bump: number; at: Pt };
+  /** once a care bed is open, someone well at home comes down with one of `kinds` about every `every` seconds */
+  sick: { every: number; kinds: string[] };
 }
 
 /** worst first: cross (a need run out), upset (unrest built up), needy (a need low), ok */
@@ -204,8 +207,11 @@ export interface Agent {
   unrest: number;
   /** seconds served at home */
   served: number;
-  /** seconds of rest left after a bump in a riot, falling only at home; 0 is well */
+  /** seconds of rest left after a bump in a riot, falling only at home; 0 is well. someone sick has
+   * this too, and it only comes off in a care bed */
   hurt: number;
+  /** what they came down with, while they have it. absent on anyone well, and on every older save */
+  sick?: string;
   /** seconds since it last got home: it settles in before asking to go anywhere */
   rest: number;
   t: number;
@@ -254,6 +260,8 @@ export interface World {
   fightIn: number;
   /** seconds before another riot may start, in simulation time; squabbles do not wait on it */
   riotCalm: number;
+  /** seconds until someone may next come down with something, running only while a care bed is open */
+  sickIn: number;
   boost: { x: number; y: number; here: boolean; t: number };
   /** what the boost on the floor is, picked once when it turns up */
   boostKind: BoostKind;

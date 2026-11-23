@@ -13,7 +13,7 @@ import {
   type Material,
 } from "three";
 import { WALL, walls } from "../engine/geom.ts";
-import { CLEAN_TIME, DIRT_MAX, dirtSpots, inCare, isDone, isOpen, mood, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
+import { CLEAN_TIME, DIRT_MAX, dirtSpots, inCare, isDone, isOpen, mood, nurseAt, padVisible, resting, STAMP_AT, STAMP_HOLD, stampAt, stamped } from "../engine/sim.ts";
 import type { Agent, AnyStation, Coin, LevelDef, Mood, Rect, RoomDef, World } from "../engine/types.ts";
 import type { Action, Palette, Part, Pose, Skin } from "../skins/types.ts";
 import { buildScene, CARE_BED_SHAPE, HOME_BED_SHAPE, PAPER_TOP, rubbleStones, STAMP_PAD, stoneColour, stoneGeometry, type Built } from "./scene.ts";
@@ -347,6 +347,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
   const pose: Pose = { kind: "agent", action: "stand", walk: 0, t: 0, look: 0, uniform: false, carry: 0, mood: "ok" };
   const headings = new Map<number, number>();
   let camReady = false;
+  let nurseDrawn = false;
   let cssW = 1, cssH = 1;
 
   // coins that were on the floor last frame, to fly the picked ones to the warden. what he picked up
@@ -688,6 +689,26 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
           coin(x + Math.cos(heading) * (9 + (k ? 1.5 : -1)), 9.5 * s, z - Math.sin(heading) * (9 + (k ? 1.5 : -1)), heading + (k ? 0.5 : -0.3), 0.7, 1.2, k);
       }
     }
+    // the nurse stands between the beds, facing the room. drawn only: nobody in the sim walks round her
+    const nurse = nurseAt(w, l);
+    nurseDrawn = !!nurse;
+    if (nurse) {
+      pose.kind = "nurse";
+      pose.action = "stand";
+      pose.walk = 0;
+      pose.t = t;
+      pose.look = 0;
+      pose.uniform = false;
+      pose.carry = 0;
+      pose.mood = "ok";
+      const r = skin.model.root(pose);
+      e.set(r.pitch, 0, 0, "YXZ");
+      q.setFromEuler(e);
+      v.set(nurse.x, r.lift, nurse.y);
+      root.compose(v, q, one);
+      skin.model.pose(pose, put);
+      blob(nurse.x, nurse.y, 8);
+    }
     for (const p of partList) {
       p.mesh.count = p.used;
       p.mesh.instanceMatrix.needsUpdate = true;
@@ -887,6 +908,7 @@ export function createView(canvas: HTMLCanvasElement, skin: Skin) {
       eye: camera.position.toArray(), target: look.toArray(),
       stamp: { x: stamp.stamp.position.x, y: stamp.stamp.position.y, sheet: stamp.sheet.visible, mark: stamp.mark.visible },
       care: built?.care ?? 0,
+      nurse: nurseDrawn,
       tiers: built?.tiers ?? 0,
       training: built?.training ?? 0,
       rubble: {

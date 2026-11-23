@@ -14,7 +14,7 @@ const STAFF_TRAINING = ["staff2", "staff3", "cookcarry2", "cookcarry3"];
 test("the annex appends to both jails without changing any pre-care content", () => {
   for (const [i, l] of LEVELS.entries()) {
     // Strip only the later additions. The original hash still pins every old coordinate, rate and price.
-    const old = { ...l, size: { ...l.size, w: 720 }, rooms: l.rooms.filter(r => r.id !== "hospital"),
+    const old = { ...l, sick: undefined, size: { ...l.size, w: 720 }, rooms: l.rooms.filter(r => r.id !== "hospital"),
       stations: l.stations.filter(s => s.id !== "hospital").map(({ tiers, ...s }) => s),
       pads: l.pads.filter(p => !["hospital", "carebeds", "riotguard", ...ROOM_TIERS, ...STAFF_TRAINING].includes(p.id)) };
     assert.equal(createHash("sha256").update(JSON.stringify(old)).digest("hex"), BEFORE[i], l.id);

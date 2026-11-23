@@ -83,8 +83,13 @@ because riot recovery must exist before escalation is enabled.
    clamp unrest down to at most0.3, never increase a calmer resident to0.3.
 8. use one bounded recovery-work value, initially20 and zero when healthy.
    at home it falls by1 per simulation second, so recovery is always free.
-   no separate random illness, health bar or continuously decaying medical need.
-   a locked, absent or full hospital cannot suspend home recovery.
+   no health bar or continuously decaying medical need.
+   a locked, absent or full hospital cannot suspend home recovery from a bump.
+   sickness (#68) is the one thing that does not rest off: once a care bed is
+   open, someone well at home may get a tummy ache, cold or stubbed toe, never
+   more at once than there are open beds. they stay in bed, drop no money and
+   get sadder until led to the nurse. nobody dies or is lost, and with no care
+   bed open nobody gets sick, so a player can never be stuck on it.
 9. while resting or being treated, ordinary need decay pauses and served time
    continues once per step. preserve its prior value. a bumped resident is not
    eligible for incidents or release until recovered. a done resident restored
